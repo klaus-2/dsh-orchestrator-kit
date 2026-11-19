@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "Orchestrator kit",
-    "description": "Control panel to route provider, model and reasoning effort per team role of the 20-role Craft dev-flow pipeline. Validated settings UI over a live provider catalog, with fail-closed atomic writes.",
+    "description": "DeepSeek Harness plugin that turns Settings into a control panel for AI agent teams: route provider, model and reasoning effort for each of the 20 Craft dev-flow roles (repo-scout, planner, implementer, diff-reviewer and 16 more), with fail-closed validation against the live provider catalog, atomic locked writes and per-role inherit defaults. Install via Plugins > Add plugin; configure in Settings > Orchestrator.",
     "detail": "docs/DETAIL.md"
   }
 }
