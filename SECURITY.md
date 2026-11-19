@@ -1,0 +1,32 @@
+# Security Policy
+
+## Reporting a vulnerability
+
+Do **not** open a public issue or disclosure. Report vulnerabilities privately:
+
+- **Contact:** `security@` **[maintainer: fill in]** — a placeholder so no invented address can be mistaken for a real one; the maintainer owns this line and must fill it before the first public release.
+- Include: affected version (`dsh-orchestrator-kit` version), DSH version, the route or file involved, and a minimal reproduction.
+- You will get an acknowledgment first and a fix-or-verdict afterwards; keep the report confidential until a fix is published.
+
+## Scope
+
+What is in scope:
+
+- The four local HTTP routes (`roles`, `catalog`, `efforts`, `route`) — validation bypass, unexpected writes, or missing fail-closed responses (409/503).
+- The role-card frontmatter writer — race conditions, partial writes, or corruption of files in `$DSH_AGENTS_HOME` / `~/.agents/agents`.
+- The settings page — injection into role routing values displayed or saved.
+
+What is **not** in scope:
+
+- Remote code execution or anything else of that class — the kit has no remote-execution surface: it serves local HTTP routes only and writes frontmatter. Reports claiming otherwise will be assessed as misconfigurations of the host harness.
+- Vulnerabilities in DeepSeek Harness itself, in providers, or in user machines — report those to their respective maintainers.
+- Social engineering of users.
+
+## Response targets
+
+- First acknowledgment: within **7 days**.
+- Fix or verdict: within **30 days** of a confirmed report.
+
+## Note for maintainers
+
+The `security@` contact above is intentionally a placeholder (`[maintainer: fill in]`) rather than a guessed address. This is a deliberate human-maintenance field, not technical debt: publishing a wrong e-mail would silently drop reports. Fill it in before the repository receives public traffic.

@@ -1,0 +1,137 @@
+# dsh-orchestrator-kit
+
+Model routing control panel for AI agent teams — assign provider, model and reasoning effort per role of a 20-role dev-flow pipeline, from one settings page.
+
+> **Language:** English · [Português (BR)](README.pt-BR.md) · [简体中文](README.zh-CN.md)
+
+[![npm version](https://img.shields.io/npm/v/dsh-orchestrator-kit?style=flat)](https://www.npmjs.com/package/dsh-orchestrator-kit)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat)](LICENSE)
+[![node >= 22](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg?style=flat)](#install-dsh)
+[![CI](https://img.shields.io/github/actions/workflow/status/klaus-2/dsh-orchestrator-kit/ci.yml?style=flat)](https://github.com/klaus-2/dsh-orchestrator-kit/actions/workflows/ci.yml)
+[![DeepSeek Harness plugin](https://img.shields.io/badge/DeepSeek%20Harness-plugin-orange.svg?style=flat)](#install-dsh)
+
+![Orchestrator kit workflow](docs/showcase.svg)
+
+## Why use this
+
+- **Per-role routing** — every role of the Craft dev-flow pipeline (discovery, planning, execution, verification) can run on its own provider, model and reasoning effort.
+- **Cost and quality tuning** — spend deep-reasoning capacity only where it pays off (architecture, plan review) and let search-style roles run on cheaper routes.
+- **Fail-closed validated configuration** — a save that names an unknown role, model or effort is rejected with 409; an unavailable catalog returns 503. No dead routes are ever written.
+- **No provider lock-in** — the panel ships no providers of its own; the selects are fed by the catalog of the running harness.
+
+## How it works
+
+```mermaid
+graph TD
+    A["Lead agent"] -->|opens| B["Settings → Orchestrator"]
+    B -->|GET roles, catalog, efforts| C["HTTP routes"]
+    B -->|POST route| C
+    C -->|fail-closed validation| D["Atomic write with file lock"]
+    D -->|rewrites frontmatter| E["Role cards in ~/.agents/agents"]
+    A -->|subagent_role dispatch| E
+    E -->|next turn| F["Subagent runs on the routed provider, model and effort"]
+```
+
+The settings page **Settings → Orchestrator** shows the 20 pipeline roles grouped in the three Craft phases. Each role card stores the chosen route in its frontmatter; the next `subagent_role` dispatch (next turn) picks it up.
+
+## Install (DSH)
+
+Requirements: **Node.js >= 22** and a **DSH instance with Agent Teams** enabled.
+
+1. Clone or download this repository (published on npm as `dsh-orchestrator-kit` v0.1.0 — no global install needed).
+2. In DSH, open **Plugins → Add plugin** and point it at the downloaded folder, **or** install it with `install_bundle`.
+3. The Orchestrator persona and the 20-role dev-flow pipeline ship inside the preset — nothing else to wire up.
+
+## The Craft pipeline bundle
+
+`craft/` ships the pipeline as plain, portable files:
+
+- `craft/agents/*` → copy to `~/.agents/agents/` (or `$DSH_AGENTS_HOME/agents/` when that variable is set) — the 20 role cards.
+- `craft/skills/dev-flow` → copy to `~/.agents/skills/dev-flow` — the dev-flow skill with its playbooks.
+
+Unconfigured roles use `model: inherit` — they follow the chat's routing. Override only the roles you actually want pinned to a fixed model.
+
+## Configure per role
+
+| Control | Behavior |
+| --- | --- |
+| **Disabled** | Takes the role's route override off. |
+| **Provider** | Select from the harness catalog. |
+| **Model** | Select from the harness catalog. |
+| **Reasoning effort** | Options load lazily per provider + model combination. |
+| **Save** | Validates fail-closed, then writes atomically. |
+| **Reset — Chat default (inherit)** | Returns the role to `model: inherit`. |
+
+The panel talks to four routes: `GET /api/dsh-orchestrator-kit.roles`, `GET /api/dsh-orchestrator-kit.catalog`, `GET /api/dsh-orchestrator-kit.efforts` and `POST /api/dsh-orchestrator-kit.route`.
+
+Every save is protected end to end:
+
+- **Fail-closed validation** — an unknown role, model or effort returns `409`; an unavailable catalog returns `503`. Nothing is written blind.
+- **Atomic writes** — a file lock serializes writers, a TOCTOU guard plus post-write revalidation confirm the card, and the expected `mtimeMs` is checked so a concurrent editor is never silently overwritten.
+- **Single writer** — the panel is the only writer of these routes, and a saved route takes effect on the next turn.
+
+## The 20 roles
+
+**Discovery & Advisory**
+
+| Role | Duty |
+| --- | --- |
+| `repo-scout` | Local codebase search: locate code, patterns and facts. |
+| `docs-scout` | External docs and OSS examples research. |
+| `media-analyst` | Read PDFs, images and screenshots. |
+| `arch-advisor` | Architecture decisions and deep review. |
+
+**Planning & Execution**
+
+| Role | Duty |
+| --- | --- |
+| `scope-analyst` | Pre-plan gap and ambiguity analysis. |
+| `planner` | Write `.devflow/plans/*.md` plans. |
+| `plan-auditor` | Audit plans for clarity and verifiability (`OKAY`/`REJECT` gate). |
+| `run-conductor` | One-hop plan orchestration and contract freeze. |
+| `implementer` | Scoped code and config writes. |
+| `debugger` | Root-cause reproduction and surgical fixes. |
+
+**Verification, QA & Docs**
+
+| Role | Duty |
+| --- | --- |
+| `diff-reviewer` | Final merge-readiness review. |
+| `test-auditor` | Test sufficiency and gap rating. |
+| `test-writer` | Failure-reproducing tests and anti-flake checks. |
+| `browser-qa` | Live browser and UI QA. |
+| `error-auditor` | Silent-failure and error-path audit. |
+| `security-auditor` | Trust-model security review. |
+| `perf-auditor` | Latency, N+1 and memory/process leak review. |
+| `debt-auditor` | Maintainability and dead-path audit. |
+| `docs-sync` | Immediate docs reconciliation. |
+| `tech-writer` | Durable README, architecture and API docs. |
+
+## FAQ
+
+**Why do I get a 409 when saving a model?**
+The panel validates every save against the catalog of the running harness. A 409 means the role, model or effort you picked does not exist there — pick a valid entry instead of bypassing the check.
+
+**Where do the role cards live?**
+Under `$DSH_AGENTS_HOME/agents/` when that variable is set, otherwise `~/.agents/agents/`. The panel is the only writer of route frontmatter.
+
+**How do I reset a role?**
+Use the role's reset control ("Chat default (inherit)"); it sets `model: inherit` and the role follows the chat's routing again.
+
+**Does it work without Agent Teams?**
+No. Routes are applied when DSH dispatches members through `subagent_role`, which requires Agent Teams.
+
+**Do I need provider API keys?**
+No. The kit has no embedded providers — the selects list what the harness catalog already offers, with the credentials the harness itself holds.
+
+## Contributing
+
+Small PRs, Conventional Commits, and `node scripts/test.mjs` green three times before you push — see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Security
+
+No remote-execution surface: the kit only serves local HTTP routes and writes role-card frontmatter. Report issues privately per [SECURITY.md](SECURITY.md).
+
+## License
+
+[MIT](LICENSE). Changes are tracked in [CHANGELOG.md](CHANGELOG.md).
