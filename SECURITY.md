@@ -27,6 +27,10 @@ What is **not** in scope:
 - First acknowledgment: within **7 days**.
 - Fix or verdict: within **30 days** of a confirmed report.
 
+## Known limitations
+
+- **Post-write concurrency window (local same-user processes).** The route writer checks the card's mtime before and inside the file lock, and writes atomically via temp-file rename. mtime is not guaranteed to change on every filesystem across renames, so a process running as the same user that rewrites the card immediately after the save — without touching mtime — is not detected. Same-user processes already own the directory, so this is an application-integrity limitation, not a privilege boundary; report exploitability beyond that if you find it.
+
 ## Note for maintainers
 
 The `security@` contact above is intentionally a placeholder (`[maintainer: fill in]`) rather than a guessed address. This is a deliberate human-maintenance field, not technical debt: publishing a wrong e-mail would silently drop reports. Fill it in before the repository receives public traffic.

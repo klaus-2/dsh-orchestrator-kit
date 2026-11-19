@@ -23,5 +23,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - CI workflow and trusted-publishing release workflow.
 - Animated showcase (`docs/showcase.svg`).
 
-[Unreleased]: https://github.com/klaus-2/dsh-orchestrator-kit/compare/HEAD
+[Unreleased]: https://github.com/klaus-2/dsh-orchestrator-kit/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/klaus-2/dsh-orchestrator-kit/tree/v0.1.0

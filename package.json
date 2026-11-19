@@ -33,6 +33,7 @@
     "./icon": "./icon.svg",
     "./package.json": "./package.json"
   },
+  "main": "./index.js",
   "files": [
     "index.js",
     "client.js",
