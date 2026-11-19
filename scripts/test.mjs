@@ -1403,8 +1403,9 @@ await test('client.js: runtime module registration, phase grouping, save, 409, r
 
   let tree = await app1.settle();
   const texts = collectText(tree);
+  const sectionTitles = findNodes(tree, (n) => n.type === 'div' && n.props.style?.fontSize === 13 && n.props.style?.fontWeight === 600).map((n) => n.children[1]);
   for (const heading of ['Discovery & Advisory', 'Planning & Execution', 'Verification, QA & Docs', 'Other']) {
-    assert.ok(texts.includes(heading), `rendered settings must include section heading ${heading}`);
+    assert.ok(sectionTitles.includes(heading), `rendered settings must include section title node ${heading}`);
   }
   assert.ok(texts.includes('Refresh'));
   assert.ok(texts.indexOf('alpha-custom') < texts.indexOf('zeta-custom'), 'Other roles must sort alphabetically');
@@ -1589,6 +1590,65 @@ await test('client.js: runtime module registration, phase grouping, save, 409, r
   assert.equal(effortReqCount, 2, 'transient 503 effort failure must retry on remount');
   assert.equal(unknownEffortReqCount, 1, 'non-transient 409 effort failure must stay cached across remounts');
   assert.ok(collectText(tree3c).includes('Default (high)'));
+
+  const vm4 = mountVmClient(async (url) => {
+    if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles: mockRoles }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify(mockCatalog), { status: 200 });
+    if (url.startsWith(`/api/${NS}.efforts`)) return new Response(JSON.stringify({ ok: true, defaultEffort: 'medium', efforts: [{ id: 'high', name: 'High' }] }), { status: 200 });
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  });
+  const app4 = vm4.mountInstance();
+  let tree4 = await app4.settle();
+  const tabButtons = () => findNodes(tree4, (n) => n.type === 'button' && n.props.role === 'tab');
+  const checkboxNames = (tree) => findNodes(tree, (n) => n.type === 'input' && n.props.type === 'checkbox').map((n) => n.props['aria-label'].replace('Disable ', ''));
+  assert.ok(collectText(tree4).includes('What these settings do'), 'legend must explain what each setting does');
+  assert.ok(collectText(tree4).includes('Members created with plain subagent always inherit the Lead.'), 'legend must keep the plain-subagent inherit fact');
+  assert.ok(collectText(tree4).includes('Routed'), 'routed status badge must render');
+  assert.ok(collectText(tree4).includes('Inherits chat'), 'inherit status badge must render');
+  assert.ok(findNodes(tree4, (n) => n.type === 'span' && n.props.style?.background === 'rgba(239,68,68,0.12)').length >= 1, 'disabled status badge tint must render for a disabled role');
+  const routed4 = mockRoles.filter((r) => r.provider && r.model && r.model !== 'inherit').length;
+  const disabled4 = mockRoles.filter((r) => r.disabled === true).length;
+  assert.ok(collectText(tree4).join('').includes(`${mockRoles.length} roles · ${routed4} routed · ${mockRoles.length - routed4} inherit · ${disabled4} disabled`), 'header summary must report saved-state counts');
+  assert.equal(tabButtons().length, 5, 'segmented control must offer all roles plus three phases plus other');
+  assert.equal(tabButtons().find((b) => b.props['aria-selected'] === true).children[0], 'All roles', 'default tab must show every role');
+  assert.equal(checkboxNames(tree4).length, 22);
+  const clickTab = (label) => {
+    tabButtons().find((b) => b.children[0] === label).props.onClick();
+    tree4 = app4.renderCycle();
+  };
+  clickTab('Discovery & Advisory');
+  assert.deepEqual(checkboxNames(tree4), ['repo-scout', 'docs-scout', 'media-analyst', 'arch-advisor'], 'phase tab must filter the grid to that phase');
+  clickTab('Planning & Execution');
+  assert.equal(checkboxNames(tree4).length, 6);
+  clickTab('Verification, QA & Docs');
+  assert.equal(checkboxNames(tree4).length, 10);
+  clickTab('Other');
+  assert.deepEqual(checkboxNames(tree4), ['alpha-custom', 'zeta-custom']);
+  clickTab('All roles');
+  assert.equal(checkboxNames(tree4).length, 22);
+  const tablist = findNodes(tree4, (n) => n.props.role === 'tablist')[0];
+  assert.ok(tabButtons().every((b) => b.props['aria-controls'] === 'orch-role-panel'), 'every tab must control the role panel');
+  assert.equal(tabButtons().filter((b) => b.props.tabIndex === 0).length, 1, 'roving tabindex must keep a single tab stop');
+  assert.equal(findNodes(tree4, (n) => n.props.role === 'tabpanel').length, 1, 'a single labelled tabpanel must wrap the grid');
+  const focusableTabs = tabButtons().map((b) => ({ ...b, focus() {} }));
+  tablist.props.onKeyDown({ key: 'ArrowRight', preventDefault() {}, currentTarget: { querySelectorAll: () => focusableTabs }, target: focusableTabs[0] });
+  tree4 = app4.renderCycle();
+  assert.equal(tabButtons().find((b) => b.props['aria-selected'] === true).children[0], 'Discovery & Advisory', 'ArrowRight must move selection to the next tab');
+  assert.equal(tabButtons().filter((b) => b.props.tabIndex === 0).length, 1);
+  app4.unmount();
+
+  const vm5 = mountVmClient(async (url) => {
+    if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles: [mockRoles.find((r) => r.id === 'planner')] }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify(mockCatalog), { status: 200 });
+    if (url.startsWith(`/api/${NS}.efforts`)) return new Response(JSON.stringify({ ok: true, defaultEffort: 'medium', efforts: [] }), { status: 200 });
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  });
+  const app5 = vm5.mountInstance();
+  let tree5 = await app5.settle();
+  findNodes(tree5, (n) => n.type === 'button' && n.props.role === 'tab' && n.children[0] === 'Other')[0].props.onClick();
+  tree5 = app5.renderCycle();
+  assert.ok(collectText(tree5).some((t) => t.includes('No roles in this group yet.')), 'empty group must show an empty state with the next step');
+  app5.unmount();
 });
 
 const codemapScript = path.join(packageDir, 'craft', 'skills', 'dev-flow', 'playbooks', 'codemap', 'scripts', 'codemap.mjs');
