@@ -62,6 +62,8 @@ Papéis não configurados usam `model: inherit` — seguem o roteamento do chat.
 | **Save** | Valida fail-closed e escreve atomicamente. |
 | **Reset — Padrão do chat (herdar)** | Devolve o papel para `model: inherit`. |
 
+O painel organiza os papéis em uma grade responsiva de cartões. Um filtro segmentado no topo alterna entre All roles, as três fases Craft e Other (as setas do teclado navegam entre as abas). Uma legenda recolhível explica o que cada controle faz, cada cartão traz um selo de status (Routed, Inherits chat ou Disabled) e o cabeçalho resume as contagens salvas. Os rótulos dos controles são exibidos em inglês.
+
 O painel fala com quatro rotas: `GET /api/dsh-orchestrator-kit.roles`, `GET /api/dsh-orchestrator-kit.catalog`, `GET /api/dsh-orchestrator-kit.efforts` e `POST /api/dsh-orchestrator-kit.route`.
 
 Cada salvamento é protegido de ponta a ponta:

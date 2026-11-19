@@ -62,6 +62,8 @@ Unconfigured roles use `model: inherit` — they follow the chat's routing. Over
 | **Save** | Validates fail-closed, then writes atomically. |
 | **Reset — Chat default (inherit)** | Returns the role to `model: inherit`. |
 
+The panel lays the roles out as a responsive card grid. A segmented filter at the top switches between All roles, the three Craft phases and Other (arrow keys move between tabs). A collapsible legend explains what each control does, each card carries a status badge (Routed, Inherits chat or Disabled), and the header summarizes the saved counts.
+
 The panel talks to four routes: `GET /api/dsh-orchestrator-kit.roles`, `GET /api/dsh-orchestrator-kit.catalog`, `GET /api/dsh-orchestrator-kit.efforts` and `POST /api/dsh-orchestrator-kit.route`.
 
 Every save is protected end to end:

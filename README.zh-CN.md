@@ -62,6 +62,8 @@ graph TD
 | **Save** | 先做 fail-closed 校验，再原子写入。 |
 | **重置 — 会话默认（继承）** | 将角色恢复为 `model: inherit`。 |
 
+面板以响应式卡片网格布局角色。顶部分段过滤器可在 All roles、三个 Craft 阶段与 Other 之间切换（方向键在标签间移动）。可折叠图例说明每个控件的作用，每张卡片带状态徽标（Routed、Inherits chat 或 Disabled），页眉汇总已保存的计数。控件标签以英文显示。
+
 面板使用四条路由：`GET /api/dsh-orchestrator-kit.roles`、`GET /api/dsh-orchestrator-kit.catalog`、`GET /api/dsh-orchestrator-kit.efforts` 和 `POST /api/dsh-orchestrator-kit.route`。
 
 每次保存都有端到端保护：

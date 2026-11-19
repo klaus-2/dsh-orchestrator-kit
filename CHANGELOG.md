@@ -11,6 +11,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Redesigned the settings panel: responsive card grid, a segmented phase filter (All roles / three Craft phases / Other) with keyboard-navigable tabs, a collapsible legend explaining every setting, per-role status badges (Routed / Inherits chat / Disabled), header summary counts, and per-field help text. Contrast and narrow-layout overflow fixed; theme tokens used throughout.
+
 ## [0.1.0] - 2026-11-18
 
 ### Added
