@@ -20,9 +20,9 @@ window.__ModuleLoader__.load({
     let catalogCache = null;
     let effortsCache = new Map();
 
-    const INHERIT_LABEL = 'Padrão do chat (herdar)';
-    const EFFORT_AUTO_LABEL = 'Automático (padrão do modelo)';
-    const SAVE_NOTICE = 'Configuração salva — entra em vigor no próximo turno / próximo subagent_role.';
+    const INHERIT_LABEL = 'Chat default (inherit)';
+    const EFFORT_AUTO_LABEL = 'Auto (model default)';
+    const SAVE_NOTICE = 'Saved — applies on the next turn / next subagent_role.';
     const controlStyle = { background: 'var(--dsw-alias-bg-base)', color: 'var(--dsw-alias-label-primary)', border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 8, padding: '5px 8px', fontSize: 13, maxWidth: 220 };
     const buttonStyle = { background: 'none', border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 8, padding: '5px 10px', color: 'var(--dsw-alias-label-primary)', fontSize: 12, cursor: 'pointer' };
     const sectionHeaderStyle = { fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--dsw-alias-label-secondary)', padding: '14px 0 6px', borderBottom: '1px solid var(--dsw-alias-border-l1)' };
@@ -43,7 +43,7 @@ window.__ModuleLoader__.load({
         throw error;
       }
       if (invalidJson || data === null || typeof data !== 'object' || Array.isArray(data)) {
-        const error = new Error(`Resposta JSON inválida (HTTP ${response.status})`);
+        const error = new Error(`Invalid JSON response (HTTP ${response.status})`);
         error.status = 502;
         throw error;
       }
@@ -152,8 +152,8 @@ window.__ModuleLoader__.load({
               } else {
                 const error = rolesOutcome.status === 'rejected'
                   ? rolesOutcome.reason
-                  : new Error('Resposta inválida de papéis: campo roles ausente');
-                setMessages((current) => ({ ...current, __load: { kind: 'error', text: `Falha ao carregar papéis: ${String(error?.message ?? error)}` } }));
+                  : new Error('Invalid roles response: missing roles field');
+                setMessages((current) => ({ ...current, __load: { kind: 'error', text: `Failed to load roles: ${String(error?.message ?? error)}` } }));
               }
 
               if (catalogOutcome.status === 'fulfilled' && Array.isArray(catalogOutcome.value?.groups)) {
@@ -174,11 +174,11 @@ window.__ModuleLoader__.load({
               } else {
                 const error = catalogOutcome.status === 'rejected'
                   ? catalogOutcome.reason
-                  : new Error('Resposta inválida do catálogo: campo groups ausente');
+                  : new Error('Invalid catalog response: missing groups field');
                 if (catalogCache === null) {
                   setCatalog({ available: false, degraded: true, failedProviders: [], default: null, groups: [] });
                 }
-                setMessages((current) => ({ ...current, __catalog: { kind: 'error', text: `Falha ao carregar catálogo de modelos: ${String(error?.message ?? error)}` } }));
+                setMessages((current) => ({ ...current, __catalog: { kind: 'error', text: `Failed to load model catalog: ${String(error?.message ?? error)}` } }));
               }
             })
             .finally(() => {
@@ -213,7 +213,7 @@ window.__ModuleLoader__.load({
             const promise = fetchJson(query)
               .then((reply) => {
                 if (!Array.isArray(reply.efforts)) {
-                  const err = new Error('Resposta inválida de esforços: campo efforts ausente');
+                  const err = new Error('Invalid efforts response: missing efforts field');
                   err.status = 502;
                   throw err;
                 }
@@ -292,7 +292,7 @@ window.__ModuleLoader__.load({
           } catch (error) {
             const detail = String(error?.message ?? error);
             const text = error?.status === 409
-              ? `Conflito de concorrência/validação (409): ${detail}. Clique em "Atualizar" para recarregar o estado mais recente antes de salvar.`
+              ? `Conflict/validation error (409): ${detail}. Click "Refresh" to reload the latest state before saving.`
               : detail;
             setMessages((current) => ({ ...current, [role.id]: { kind: 'error', text } }));
           } finally {
@@ -321,7 +321,7 @@ window.__ModuleLoader__.load({
             h('div', { style: { minWidth: 0, flex: '1 1 220px' } },
               h('div', { style: { fontSize: 13, color: 'var(--dsw-alias-label-primary)' } }, role.name, draft.disabled ? ' (desativado)' : ''),
               role.description ? h('div', { title: role.description, style: { fontSize: 12, color: 'var(--dsw-alias-label-tertiary)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, role.description) : null,
-              effortEntry?.status === 'error' ? h('div', { style: { fontSize: 11, marginTop: 2, color: 'var(--dsw-alias-label-tertiary)' } }, `Esforço indisponível para esta rota: ${effortEntry.error}`) : null,
+              effortEntry?.status === 'error' ? h('div', { style: { fontSize: 11, marginTop: 2, color: 'var(--dsw-alias-label-tertiary)' } }, `Effort unavailable for this route: ${effortEntry.error}`) : null,
               message ? h('div', { style: { fontSize: 12, marginTop: 2, color: message.kind === 'ok' ? 'var(--dsw-alias-state-success-primary, #22c55e)' : 'var(--dsw-alias-state-error-primary, #ef4444)' } }, message.text) : null),
             h('div', { style: { flex: 'none', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' } },
               h('label', { style: { display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--dsw-alias-label-secondary)', cursor: busy ? 'default' : 'pointer' } },
@@ -329,7 +329,7 @@ window.__ModuleLoader__.load({
                   type: 'checkbox',
                   checked: draft.disabled,
                   disabled: busy,
-                  'aria-label': `Desativar ${role.name}`,
+                  'aria-label': `Disable ${role.name}`,
                   onChange: (event) => setDraft(role.id, { disabled: event.target.checked })
                 }),
                 'Desativado'),
@@ -337,7 +337,7 @@ window.__ModuleLoader__.load({
                 value: draft.provider,
                 disabled: busy || catalogEmpty,
                 style: controlStyle,
-                'aria-label': `Provedor de ${role.name}`,
+                'aria-label': `Provider for ${role.name}`,
                 onChange: (event) => {
                   const provider = event.target.value;
                   if (provider === '') {
@@ -353,13 +353,13 @@ window.__ModuleLoader__.load({
                 }
               },
                 h('option', { value: '' }, INHERIT_LABEL),
-                providerMissing ? h('option', { value: draft.provider }, `${draft.provider} (indisponível)`) : null,
+                providerMissing ? h('option', { value: draft.provider }, `${draft.provider} (unavailable)`) : null,
                 groups.map((group) => h('option', { key: group.provider, value: group.provider }, group.name))),
               h('select', {
                 value: draft.model,
                 disabled: busy || catalogEmpty || draft.provider === '',
                 style: controlStyle,
-                'aria-label': `Modelo de ${role.name}`,
+                'aria-label': `Model for ${role.name}`,
                 onChange: (event) => {
                   const nextModel = event.target.value;
                   setDraft(role.id, {
@@ -369,28 +369,28 @@ window.__ModuleLoader__.load({
                 }
               },
                 h('option', { value: '' }, INHERIT_LABEL),
-                modelMissing ? h('option', { value: draft.model }, `${draft.model} (indisponível)`) : null,
+                modelMissing ? h('option', { value: draft.model }, `${draft.model} (unavailable)`) : null,
                 providerModels.map((model) => h('option', { key: model.id, value: model.id }, model.name === model.id ? model.name : `${model.name} (${model.id})`))),
               h('select', {
                 value: isInherit ? '' : draft.reasoningEffort,
                 disabled: effortDisabled,
                 style: { ...controlStyle, maxWidth: 180 },
-                'aria-label': `Esforço de raciocínio de ${role.name}`,
+                'aria-label': `Reasoning effort for ${role.name}`,
                 onChange: (event) => setDraft(role.id, { reasoningEffort: event.target.value })
               },
                 h('option', { value: '' },
                   isInherit
                     ? EFFORT_AUTO_LABEL
                     : effortLoading
-                      ? 'Carregando níveis…'
+                      ? 'Loading levels…'
                       : effortEntry?.status === 'error'
-                        ? 'Esforço indisponível'
+                        ? 'Effort unavailable'
                         : effortEntry?.defaultEffort
-                          ? `Padrão (${effortEntry.defaultEffort})`
+                          ? `Default (${effortEntry.defaultEffort})`
                           : efforts.length === 0
-                            ? 'Sem níveis configuráveis'
+                            ? 'No configurable levels'
                             : EFFORT_AUTO_LABEL),
-                !isInherit && effortMissing ? h('option', { value: draft.reasoningEffort }, `${draft.reasoningEffort} (salvo / indisponível)`) : null,
+                !isInherit && effortMissing ? h('option', { value: draft.reasoningEffort }, `${draft.reasoningEffort} (saved / unavailable)`) : null,
                 efforts.map((effort) => h('option', { key: effort.id, value: effort.id, title: effort.description },
                   effort.name === effort.id ? effort.name : `${effort.name} (${effort.id})`))),
               h('button', {
@@ -398,8 +398,8 @@ window.__ModuleLoader__.load({
                 onClick: () => save(role),
                 disabled: saveDisabled,
                 style: { ...buttonStyle, opacity: saveDisabled ? 0.5 : 1 },
-                'aria-label': `Salvar configuração de ${role.name}`
-              }, savingId === role.id ? 'Salvando…' : 'Salvar')));
+                'aria-label': `Save ${role.name} settings`
+              }, savingId === role.id ? 'Saving…' : 'Save')));
         };
 
         const sections = roles ? groupRoles(roles) : [];
@@ -407,27 +407,27 @@ window.__ModuleLoader__.load({
         return h('div', { 'data-dsh-orchestrator-kit-settings': '' },
           h('div', { style: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, paddingBottom: 8 } },
             h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-secondary)', lineHeight: '18px' } },
-              'Configure ativação (desativado), provedor, modelo e esforço de raciocínio para cada um dos 20 papéis Craft. "Padrão do chat (herdar)" remove a rota e herda o Lead. Membros criados com subagent puro sempre herdam o Lead.'),
+              'Configure disabled state, provider, model and reasoning effort for each of the 20 Craft roles. "Chat default (inherit)" removes the route and inherits the Lead. Members created with plain subagent always inherit the Lead.'),
             h('button', {
               type: 'button',
               onClick: refreshAll,
               disabled: refreshing || savingId !== null,
               style: { ...buttonStyle, flex: 'none', opacity: refreshing || savingId !== null ? 0.5 : 1 },
-              'aria-label': 'Atualizar papéis e catálogo'
-            }, refreshing ? 'Atualizando…' : 'Atualizar')),
+              'aria-label': 'Refresh roles and catalog'
+            }, refreshing ? 'Refreshing…' : 'Refresh')),
           messages.__load ? h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-state-error-primary, #ef4444)', paddingBottom: 8 } }, messages.__load.text) : null,
           messages.__catalog ? h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-state-error-primary, #ef4444)', paddingBottom: 8 } }, messages.__catalog.text) : null,
           catalogPartialWarning
             ? h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-state-warning-primary, #f59e0b)', paddingBottom: 8 } },
                 catalog.failedProviders?.length > 0
-                  ? `Catálogo parcial: falha ao listar modelos de ${catalog.failedProviders.join(', ')}. Algumas rotas podem aparecer como indisponíveis.`
-                  : 'Catálogo parcial: um ou mais provedores falharam ao listar modelos; algumas rotas podem aparecer como indisponíveis.')
+                  ? `Partial catalog: failed to list models for ${catalog.failedProviders.join(', ')}. Some routes may appear unavailable.`
+                  : 'Partial catalog: one or more providers failed to list models; some routes may appear unavailable.')
             : null,
-          catalogEmpty ? h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-tertiary)', paddingBottom: 8 } }, 'O catálogo de modelos não está disponível agora; a troca de provedor/modelo fica desabilitada, mas você ainda pode alternar "Desativado".') : null,
+          catalogEmpty ? h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-tertiary)', paddingBottom: 8 } }, 'The model catalog is unavailable right now; provider/model switching is disabled, but you can still toggle "Disabled".') : null,
           roles === null
-            ? (messages.__load ? null : h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-tertiary)', padding: '8px 0' } }, 'Carregando papéis…'))
+            ? (messages.__load ? null : h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-tertiary)', padding: '8px 0' } }, 'Loading roles…'))
             : roles.length === 0
-              ? h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-tertiary)', padding: '8px 0' } }, 'Nenhum role card encontrado no diretório de papéis do agente.')
+              ? h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-tertiary)', padding: '8px 0' } }, 'No role cards found in the agent roles directory.')
               : sections.map((section) => h('div', { key: section.title },
                   h('div', { style: sectionHeaderStyle }, section.title),
                   section.roles.map(renderRow))));

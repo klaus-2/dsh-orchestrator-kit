@@ -1150,10 +1150,10 @@ await test('client.js static contract: phase grouping, save flow markers, and no
   for (const phaseTitle of ['Discovery & Advisory', 'Planning & Execution', 'Verification, QA & Docs', 'Other']) {
     assert.ok(clientText.includes(phaseTitle), `client.js must group roles into ${phaseTitle}`);
   }
-  assert.ok(clientText.includes('Atualizar'), 'client.js must render Atualizar refresh button');
+  assert.ok(clientText.includes('Refresh'), 'client.js must render Refresh button');
   assert.ok(clientText.includes('expectedMtimeMs'), 'client.js must send expectedMtimeMs');
   assert.ok(clientText.includes(`/api/${NS}.efforts`), 'client.js must query .efforts');
-  assert.ok(clientText.includes('Configuração salva — entra em vigor no próximo turno / próximo subagent_role.'));
+  assert.ok(clientText.includes('Saved — applies on the next turn / next subagent_role.'));
   assert.ok(clientText.includes('data-dsh-orchestrator-kit-settings'), 'client.js must keep its settings mount marker');
   assert.doesNotMatch(clientText, /spawn_teammate\b/, 'client.js must not name the removed spawn_teammate tool');
   assert.ok(!clientText.includes(OLD_PLUGIN_NAME), 'client.js must not keep the old local plugin identity');
@@ -1176,7 +1176,7 @@ await test('all shipped files exist with UTF-8 no BOM and pure LF', () => {
   }
 });
 
-await test('client.js: runtime module registration, phase grouping, save, 409, Atualizar failure retention, remount efforts, and catalog failure fallback', async () => {
+await test('client.js: runtime module registration, phase grouping, save, 409, refresh failure retention, remount efforts, and catalog failure fallback', async () => {
   const source = readFileSync(path.join(packageDir, 'client.js'), 'utf8');
 
   function mountVmClient(fetchHandler) {
@@ -1404,7 +1404,7 @@ await test('client.js: runtime module registration, phase grouping, save, 409, A
   for (const heading of ['Discovery & Advisory', 'Planning & Execution', 'Verification, QA & Docs', 'Other']) {
     assert.ok(texts.includes(heading), `rendered settings must include section heading ${heading}`);
   }
-  assert.ok(texts.includes('Atualizar'));
+  assert.ok(texts.includes('Refresh'));
   assert.ok(texts.indexOf('alpha-custom') < texts.indexOf('zeta-custom'), 'Other roles must sort alphabetically');
 
   const effortCalls = vm1.fetchCalls.filter((c) => c.url.startsWith(`/api/${NS}.efforts`));
@@ -1413,27 +1413,27 @@ await test('client.js: runtime module registration, phase grouping, save, 409, A
   );
   assert.equal(effortCalls.length, uniquePairs.size, 'exactly one .efforts fetch per unique routed (provider, model) pair must be issued');
   assert.ok(texts.includes('High (high)'), 'rendered effort select must include resolved effort option High (high)');
-  assert.ok(texts.includes('Padrão (medium)'), 'rendered effort select must include defaultEffort label');
+  assert.ok(texts.includes('Default (medium)'), 'rendered effort select must include defaultEffort label');
   assert.equal(findNodes(tree, (n) => n.type === 'input' && n.props.type === 'checkbox').length, 22);
 
-  const secProviderSelect = findNodes(tree, (n) => n.type === 'select' && n.props['aria-label'] === 'Provedor de security-auditor')[0];
+  const secProviderSelect = findNodes(tree, (n) => n.type === 'select' && n.props['aria-label'] === 'Provider for security-auditor')[0];
   secProviderSelect.props.onChange({ target: { value: '' } });
   tree = app1.renderCycle();
-  const secSaveBtn = findNodes(tree, (n) => n.type === 'button' && n.props['aria-label'] === 'Salvar configuração de security-auditor')[0];
-  assert.equal(secSaveBtn.props.disabled, false, 'resetting a role with saved reasoningEffort to inherit must keep Salvar enabled');
+  const secSaveBtn = findNodes(tree, (n) => n.type === 'button' && n.props['aria-label'] === 'Save security-auditor settings')[0];
+  assert.equal(secSaveBtn.props.disabled, false, 'resetting a role with saved reasoningEffort to inherit must keep Save enabled');
   await secSaveBtn.props.onClick();
   tree = app1.renderCycle();
   const secResetPost = vm1.fetchCalls.filter((c) => c.url === `/api/${NS}.route`).at(-1);
   assert.deepEqual(JSON.parse(secResetPost.opts.body), { id: 'security-auditor', expectedMtimeMs: 1000, provider: null, model: null });
 
-  findNodes(tree, (n) => n.type === 'select' && n.props['aria-label'] === 'Provedor de implementer')[0].props.onChange({ target: { value: EXAMPLE_CLOUD } });
+  findNodes(tree, (n) => n.type === 'select' && n.props['aria-label'] === 'Provider for implementer')[0].props.onChange({ target: { value: EXAMPLE_CLOUD } });
   tree = app1.renderCycle();
-  assert.equal(findNodes(tree, (n) => n.type === 'button' && n.props['aria-label'] === 'Salvar configuração de implementer')[0].props.disabled, true, 'incomplete route without model must keep Salvar disabled');
-  findNodes(tree, (n) => n.type === 'select' && n.props['aria-label'] === 'Modelo de implementer')[0].props.onChange({ target: { value: 'reasoner-d' } });
+  assert.equal(findNodes(tree, (n) => n.type === 'button' && n.props['aria-label'] === 'Save implementer settings')[0].props.disabled, true, 'incomplete route without model must keep Save disabled');
+  findNodes(tree, (n) => n.type === 'select' && n.props['aria-label'] === 'Model for implementer')[0].props.onChange({ target: { value: 'reasoner-d' } });
   tree = await app1.settle();
-  findNodes(tree, (n) => n.type === 'select' && n.props['aria-label'] === 'Esforço de raciocínio de implementer')[0].props.onChange({ target: { value: 'high' } });
+  findNodes(tree, (n) => n.type === 'select' && n.props['aria-label'] === 'Reasoning effort for implementer')[0].props.onChange({ target: { value: 'high' } });
   tree = app1.renderCycle();
-  const implSave = findNodes(tree, (n) => n.type === 'button' && n.props['aria-label'] === 'Salvar configuração de implementer')[0];
+  const implSave = findNodes(tree, (n) => n.type === 'button' && n.props['aria-label'] === 'Save implementer settings')[0];
   assert.equal(implSave.props.disabled, false);
   await implSave.props.onClick();
   tree = app1.renderCycle();
@@ -1446,65 +1446,65 @@ await test('client.js: runtime module registration, phase grouping, save, 409, A
     reasoningEffort: 'high'
   });
 
-  const alphaCheckbox = findNodes(tree, (n) => n.type === 'input' && n.props['aria-label'] === 'Desativar alpha-custom')[0];
+  const alphaCheckbox = findNodes(tree, (n) => n.type === 'input' && n.props['aria-label'] === 'Disable alpha-custom')[0];
   alphaCheckbox.props.onChange({ target: { checked: false } });
   tree = app1.renderCycle();
-  const alphaSave = findNodes(tree, (n) => n.type === 'button' && n.props['aria-label'] === 'Salvar configuração de alpha-custom')[0];
+  const alphaSave = findNodes(tree, (n) => n.type === 'button' && n.props['aria-label'] === 'Save alpha-custom settings')[0];
   assert.equal(alphaSave.props.disabled, false);
   await alphaSave.props.onClick();
   tree = app1.renderCycle();
   const routePost = vm1.fetchCalls.filter((c) => c.url === `/api/${NS}.route`).at(-1);
   assert.deepEqual(JSON.parse(routePost.opts.body), { id: 'alpha-custom', expectedMtimeMs: 1000, disabled: false });
-  assert.ok(collectText(tree).some((t) => t.includes('Configuração salva')));
+  assert.ok(collectText(tree).some((t) => t.includes('Saved — applies')));
 
   failRolesNext = true;
-  const refreshBtn = findNodes(tree, (n) => n.type === 'button' && n.props['aria-label'] === 'Atualizar papéis e catálogo')[0];
+  const refreshBtn = findNodes(tree, (n) => n.type === 'button' && n.props['aria-label'] === 'Refresh roles and catalog')[0];
   refreshBtn.props.onClick();
   tree = await app1.settle();
   assert.ok(collectText(tree).some((t) => t.includes('roles boom')));
-  assert.equal(findNodes(tree, (n) => n.type === 'input' && n.props.type === 'checkbox').length, 22, 'failed Atualizar must keep all 22 rows');
+  assert.equal(findNodes(tree, (n) => n.type === 'input' && n.props.type === 'checkbox').length, 22, 'failed refresh must keep all 22 rows');
 
   failRolesNext = false;
   invalidJsonRolesNext = true;
-  findNodes(tree, (n) => n.type === 'button' && n.props['aria-label'] === 'Atualizar papéis e catálogo')[0].props.onClick();
+  findNodes(tree, (n) => n.type === 'button' && n.props['aria-label'] === 'Refresh roles and catalog')[0].props.onClick();
   tree = await app1.settle();
-  assert.ok(collectText(tree).some((t) => t.includes('Resposta JSON inválida (HTTP 200)')));
+  assert.ok(collectText(tree).some((t) => t.includes('Invalid JSON response (HTTP 200)')));
   assert.equal(findNodes(tree, (n) => n.type === 'input' && n.props.type === 'checkbox').length, 22);
   invalidJsonRolesNext = false;
 
-  const zetaCheckbox = findNodes(tree, (n) => n.type === 'input' && n.props['aria-label'] === 'Desativar zeta-custom')[0];
+  const zetaCheckbox = findNodes(tree, (n) => n.type === 'input' && n.props['aria-label'] === 'Disable zeta-custom')[0];
   zetaCheckbox.props.onChange({ target: { checked: true } });
   tree = app1.renderCycle();
-  await findNodes(tree, (n) => n.type === 'button' && n.props['aria-label'] === 'Salvar configuração de zeta-custom')[0].props.onClick();
+  await findNodes(tree, (n) => n.type === 'button' && n.props['aria-label'] === 'Save zeta-custom settings')[0].props.onClick();
   tree = app1.renderCycle();
-  assert.equal(findNodes(tree, (n) => n.type === 'input' && n.props.type === 'checkbox').length, 22, 'save after failed Atualizar must preserve all 22 rows');
+  assert.equal(findNodes(tree, (n) => n.type === 'input' && n.props.type === 'checkbox').length, 22, 'save after failed refresh must preserve all 22 rows');
 
   holdRolesResolver = true;
-  findNodes(tree, (n) => n.type === 'input' && n.props['aria-label'] === 'Desativar zeta-custom')[0].props.onChange({ target: { checked: false } });
+  findNodes(tree, (n) => n.type === 'input' && n.props['aria-label'] === 'Disable zeta-custom')[0].props.onChange({ target: { checked: false } });
   tree = app1.renderCycle();
-  findNodes(tree, (n) => n.type === 'button' && n.props['aria-label'] === 'Atualizar papéis e catálogo')[0].props.onClick();
+  findNodes(tree, (n) => n.type === 'button' && n.props['aria-label'] === 'Refresh roles and catalog')[0].props.onClick();
   tree = await app1.settle(false);
-  assert.equal(findNodes(tree, (n) => n.type === 'button' && n.props['aria-label'] === 'Salvar configuração de zeta-custom')[0].props.disabled, true, 'Salvar must stay disabled while Atualizar is in flight');
+  assert.equal(findNodes(tree, (n) => n.type === 'button' && n.props['aria-label'] === 'Save zeta-custom settings')[0].props.disabled, true, 'Save must stay disabled while refresh is in flight');
   holdRolesResolver();
   holdRolesResolver = null;
   tree = await app1.settle(true);
 
   routeResponseMode = '409';
-  findNodes(tree, (n) => n.type === 'input' && n.props['aria-label'] === 'Desativar zeta-custom')[0].props.onChange({ target: { checked: true } });
+  findNodes(tree, (n) => n.type === 'input' && n.props['aria-label'] === 'Disable zeta-custom')[0].props.onChange({ target: { checked: true } });
   tree = app1.renderCycle();
-  const zeta409Save = findNodes(tree, (n) => n.type === 'button' && n.props['aria-label'] === 'Salvar configuração de zeta-custom')[0];
+  const zeta409Save = findNodes(tree, (n) => n.type === 'button' && n.props['aria-label'] === 'Save zeta-custom settings')[0];
   assert.equal(zeta409Save.props.disabled, false);
   await zeta409Save.props.onClick();
   tree = app1.renderCycle();
-  assert.ok(collectText(tree).some((t) => t.includes('Conflito de concorrência/validação (409)')));
+  assert.ok(collectText(tree).some((t) => t.includes('Conflict/validation error (409)')));
 
   failRolesNext = false;
   routeResponseMode = 'ok';
   const callsBeforeRefresh = vm1.fetchCalls.length;
-  findNodes(tree, (n) => n.type === 'button' && n.props['aria-label'] === 'Atualizar papéis e catálogo')[0].props.onClick();
+  findNodes(tree, (n) => n.type === 'button' && n.props['aria-label'] === 'Refresh roles and catalog')[0].props.onClick();
   tree = await app1.settle();
   const postRefreshEfforts = vm1.fetchCalls.slice(callsBeforeRefresh).filter((c) => c.url.startsWith(`/api/${NS}.efforts`));
-  assert.equal(postRefreshEfforts.length, uniquePairs.size, 'successful Atualizar must clear effortsCache and re-fetch every distinct route');
+  assert.equal(postRefreshEfforts.length, uniquePairs.size, 'successful refresh must clear effortsCache and re-fetch every distinct route');
 
   const halfCard = { id: 'half-card', name: 'half-card', description: 'Half', provider: null, model: 'orphan-model', reasoningEffort: null, disabled: false, mtimeMs: 1000 };
   const vm2 = mountVmClient(async (url) => {
@@ -1516,10 +1516,10 @@ await test('client.js: runtime module registration, phase grouping, save, 409, A
   let tree2 = await app2.settle();
   const texts2 = collectText(tree2);
   assert.ok(texts2.some((t) => t.includes('catalog offline')), 'catalog error must render warning');
-  assert.ok(texts2.includes('orphan-model (indisponível)'), 'half-written model-only card must show fallback label');
-  findNodes(tree2, (n) => n.type === 'input' && n.props['aria-label'] === 'Desativar half-card')[0].props.onChange({ target: { checked: true } });
+  assert.ok(texts2.includes('orphan-model (unavailable)'), 'half-written model-only card must show fallback label');
+  findNodes(tree2, (n) => n.type === 'input' && n.props['aria-label'] === 'Disable half-card')[0].props.onChange({ target: { checked: true } });
   tree2 = app2.renderCycle();
-  assert.equal(findNodes(tree2, (n) => n.type === 'button' && n.props['aria-label'] === 'Salvar configuração de half-card')[0].props.disabled, false);
+  assert.equal(findNodes(tree2, (n) => n.type === 'button' && n.props['aria-label'] === 'Save half-card settings')[0].props.disabled, false);
 
   const vm2b = mountVmClient(async (url) => {
     if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles: [halfCard] }), { status: 200 });
@@ -1535,7 +1535,7 @@ await test('client.js: runtime module registration, phase grouping, save, 409, A
     return new Response(JSON.stringify({ ok: false }), { status: 404 });
   });
   const tree2b = await vm2b.mountInstance().settle();
-  assert.ok(collectText(tree2b).some((t) => t.includes('Catálogo parcial') && t.includes('example-down')), 'partial degraded catalog must surface failedProviders banner');
+  assert.ok(collectText(tree2b).some((t) => t.includes('Partial catalog') && t.includes('example-down')), 'partial degraded catalog must surface failedProviders banner');
 
   let resolveSlowEffort;
   let slowEffortStarted;
@@ -1576,17 +1576,17 @@ await test('client.js: runtime module registration, phase grouping, save, 409, A
 
   const app3b = vm3.mountInstance();
   let tree3b = await app3b.settle(false);
-  assert.ok(collectText(tree3b).includes('Carregando níveis…'));
+  assert.ok(collectText(tree3b).includes('Loading levels…'));
   resolveSlowEffort(new Response(JSON.stringify({ ok: false, error: 'temp down' }), { status: 503 }));
   tree3b = await app3b.settle(true);
-  assert.ok(collectText(tree3b).includes('Esforço indisponível'));
+  assert.ok(collectText(tree3b).includes('Effort unavailable'));
   app3b.unmount();
 
   const app3c = vm3.mountInstance();
   const tree3c = await app3c.settle();
   assert.equal(effortReqCount, 2, 'transient 503 effort failure must retry on remount');
   assert.equal(unknownEffortReqCount, 1, 'non-transient 409 effort failure must stay cached across remounts');
-  assert.ok(collectText(tree3c).includes('Padrão (high)'));
+  assert.ok(collectText(tree3c).includes('Default (high)'));
 });
 
 const codemapScript = path.join(packageDir, 'craft', 'skills', 'dev-flow', 'playbooks', 'codemap', 'scripts', 'codemap.mjs');
