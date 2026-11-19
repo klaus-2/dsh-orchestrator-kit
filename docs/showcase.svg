@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="640" viewBox="0 0 1200 640" role="img" aria-label="Orchestrator kit animated workflow">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1200" height="640" viewBox="0 0 1200 640" role="img" aria-label="Orchestrator kit animated workflow">
 <defs><marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="#3a4557"/></marker></defs>
 <rect x="0" y="0" width="1200" height="640" fill="#0b0e13"/>
 <text x="600" y="32" font-family="ui-monospace, 'Cascadia Mono', Consolas, 'Courier New', monospace" font-size="16" fill="#8fa3bd" text-anchor="middle">Orchestrator kit — Craft dev-flow</text>
@@ -146,15 +146,6 @@
 <rect id="g-lead" x="530" y="62" width="140" height="36" rx="6" fill="#4f8cff" fill-opacity="0.16" stroke="#4f8cff" stroke-width="2" opacity="0">
   <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.025;0.0833;0.9167;0.9667" dur="12s" repeatCount="indefinite"/>
 </rect>
-<rect id="g-scope-analyst" x="515" y="198" width="170" height="24" rx="6" fill="#4f8cff" fill-opacity="0.16" stroke="#4f8cff" stroke-width="2" opacity="0">
-  <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.0625;0.1083;0.9167;0.9667" dur="12s" repeatCount="indefinite"/>
-</rect>
-<rect id="g-planner" x="515" y="246" width="170" height="24" rx="6" fill="#4f8cff" fill-opacity="0.16" stroke="#4f8cff" stroke-width="2" opacity="0">
-  <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.0792;0.125;0.9167;0.9667" dur="12s" repeatCount="indefinite"/>
-</rect>
-<rect id="g-run-conductor" x="515" y="342" width="170" height="24" rx="6" fill="#4f8cff" fill-opacity="0.16" stroke="#4f8cff" stroke-width="2" opacity="0">
-  <animate attributeName="opacity" values="0;0;1;1;0;1;1;0" keyTimes="0;0.1958;0.25;0.275;0.8583;0.9042;0.9167;0.9667" dur="12s" repeatCount="indefinite"/>
-</rect>
 <rect id="g-corps" x="515" y="583" width="170" height="26" rx="6" fill="#4f8cff" fill-opacity="0.16" stroke="#4f8cff" stroke-width="2" opacity="0">
   <animate attributeName="opacity" values="0;0;1;1;0;1;1;0" keyTimes="0;0.4292;0.55;0.575;0.8708;0.9125;0.9167;0.9667" dur="12s" repeatCount="indefinite"/>
 </rect>
@@ -170,82 +161,82 @@
 <text x="760" y="280" font-family="ui-monospace, 'Cascadia Mono', Consolas, 'Courier New', monospace" font-size="12" font-weight="600" fill="#e5484d" text-anchor="middle" opacity="0">REJECT<animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.6375;0.6583;0.7583;0.9667" dur="12s" repeatCount="indefinite"/></text>
 <g id="pu-lead-plan">
   <circle r="9" fill="#4f8cff" opacity="0.22"/><circle r="4.5" fill="#4f8cff"/>
-  <animateMotion calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.0417;0.0833;1" dur="12s" repeatCount="indefinite"><mpath href="#pp1"/></animateMotion>
+  <animateMotion calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.0417;0.0833;1" dur="12s" repeatCount="indefinite"><mpath xlink:href="#pp1" href="#pp1"/></animateMotion>
   <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.0333;0.05;0.075;0.0917;1" dur="12s" repeatCount="indefinite"/>
 </g>
 <g id="pu-plan-gate">
   <circle r="9" fill="#4f8cff" opacity="0.22"/><circle r="4.5" fill="#4f8cff"/>
-  <animateMotion calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.1;0.1417;1" dur="12s" repeatCount="indefinite"><mpath href="#pp2"/></animateMotion>
+  <animateMotion calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.1;0.1417;1" dur="12s" repeatCount="indefinite"><mpath xlink:href="#pp2" href="#pp2"/></animateMotion>
   <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.0917;0.1083;0.1333;0.15;1" dur="12s" repeatCount="indefinite"/>
 </g>
 <g id="pu-gate-ok">
   <circle r="9" fill="#3ecf8e" opacity="0.22"/><circle r="4.5" fill="#3ecf8e"/>
-  <animateMotion calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.1583;0.2;1" dur="12s" repeatCount="indefinite"><mpath href="#pp3"/></animateMotion>
+  <animateMotion calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.1583;0.2;1" dur="12s" repeatCount="indefinite"><mpath xlink:href="#pp3" href="#pp3"/></animateMotion>
   <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.15;0.1667;0.1917;0.2083;1" dur="12s" repeatCount="indefinite"/>
 </g>
 <g id="pu-fan1">
   <circle r="9" fill="#4f8cff" opacity="0.22"/><circle r="4.5" fill="#4f8cff"/>
-  <animateMotion calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.2167;0.2667;1" dur="12s" repeatCount="indefinite"><mpath href="#pf1"/></animateMotion>
+  <animateMotion calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.2167;0.2667;1" dur="12s" repeatCount="indefinite"><mpath xlink:href="#pf1" href="#pf1"/></animateMotion>
   <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.2083;0.225;0.2583;0.275;1" dur="12s" repeatCount="indefinite"/>
 </g>
 <g id="pu-fan2">
   <circle r="9" fill="#4f8cff" opacity="0.22"/><circle r="4.5" fill="#4f8cff"/>
-  <animateMotion calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.2167;0.25;1" dur="12s" repeatCount="indefinite"><mpath href="#pf2"/></animateMotion>
+  <animateMotion calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.2167;0.25;1" dur="12s" repeatCount="indefinite"><mpath xlink:href="#pf2" href="#pf2"/></animateMotion>
   <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.2083;0.225;0.2417;0.2583;1" dur="12s" repeatCount="indefinite"/>
 </g>
 <g id="pu-fan3">
   <circle r="9" fill="#4f8cff" opacity="0.22"/><circle r="4.5" fill="#4f8cff"/>
-  <animateMotion calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.2167;0.2667;1" dur="12s" repeatCount="indefinite"><mpath href="#pf3"/></animateMotion>
+  <animateMotion calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.2167;0.2667;1" dur="12s" repeatCount="indefinite"><mpath xlink:href="#pf3" href="#pf3"/></animateMotion>
   <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.2083;0.225;0.2583;0.275;1" dur="12s" repeatCount="indefinite"/>
 </g>
 <g id="pu-lane1">
   <circle r="9" fill="#4f8cff" opacity="0.22"/><circle r="4.5" fill="#4f8cff"/>
-  <animateMotion calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.2667;0.35;1" dur="12s" repeatCount="indefinite"><mpath href="#pl1"/></animateMotion>
+  <animateMotion calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.2667;0.35;1" dur="12s" repeatCount="indefinite"><mpath xlink:href="#pl1" href="#pl1"/></animateMotion>
   <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.2583;0.275;0.3417;0.3583;1" dur="12s" repeatCount="indefinite"/>
 </g>
 <g id="pu-lane2">
   <circle r="9" fill="#4f8cff" opacity="0.22"/><circle r="4.5" fill="#4f8cff"/>
-  <animateMotion calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.2833;0.3667;1" dur="12s" repeatCount="indefinite"><mpath href="#pl2"/></animateMotion>
+  <animateMotion calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.2833;0.3667;1" dur="12s" repeatCount="indefinite"><mpath xlink:href="#pl2" href="#pl2"/></animateMotion>
   <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.275;0.2917;0.3583;0.375;1" dur="12s" repeatCount="indefinite"/>
 </g>
 <g id="pu-lane3">
   <circle r="9" fill="#4f8cff" opacity="0.22"/><circle r="4.5" fill="#4f8cff"/>
-  <animateMotion calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.2667;0.45;1" dur="12s" repeatCount="indefinite"><mpath href="#pl3"/></animateMotion>
+  <animateMotion calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.2667;0.45;1" dur="12s" repeatCount="indefinite"><mpath xlink:href="#pl3" href="#pl3"/></animateMotion>
   <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.2583;0.275;0.4417;0.4583;1" dur="12s" repeatCount="indefinite"/>
 </g>
 <g id="pu-conv1">
   <circle r="9" fill="#4f8cff" opacity="0.22"/><circle r="4.5" fill="#4f8cff"/>
-  <animateMotion calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.35;0.4333;1" dur="12s" repeatCount="indefinite"><mpath href="#pc1"/></animateMotion>
+  <animateMotion calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.35;0.4333;1" dur="12s" repeatCount="indefinite"><mpath xlink:href="#pc1" href="#pc1"/></animateMotion>
   <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.3417;0.3583;0.425;0.4417;1" dur="12s" repeatCount="indefinite"/>
 </g>
 <g id="pu-conv2">
   <circle r="9" fill="#4f8cff" opacity="0.22"/><circle r="4.5" fill="#4f8cff"/>
-  <animateMotion calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.3667;0.4333;1" dur="12s" repeatCount="indefinite"><mpath href="#pc2"/></animateMotion>
+  <animateMotion calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.3667;0.4333;1" dur="12s" repeatCount="indefinite"><mpath xlink:href="#pc2" href="#pc2"/></animateMotion>
   <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.3583;0.375;0.425;0.4417;1" dur="12s" repeatCount="indefinite"/>
 </g>
 <g id="pu-conv3">
   <circle r="9" fill="#4f8cff" opacity="0.22"/><circle r="4.5" fill="#4f8cff"/>
-  <animateMotion calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.45;0.5167;1" dur="12s" repeatCount="indefinite"><mpath href="#pc3"/></animateMotion>
+  <animateMotion calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.45;0.5167;1" dur="12s" repeatCount="indefinite"><mpath xlink:href="#pc3" href="#pc3"/></animateMotion>
   <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.4417;0.4583;0.5083;0.525;1" dur="12s" repeatCount="indefinite"/>
 </g>
 <g id="pu-deliv">
   <circle r="9" fill="#3ecf8e" opacity="0.22"/><circle r="4.5" fill="#3ecf8e"/>
-  <animateMotion calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.5333;0.5833;1" dur="12s" repeatCount="indefinite"><mpath href="#pd1"/></animateMotion>
+  <animateMotion calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.5333;0.5833;1" dur="12s" repeatCount="indefinite"><mpath xlink:href="#pd1" href="#pd1"/></animateMotion>
   <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.525;0.5417;0.575;0.5917;1" dur="12s" repeatCount="indefinite"/>
 </g>
 <g id="pu-reject">
   <circle r="10" fill="#e5484d" opacity="0.22"/><circle r="5" fill="#e5484d"/>
-  <animateMotion calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.625;0.725;1" dur="12s" repeatCount="indefinite"><mpath href="#prj"/></animateMotion>
+  <animateMotion calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.625;0.725;1" dur="12s" repeatCount="indefinite"><mpath xlink:href="#prj" href="#prj"/></animateMotion>
   <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.6167;0.6333;0.7167;0.7333;1" dur="12s" repeatCount="indefinite"/>
 </g>
 <g id="pu-reok">
   <circle r="9" fill="#3ecf8e" opacity="0.22"/><circle r="4.5" fill="#3ecf8e"/>
-  <animateMotion calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.775;0.8583;1" dur="12s" repeatCount="indefinite"><mpath href="#pro"/></animateMotion>
+  <animateMotion calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.775;0.8583;1" dur="12s" repeatCount="indefinite"><mpath xlink:href="#pro" href="#pro"/></animateMotion>
   <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.7667;0.7833;0.85;0.8667;1" dur="12s" repeatCount="indefinite"/>
 </g>
 <g id="pu-relight">
   <circle r="9" fill="#3ecf8e" opacity="0.22"/><circle r="4.5" fill="#3ecf8e"/>
-  <animateMotion calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.8583;0.9;1" dur="12s" repeatCount="indefinite"><mpath href="#prl"/></animateMotion>
+  <animateMotion calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.8583;0.9;1" dur="12s" repeatCount="indefinite"><mpath xlink:href="#prl" href="#prl"/></animateMotion>
   <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.85;0.8667;0.8917;0.9083;1" dur="12s" repeatCount="indefinite"/>
 </g>
 </svg>
