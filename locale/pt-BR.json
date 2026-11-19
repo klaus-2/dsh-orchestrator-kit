@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Kit do Orchestrator",
+    "description": "Painel de controle para rotear provider, model e reasoning effort por papel do time no pipeline dev-flow Craft de 20 papéis. UI de configurações validada sobre um catálogo de providers ao vivo, com escritas atômicas fail-closed.",
+    "detail": "docs/DETAIL.md"
+  }
+}

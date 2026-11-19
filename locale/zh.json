@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Orchestrator 套件",
+    "description": "控制面板，为 20 角色 Craft dev-flow 流水线的每个团队角色配置 provider、model 与 reasoning effort 路由。经过验证的设置界面，基于实时 provider 目录，写入原子化且 fail-closed。",
+    "detail": "docs/DETAIL.md"
+  }
+}

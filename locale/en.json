@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Orchestrator kit",
+    "description": "Control panel to route provider, model and reasoning effort per team role of the 20-role Craft dev-flow pipeline. Validated settings UI over a live provider catalog, with fail-closed atomic writes.",
+    "detail": "docs/DETAIL.md"
+  }
+}
