@@ -1,0 +1,68 @@
+{
+  "name": "dsh-orchestrator-kit",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "description": "DeepSeek Harness (dsh) plugin: Orchestrator preset with model routing, reasoning-effort overrides and subagent role settings.",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "orchestrator",
+    "model-routing",
+    "llm-router",
+    "multi-agent",
+    "subagent",
+    "agent-team",
+    "reasoning-effort"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/klaus-2/dsh-orchestrator-kit.git"
+  },
+  "homepage": "https://github.com/klaus-2/dsh-orchestrator-kit#readme",
+  "bugs": "https://github.com/klaus-2/dsh-orchestrator-kit/issues",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/",
+    "docs/",
+    "icon.svg",
+    "craft/",
+    "scripts/",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "yaml": "^2.9.1",
+    "@deepseek-ai/dsh-atomic-write": "^0.0.1-rc.1"
+  },
+  "scripts": {
+    "test": "node scripts/test.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": []
+    }
+  }
+}
