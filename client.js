@@ -319,7 +319,7 @@ window.__ModuleLoader__.load({
 
           return h('div', { key: role.id, style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, padding: '10px 0', borderBottom: '.5px solid var(--dsw-alias-border-l1)', flexWrap: 'wrap', opacity: draft.disabled ? 0.6 : 1 } },
             h('div', { style: { minWidth: 0, flex: '1 1 220px' } },
-              h('div', { style: { fontSize: 13, color: 'var(--dsw-alias-label-primary)' } }, role.name, draft.disabled ? ' (desativado)' : ''),
+              h('div', { style: { fontSize: 13, color: 'var(--dsw-alias-label-primary)' } }, role.name, draft.disabled ? ' (disabled)' : ''),
               role.description ? h('div', { title: role.description, style: { fontSize: 12, color: 'var(--dsw-alias-label-tertiary)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, role.description) : null,
               effortEntry?.status === 'error' ? h('div', { style: { fontSize: 11, marginTop: 2, color: 'var(--dsw-alias-label-tertiary)' } }, `Effort unavailable for this route: ${effortEntry.error}`) : null,
               message ? h('div', { style: { fontSize: 12, marginTop: 2, color: message.kind === 'ok' ? 'var(--dsw-alias-state-success-primary, #22c55e)' : 'var(--dsw-alias-state-error-primary, #ef4444)' } }, message.text) : null),
@@ -332,7 +332,7 @@ window.__ModuleLoader__.load({
                   'aria-label': `Disable ${role.name}`,
                   onChange: (event) => setDraft(role.id, { disabled: event.target.checked })
                 }),
-                'Desativado'),
+                'Disabled'),
               h('select', {
                 value: draft.provider,
                 disabled: busy || catalogEmpty,

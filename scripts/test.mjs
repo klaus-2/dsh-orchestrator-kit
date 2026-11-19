@@ -1158,6 +1158,8 @@ await test('client.js static contract: phase grouping, save flow markers, and no
   assert.doesNotMatch(clientText, /spawn_teammate\b/, 'client.js must not name the removed spawn_teammate tool');
   assert.ok(!clientText.includes(OLD_PLUGIN_NAME), 'client.js must not keep the old local plugin identity');
   assert.ok(!clientText.includes(OLD_PLUGIN_SCOPE), 'client.js must not reference the removed local scope');
+  const PT_BR_WORD_RE = /\b(desativado|desativar|provedor|modelo de|esforço|salvar|salvando|atualizar|atualizando|carregando|herdar|configuração|indisponível|padrão)\b/i;
+  assert.doesNotMatch(clientText, PT_BR_WORD_RE, 'client.js UI strings must stay in English (panel ships to every locale)');
   assert.ok(!readFileSync(path.join(packageDir, 'index.js'), 'utf8').includes(OLD_PLUGIN_NAME), 'index.js must not keep the old local plugin identity');
 });
 
