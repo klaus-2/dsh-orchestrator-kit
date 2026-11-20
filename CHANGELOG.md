@@ -16,6 +16,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `Server-Timing` header on successful responses when a timing metric was measured — roles reads, catalog reads, route validation and writes (durations only); an unchanged save with no route validation carries no header. A panel legend line shows the last load timings.
 - Invalid-card surfacing: the roles listing reports parse-failed cards in an `invalid` list with redacted errors, and the panel shows a warning banner naming the cards that cannot be edited until their frontmatter is fixed.
 - Unchanged-save indicator: a save identical to the card's current settings answers `unchanged: true` without acquiring a lock or writing, and the panel shows an "Already up to date" notice.
+- Panel i18n in English, Português (BR) and 简体中文: a header select switches the panel between Auto (host language), English, Português (BR) and 简体中文, defaulting to the harness language. The override is panel-scoped and remembered for the browser session (best-effort `localStorage`; it may not survive a Desktop app restart). While the plugin is active, `pt-BR` becomes a selectable harness language (removed on deactivation), and generic `pt` resolves to the pt-BR dictionary.
+- Locale parity and sync tests: the three `locale/*.json` files must carry identical panel key sets against a frozen 72-key schema, and the dictionaries embedded in `client.js` must deep-equal the JSON `panel` sections.
+- Structural t-usage gate: a sentinel-bind render matrix proves every panel string flows through the locale system and all 72 dictionary keys are exercised.
+- `npm pack` guard: the dry-run file list must match a frozen 69-entry contract, and every file extracted from a real tarball is scanned for forbidden tokens.
 
 ### Changed
 
@@ -24,6 +28,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Route-save request limits: bodies above 65536 bytes are rejected with 413 before any disk read, and only known fields are accepted (unknown fields return 400).
 - Role-card listing now uses bounded parallel reads (8 workers); the sorted response order is unchanged.
 - A held writer lock now returns an actionable 503 error (`code: 'lock-timeout'`) naming the relative lock file with retry and operator guidance, instead of a generic 500; lock files are never removed automatically.
+- Panel strings (labels, badges, notices, banners, legend, empty states) resolve through the locale system and re-translate live on language switch; role, catalog and effort names and counts remain untranslated data. Phase tabs and sections are keyed by stable ids (`discovery` / `planning` / `verification` / `other`); rendered English text is unchanged.
+- The English-only test policy is replaced by trilingual parity: locale key parity, registered-dictionary sync and the structural t-usage gate (user decision).
 
 ### Security
 

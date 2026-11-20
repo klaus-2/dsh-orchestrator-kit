@@ -62,7 +62,9 @@ Papéis não configurados usam `model: inherit` — seguem o roteamento do chat.
 | **Save** | Valida fail-closed e escreve atomicamente. |
 | **Reset — Padrão do chat (herdar)** | Devolve o papel para `model: inherit`. |
 
-O painel organiza os papéis em uma grade responsiva de cartões. Um filtro segmentado no topo alterna entre All roles, as três fases Craft e Other (as setas do teclado navegam entre as abas). Uma legenda recolhível explica o que cada controle faz, cada cartão traz um selo de status (Routed, Inherits chat ou Disabled) e o cabeçalho resume as contagens salvas. Os rótulos dos controles são exibidos em inglês.
+O painel organiza os papéis em uma grade responsiva de cartões. Um filtro segmentado no topo alterna entre All roles, as três fases Craft e Other (as setas do teclado navegam entre as abas). Uma legenda recolhível explica o que cada controle faz, cada cartão traz um selo de status (Routed, Inherits chat ou Disabled) e o cabeçalho resume as contagens salvas.
+
+O painel segue o idioma do harness por padrão: English, Português (BR) e 简体中文 têm tradução completa, e outros idiomas do host usam o inglês como fallback para os textos do painel. Um select no cabeçalho alterna o painel entre Automático (idioma do host), English, Português (BR) e 简体中文 — muda apenas o painel, nunca o idioma do harness. A escolha é lembrada para a sessão do navegador via `localStorage` em modo best-effort; no Desktop a porta da origem local pode mudar entre reinícios do aplicativo, então a sobrescrita pode não sobreviver a um reinício do app. Se o armazenamento estiver indisponível, o painel segue silenciosamente o idioma do host.
 
 Salvar configurações idênticas às que já estão no card é um no-op: o painel responde "Already up to date" e nada é escrito. Cards com frontmatter inválido são listados em um banner de aviso e não podem ser editados aqui até o frontmatter ser corrigido.
 
@@ -137,6 +139,12 @@ Não. As rotas são aplicadas quando o DSH despacha membros por `subagent_role`,
 
 **Preciso de chaves de provider?**
 Não. O kit não embute providers — os selects listam o que o catálogo do harness já oferece, com as credenciais que o próprio harness guarda.
+
+**Quais idiomas o painel suporta?**
+English, Português (BR) e 简体中文 (en/pt-BR/zh). O painel segue o idioma do harness por padrão, e o select no cabeçalho troca o idioma do painel manualmente sem tocar no idioma do harness. Enquanto o plugin estiver ativo, Português (BR) também fica disponível como idioma do harness (removido ao desativar o plugin), e o português genérico (`pt`) resolve para o dicionário pt-BR. Nomes de papéis, conteúdo dos cards, nomes de provider/modelo/esforço e contagens são dados e permanecem como estão.
+
+**Como adicionar ou corrigir uma tradução?**
+Edite o objeto `panel` em `locale/<lang>.json` e replique a alteração de forma idêntica no `PANEL_DICTS` em `client.js`. A suíte de testes exige paridade — conjuntos de chaves idênticos entre os três arquivos de locale e dicionários registrados idênticos às seções `panel` do JSON —, então qualquer divergência quebra a suíte.
 
 ## Contributing
 

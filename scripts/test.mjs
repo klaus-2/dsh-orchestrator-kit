@@ -1942,19 +1942,18 @@ await test('package.json: public npm contract (name, exports, files, dsh manifes
 
 await test('client.js static contract: phase grouping, save flow markers, and no old-name leftovers', () => {
   const clientText = readFileSync(path.join(packageDir, 'client.js'), 'utf8');
-  for (const phaseTitle of ['Discovery & Advisory', 'Planning & Execution', 'Verification, QA & Docs', 'Other']) {
-    assert.ok(clientText.includes(phaseTitle), `client.js must group roles into ${phaseTitle}`);
-  }
-  assert.ok(clientText.includes('Refresh'), 'client.js must render Refresh button');
+  assert.ok(clientText.includes("id: 'discovery'"));
+  assert.ok(clientText.includes("id: 'planning'"));
+  assert.ok(clientText.includes("id: 'verification'"));
+  assert.ok(clientText.includes("id: 'other'"));
+  assert.ok(clientText.includes('locale: NS'));
+  assert.ok(clientText.includes("inject: ['slots', 'locale']"));
   assert.ok(clientText.includes('expectedMtimeMs'), 'client.js must send expectedMtimeMs');
   assert.ok(clientText.includes(`/api/${NS}.efforts`), 'client.js must query .efforts');
-  assert.ok(clientText.includes('Saved — applies on the next turn / next subagent_role.'));
   assert.ok(clientText.includes('data-dsh-orchestrator-kit-settings'), 'client.js must keep its settings mount marker');
   assert.doesNotMatch(clientText, /spawn_teammate\b/, 'client.js must not name the removed spawn_teammate tool');
   assert.ok(!clientText.includes(OLD_PLUGIN_NAME), 'client.js must not keep the old local plugin identity');
   assert.ok(!clientText.includes(OLD_PLUGIN_SCOPE), 'client.js must not reference the removed local scope');
-  const PT_BR_WORD_RE = /\b(desativado|desativar|provedor|modelo de|esforço|salvar|salvando|atualizar|atualizando|carregando|herdar|configuração|indisponível|padrão)\b/i;
-  assert.doesNotMatch(clientText, PT_BR_WORD_RE, 'client.js UI strings must stay in English (panel ships to every locale)');
   assert.ok(!readFileSync(path.join(packageDir, 'index.js'), 'utf8').includes(OLD_PLUGIN_NAME), 'index.js must not keep the old local plugin identity');
   assert.ok(!readFileSync(path.join(packageDir, 'index.js'), 'utf8').includes('failsafe'), 'index.js must never use the failsafe YAML schema');
 });
@@ -1967,28 +1966,83 @@ await test('node --check passes on the shipped files', () => {
 });
 
 await test('all shipped files exist with UTF-8 no BOM and pure LF', () => {
-  for (const file of ['package.json', 'cordis.patch.yml', 'index.js', 'client.js', 'scripts/test.mjs']) {
+  for (const file of ['package.json', 'cordis.patch.yml', 'index.js', 'client.js', 'scripts/test.mjs', 'locale/en.json', 'locale/pt-BR.json', 'locale/zh.json']) {
     const bytes = readFileSync(path.join(packageDir, file));
     assert.ok(!bytes.subarray(0, 3).equals(Buffer.from([0xEF, 0xBB, 0xBF])), `${file} must not carry a BOM`);
     assert.ok(!bytes.toString('utf8').includes('\r\n'), `${file} must use pure LF`);
   }
 });
 
-function mountVmClient(fetchHandler) {
+function mountVmClient(fetchHandler, options = {}) {
   let registeredModule = null;
   let injectedFactory = null;
   const slotsSection = [];
   const fetchCalls = [];
+  const pluginDisposers = [];
   const inflight = new Set();
   const track = (promise) => {
     inflight.add(promise);
     return promise.finally(() => inflight.delete(promise));
   };
 
+  const storageMap = options.storageMap instanceof Map ? options.storageMap : new Map();
+  const storageThrows = options.storage === 'throw';
+  const localeState = { active: options.active ?? 'en', revision: 0, registrations: [], languages: [], faces: new Map(), listeners: new Set() };
+  const notifyLocale = () => { localeState.revision += 1; for (const fn of [...localeState.listeners]) fn(); };
+  const lookupRegistered = (ns, key, params) => {
+    let template;
+    for (const locale of [localeState.active.toLowerCase(), 'en']) {
+      const dict = localeState.faces.get(`${ns}:${locale}`);
+      if (dict && dict[key] !== undefined) { template = dict[key]; break; }
+    }
+    if (template === undefined) template = key;
+    if (!params) return template;
+    return template.replace(/\{(\w+)\}/g, (match, name) => (name in params ? String(params[name]) : match));
+  };
+  const boundFns = new Map();
+  const localeStub = {
+    register(ns, locale, dict) {
+      localeState.registrations.push({ ns, locale, dict });
+      localeState.faces.set(`${ns}:${locale.toLowerCase()}`, dict);
+      notifyLocale();
+      return () => { localeState.registrations.pop(); localeState.faces.delete(`${ns}:${locale.toLowerCase()}`); };
+    },
+    addLanguage(input) {
+      if (options.addLanguageThrows) throw new Error('language already registered');
+      localeState.languages.push(input);
+      notifyLocale();
+      return () => { localeState.languages.pop(); };
+    },
+    getSnapshot() {
+      return { active: localeState.active, locales: [{ id: 'en', label: 'English' }, { id: 'zh', label: '中文' }, ...localeState.languages.map((l) => ({ id: l.id, label: l.label }))], revision: localeState.revision };
+    },
+    subscribe(fn) { localeState.listeners.add(fn); return () => { localeState.listeners.delete(fn); }; },
+    setLocale(id) { localeState.active = id; notifyLocale(); },
+    bind(ns) {
+      if (options.sentinelBind) return (key) => `⟦${key}⟧`;
+      if (!boundFns.has(ns)) boundFns.set(ns, (key, params) => lookupRegistered(ns, key, params));
+      return boundFns.get(ns);
+    }
+  };
+
   const sandbox = createContext({
     window: {
       __ModuleLoader__: {
         load(mod) { registeredModule = mod; }
+      },
+      localStorage: {
+        getItem(key) {
+          if (storageThrows) throw new Error('storage disabled');
+          return storageMap.has(key) ? storageMap.get(key) : null;
+        },
+        setItem(key, value) {
+          if (storageThrows) throw new Error('storage disabled');
+          storageMap.set(key, String(value));
+        },
+        removeItem(key) {
+          if (storageThrows) throw new Error('storage disabled');
+          storageMap.delete(key);
+        }
       }
     },
     fetch: (url, opts) => track(Promise.resolve().then(() => {
@@ -2041,11 +2095,23 @@ function mountVmClient(fetchHandler) {
         slotsSection.push({ meta, component });
         return meta;
       }
+    },
+    locale: localeStub,
+    effect(fn) {
+      const dispose = fn();
+      pluginDisposers.push(dispose);
+      return dispose;
     }
   });
   injectedFactory();
   const Component = slotsSection[0].component;
   const sectionMeta = slotsSection[0].meta;
+
+  const runPluginDisposers = () => {
+    for (const dispose of pluginDisposers.splice(0)) {
+      if (typeof dispose === 'function') dispose();
+    }
+  };
 
   function mountInstance() {
     const instanceSlots = [];
@@ -2100,7 +2166,7 @@ function mountVmClient(fetchHandler) {
     return { renderCycle, settle, unmount, meta: sectionMeta };
   }
 
-  return { mountInstance, fetchCalls };
+  return { mountInstance, fetchCalls, locale: localeState, storage: storageMap, runPluginDisposers };
 }
 
 const collectText = (node, acc = []) => {
@@ -2167,6 +2233,7 @@ await test('client.js: runtime module registration, phase grouping, save, 409, r
     if (url === `/api/${NS}.route`) {
       const payload = JSON.parse(opts.body);
       if (routeResponseMode === '409') return new Response(JSON.stringify({ ok: false, error: 'stale mtime' }), { status: 409 });
+      if (routeResponseMode === '500') return new Response(JSON.stringify({ ok: false, error: 'write failed upstream trace-id-42' }), { status: 500 });
       const base = mockRoles.find((r) => r.id === payload.id);
       const nextProvider = payload.provider === null ? null : (payload.provider ?? base.provider);
       const nextModel = payload.model === null ? 'inherit' : (payload.model ?? base.model);
@@ -2294,6 +2361,24 @@ await test('client.js: runtime module registration, phase grouping, save, 409, r
   await zeta409Save.props.onClick();
   tree = app1.renderCycle();
   assert.ok(collectText(tree).some((t) => t.includes('Conflict/validation error (409)')));
+
+  routeResponseMode = 'ok';
+  const vmRaw = mountVmClient(async (url, opts) => {
+    if (url.startsWith(/api/ + NS + '.roles')) return new Response(JSON.stringify({ ok: true, roles: [mockRoles.find((r) => r.id === 'zeta-custom')] }), { status: 200 });
+    if (url.startsWith(/api/ + NS + '.catalog')) return new Response(JSON.stringify(mockCatalog), { status: 200 });
+    if (url === /api/ + NS + '.route') return new Response(JSON.stringify({ ok: false, error: 'write failed upstream trace-id-42' }), { status: 500 });
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  });
+  const appRaw = vmRaw.mountInstance();
+  let treeRaw = await appRaw.settle();
+  findNodes(treeRaw, (n) => n.type === 'input' && n.props['aria-label'] === 'Disable zeta-custom')[0].props.onChange({ target: { checked: true } });
+  treeRaw = appRaw.renderCycle();
+  const rawSave = findNodes(treeRaw, (n) => n.type === 'button' && n.props['aria-label'] === 'Save zeta-custom settings')[0];
+  assert.equal(rawSave.props.disabled, false);
+  await rawSave.props.onClick();
+  treeRaw = appRaw.renderCycle();
+  assert.ok(collectText(treeRaw).some((t) => t.includes('write failed upstream') && t.includes('trace-id-42')), 'a non-409 save failure must render the raw server detail as data via error.raw');
+  appRaw.unmount();
 
   failRolesNext = false;
   routeResponseMode = 'ok';
@@ -2538,6 +2623,658 @@ await test('client.js: untrusted catalog and card strings render as text, never 
   const htmlProps = findNodes(tree, (n) => n.props && (n.props.dangerouslySetInnerHTML !== undefined || n.props.innerHTML !== undefined));
   assert.equal(htmlProps.length, 0, 'no node may carry an HTML-injection prop');
   app.unmount();
+});
+
+const PANEL_KEYS = [
+  'nav.label',
+  'header.title',
+  'header.countsTitle',
+  'header.countRoles',
+  'header.countRouted',
+  'header.countInherit',
+  'header.countDisabled',
+  'refresh',
+  'refresh.busy',
+  'refresh.aria',
+  'tab.all',
+  'phase.discovery',
+  'phase.planning',
+  'phase.verification',
+  'phase.other',
+  'tablist.aria',
+  'status.routed',
+  'status.inherit',
+  'status.disabled',
+  'card.disabledSuffix',
+  'field.provider',
+  'field.providerHelp',
+  'field.providerAria',
+  'field.model',
+  'field.modelHelp',
+  'field.modelAria',
+  'field.effort',
+  'field.effortHelp',
+  'field.effortAria',
+  'inherit.label',
+  'effort.auto',
+  'effort.loading',
+  'effort.unavailable',
+  'effort.default',
+  'effort.none',
+  'effort.savedUnavailable',
+  'option.unavailable',
+  'option.withId',
+  'effort.errorLine',
+  'disabled.label',
+  'disabled.aria',
+  'save',
+  'save.busy',
+  'save.aria',
+  'notice.saved',
+  'notice.unchanged',
+  'error.conflict',
+  'banner.loadError',
+  'banner.catalogError',
+  'banner.invalidCards',
+  'banner.partialCatalog',
+  'banner.partialCatalogGeneric',
+  'banner.catalogEmpty',
+  'legend.summary',
+  'legend.provider',
+  'legend.providerText',
+  'legend.model',
+  'legend.modelText',
+  'legend.effort',
+  'legend.effortText',
+  'legend.disabled',
+  'legend.disabledText',
+  'legend.inherit',
+  'legend.inheritText',
+  'legend.subagent',
+  'legend.apply',
+  'legend.timing',
+  'empty.loading',
+  'empty.noRoles',
+  'empty.noGroup',
+  'locale.auto',
+  'locale.aria'
+];
+
+const FROZEN_PACK_FILES = [
+  'CHANGELOG.md',
+  'client.js',
+  'cordis.patch.yml',
+  'craft/agents/arch-advisor.md',
+  'craft/agents/browser-qa.md',
+  'craft/agents/debt-auditor.md',
+  'craft/agents/debugger.md',
+  'craft/agents/diff-reviewer.md',
+  'craft/agents/docs-scout.md',
+  'craft/agents/docs-sync.md',
+  'craft/agents/error-auditor.md',
+  'craft/agents/implementer.md',
+  'craft/agents/media-analyst.md',
+  'craft/agents/perf-auditor.md',
+  'craft/agents/plan-auditor.md',
+  'craft/agents/planner.md',
+  'craft/agents/repo-scout.md',
+  'craft/agents/run-conductor.md',
+  'craft/agents/scope-analyst.md',
+  'craft/agents/security-auditor.md',
+  'craft/agents/tech-writer.md',
+  'craft/agents/test-auditor.md',
+  'craft/agents/test-writer.md',
+  'craft/README.md',
+  'craft/skills/dev-flow/agents/arch-advisor.md',
+  'craft/skills/dev-flow/agents/browser-qa.md',
+  'craft/skills/dev-flow/agents/debt-auditor.md',
+  'craft/skills/dev-flow/agents/debugger.md',
+  'craft/skills/dev-flow/agents/diff-reviewer.md',
+  'craft/skills/dev-flow/agents/docs-scout.md',
+  'craft/skills/dev-flow/agents/docs-sync.md',
+  'craft/skills/dev-flow/agents/error-auditor.md',
+  'craft/skills/dev-flow/agents/implementer.md',
+  'craft/skills/dev-flow/agents/media-analyst.md',
+  'craft/skills/dev-flow/agents/perf-auditor.md',
+  'craft/skills/dev-flow/agents/plan-auditor.md',
+  'craft/skills/dev-flow/agents/planner.md',
+  'craft/skills/dev-flow/agents/repo-scout.md',
+  'craft/skills/dev-flow/agents/run-conductor.md',
+  'craft/skills/dev-flow/agents/scope-analyst.md',
+  'craft/skills/dev-flow/agents/security-auditor.md',
+  'craft/skills/dev-flow/agents/tech-writer.md',
+  'craft/skills/dev-flow/agents/test-auditor.md',
+  'craft/skills/dev-flow/agents/test-writer.md',
+  'craft/skills/dev-flow/playbooks/ai-estimates.md',
+  'craft/skills/dev-flow/playbooks/clonedeps.md',
+  'craft/skills/dev-flow/playbooks/codemap.md',
+  'craft/skills/dev-flow/playbooks/codemap/scripts/codemap.mjs',
+  'craft/skills/dev-flow/playbooks/deanchor.md',
+  'craft/skills/dev-flow/playbooks/deepwork.md',
+  'craft/skills/dev-flow/playbooks/reflect.md',
+  'craft/skills/dev-flow/playbooks/simplify.md',
+  'craft/skills/dev-flow/playbooks/step-back.md',
+  'craft/skills/dev-flow/playbooks/verification-planning.md',
+  'craft/skills/dev-flow/SKILL.md',
+  'docs/DETAIL.md',
+  'docs/preview.svg',
+  'docs/showcase.svg',
+  'icon.svg',
+  'index.js',
+  'LICENSE',
+  'locale/en.json',
+  'locale/pt-BR.json',
+  'locale/zh.json',
+  'package.json',
+  'README.md',
+  'README.pt-BR.md',
+  'README.zh-CN.md',
+  'scripts/test.mjs'
+];
+
+const localePanelOf = (lang) => JSON.parse(readFileSync(path.join(packageDir, 'locale', `${lang}.json`), 'utf8')).panel;
+
+await test('locale parity: en/pt-BR/zh panel key sets identical, values non-empty, frozen 72-key schema, meta preserved', () => {
+  const langs = ['en', 'pt-BR', 'zh'];
+  const docs = langs.map((lang) => JSON.parse(readFileSync(path.join(packageDir, 'locale', `${lang}.json`), 'utf8')));
+  for (const [index, doc] of docs.entries()) {
+    const lang = langs[index];
+    assert.ok(doc.panel && typeof doc.panel === 'object' && !Array.isArray(doc.panel), `locale/${lang}.json must carry a panel object`);
+    assert.deepEqual(Object.keys(doc.panel).sort(), [...PANEL_KEYS].sort(), `locale/${lang}.json panel keys must match the frozen 72-key schema`);
+    for (const key of PANEL_KEYS) {
+      assert.equal(typeof doc.panel[key], 'string', `locale/${lang}.json panel.${key} must be a string`);
+      assert.ok(doc.panel[key].trim().length > 0, `locale/${lang}.json panel.${key} must be non-empty`);
+    }
+    assert.equal(typeof doc.meta?.title, 'string', `locale/${lang}.json meta.title must stay a string`);
+    assert.ok(doc.meta.title.length > 0, `locale/${lang}.json meta.title must be non-empty`);
+    assert.equal(typeof doc.meta?.description, 'string', `locale/${lang}.json meta.description must stay a string`);
+    assert.ok(doc.meta.description.length > 0, `locale/${lang}.json meta.description must be non-empty`);
+    assert.equal(doc.meta.detail, 'docs/DETAIL.md', `locale/${lang}.json meta.detail must stay docs/DETAIL.md`);
+  }
+  const enPanel = docs[0].panel;
+  assert.equal(enPanel['notice.saved'], 'Saved — applies on the next turn / next subagent_role.');
+  assert.equal(enPanel['error.conflict'], 'Conflict/validation error (409): {detail}. Click "Refresh" to reload the latest state before saving.');
+  assert.equal(enPanel['header.countRoles'], ' roles · ');
+  assert.equal(enPanel['legend.timing'], 'Server timing — roles: {reads} ms · catalog: {catalog} ms');
+});
+
+await test('locale registration: embedded dictionaries sync with locale JSON panel sections; pt mirrors pt-BR; addLanguage pt-BR; inject slots+locale', async () => {
+  let probeModule = null;
+  const probeStorage = new Map();
+  const probeSandbox = createContext({
+    window: {
+      __ModuleLoader__: {
+        load(mod) { probeModule = mod; }
+      },
+      localStorage: {
+        getItem: (key) => (probeStorage.has(key) ? probeStorage.get(key) : null),
+        setItem: (key, value) => { probeStorage.set(key, String(value)); },
+        removeItem: (key) => { probeStorage.delete(key); }
+      }
+    }
+  });
+  runInContext(source, probeSandbox);
+  const probePlugin = probeModule.factory(() => ({ createElement() {}, useState() {}, useEffect() {} }));
+  assert.deepEqual([...probePlugin.inject], ['slots', 'locale'], 'the plugin must inject slots and locale');
+
+  const registrationHandler = async (url) => {
+    if (url.startsWith(`/api/${NS}.roles`)) {
+      return new Response(JSON.stringify({ ok: true, roles: [{ id: 'planner', name: 'planner', description: 'Plans the work', provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: null, disabled: false, mtimeMs: 1000 }] }), { status: 200 });
+    }
+    if (url.startsWith(`/api/${NS}.catalog`)) {
+      return new Response(JSON.stringify({ ok: true, available: true, degraded: false, default: null, groups: [{ provider: EXAMPLE_HUB, name: 'Example Hub', models: [{ id: 'flash-a', name: 'Flash A' }] }] }), { status: 200 });
+    }
+    if (url.startsWith(`/api/${NS}.efforts`)) return new Response(JSON.stringify({ ok: true, defaultEffort: 'medium', efforts: [{ id: 'high', name: 'High' }] }), { status: 200 });
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  };
+  const vm = mountVmClient(registrationHandler);
+  const realmNormalize = (value) => JSON.parse(JSON.stringify(value ?? null));
+  const registrations = vm.locale.registrations.filter((entry) => entry.ns === NS);
+  assert.equal(registrations.length, 4, 'the plugin must register exactly 4 faces for its namespace');
+  assert.deepEqual(registrations.map((entry) => entry.locale).sort(), ['en', 'pt', 'pt-BR', 'zh'], 'the registered locales must be en, pt-BR, pt and zh');
+  const faceOf = (locale) => registrations.find((entry) => entry.locale === locale)?.dict;
+  assert.deepEqual(realmNormalize(faceOf('en')), localePanelOf('en'), 'the registered en face must equal the en JSON panel');
+  assert.deepEqual(realmNormalize(faceOf('pt-BR')), localePanelOf('pt-BR'), 'the registered pt-BR face must equal the pt-BR JSON panel');
+  assert.deepEqual(realmNormalize(faceOf('pt')), localePanelOf('pt-BR'), 'the pt face must mirror the pt-BR panel');
+  assert.deepEqual(realmNormalize(faceOf('zh')), localePanelOf('zh'), 'the registered zh face must equal the zh JSON panel');
+  assert.deepEqual(realmNormalize(vm.locale.languages.find((entry) => entry.id === 'pt-BR')), { id: 'pt-BR', label: 'Português (BR)', fallback: 'en' }, 'addLanguage must offer pt-BR with an en fallback');
+  const app = vm.mountInstance();
+  const tree = await app.settle();
+  assert.ok(collectText(tree).includes(localePanelOf('en')['header.title']), 'the panel must mount and render with the locale stub');
+  app.unmount();
+
+  const vmDegraded = mountVmClient(registrationHandler, { addLanguageThrows: true });
+  assert.equal(vmDegraded.locale.registrations.filter((entry) => entry.ns === NS).length, 4, 'addLanguage failure must not drop dictionary registrations');
+  assert.equal(vmDegraded.locale.languages.length, 0, 'a throwing addLanguage must record no language');
+  const appDegraded = vmDegraded.mountInstance();
+  const treeDegraded = await appDegraded.settle();
+  assert.ok(collectText(treeDegraded).includes(localePanelOf('en')['header.title']), 'the panel must still render when addLanguage throws');
+  appDegraded.unmount();
+});
+
+await test('i18n structural gate: every panel string renders through t (sentinel bind) and all 72 keys are covered across driven states', async () => {
+  const enDoc = JSON.parse(readFileSync(path.join(packageDir, 'locale', 'en.json'), 'utf8'));
+  assert.ok(enDoc.panel && typeof enDoc.panel === 'object' && !Array.isArray(enDoc.panel), 'locale/en.json must carry a panel object for the key-coverage gate');
+  const requiredKeys = Object.keys(enDoc.panel);
+
+  const gateRoles = [
+    { id: 'planner', name: 'planner', description: 'Plans the work', provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: null, disabled: false, mtimeMs: 1000 },
+    { id: 'alpha-custom', name: 'alpha-custom', description: 'Custom A', provider: null, model: 'inherit', reasoningEffort: null, disabled: true, mtimeMs: 1000 },
+    { id: 'zeta-custom', name: 'zeta-custom', description: 'Custom Z', provider: null, model: 'inherit', reasoningEffort: null, disabled: false, mtimeMs: 1000 }
+  ];
+  const gateCatalog = { ok: true, available: true, degraded: false, default: null, groups: [{ provider: EXAMPLE_HUB, name: 'Example Hub', models: [{ id: 'flash-a', name: 'Flash A' }, { id: 'flash-b', name: 'Flash B' }] }] };
+  const gateEfforts = { ok: true, defaultEffort: 'medium', efforts: [{ id: 'high', name: 'High' }] };
+  const allowedData = new Set([
+    'planner', 'alpha-custom', 'zeta-custom', 'ghost-role',
+    'Plans the work', 'Custom A', 'Custom Z', 'Ghost route',
+    EXAMPLE_HUB, 'Example Hub', 'flash-a', 'flash-b', 'Flash A', 'Flash B', 'high', 'High',
+    'English', 'Português (BR)', '简体中文',
+    '—', '', '0', '1', '2', '3'
+  ]);
+  const observedKeys = new Set();
+  const sentinelRe = /^⟦([A-Za-z][A-Za-z0-9.]*)⟧$/;
+  const checkValue = (value) => {
+    const match = sentinelRe.exec(value);
+    if (match) {
+      observedKeys.add(match[1]);
+      return;
+    }
+    assert.ok(allowedData.has(value), `raw UI string ${JSON.stringify(value)} must render through t or be exact fixture data`);
+  };
+  const scanTree = (node) => {
+    if (typeof node === 'string' || typeof node === 'number') {
+      checkValue(String(node));
+      return;
+    }
+    if (node && typeof node === 'object') {
+      for (const prop of ['aria-label', 'title']) {
+        const value = node.props?.[prop];
+        if (typeof value === 'string') checkValue(value);
+      }
+      for (const child of node.children ?? []) scanTree(child);
+    }
+  };
+  const cardOf = (tree, id) => findNodes(tree, (n) => n.props?.key === id)[0];
+  const checkboxOf = (card) => findNodes(card, (n) => n.type === 'input' && n.props.type === 'checkbox')[0];
+  const saveOf = (card) => findNodes(card, (n) => n.type === 'button' && n.props['aria-label'] === '⟦save.aria⟧')[0];
+
+  let routeMode = 'ok';
+  let holdRoute = null;
+  let holdRoles = null;
+  const gateHandler = async (url, opts) => {
+    if (url.startsWith(`/api/${NS}.roles`)) {
+      if (holdRoles) {
+        return new Promise((resolve) => {
+          holdRoles = () => resolve(new Response(JSON.stringify({ ok: true, roles: gateRoles }), { status: 200 }));
+        });
+      }
+      return new Response(JSON.stringify({ ok: true, roles: gateRoles }), { status: 200 });
+    }
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify(gateCatalog), { status: 200 });
+    if (url.startsWith(`/api/${NS}.efforts`)) return new Response(JSON.stringify(gateEfforts), { status: 200 });
+    if (url === `/api/${NS}.route`) {
+      const payload = JSON.parse(opts.body);
+      const base = gateRoles.find((role) => role.id === payload.id);
+      if (holdRoute) {
+        return new Promise((resolve) => {
+          holdRoute = () => resolve(new Response(JSON.stringify({ ok: true, role: { ...base, disabled: payload.disabled ?? base.disabled, mtimeMs: base.mtimeMs + 10 } }), { status: 200 }));
+        });
+      }
+      if (routeMode === '409') return new Response(JSON.stringify({ ok: false, error: 'stale mtime' }), { status: 409 });
+      if (routeMode === 'unchanged') return new Response(JSON.stringify({ ok: true, unchanged: true, role: { ...base, disabled: payload.disabled ?? base.disabled } }), { status: 200 });
+      return new Response(JSON.stringify({ ok: true, role: { ...base, disabled: payload.disabled ?? base.disabled, mtimeMs: base.mtimeMs + 10 } }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  };
+
+  const vm1 = mountVmClient(gateHandler, { sentinelBind: true });
+  const app1 = vm1.mountInstance();
+  assert.equal(app1.meta.label(), '⟦nav.label⟧', 'the nav label must resolve through bind');
+  checkValue(app1.meta.label());
+  let tree1 = await app1.settle();
+  scanTree(tree1);
+
+  checkboxOf(cardOf(tree1, 'zeta-custom')).props.onChange({ target: { checked: true } });
+  tree1 = app1.renderCycle();
+  holdRoute = true;
+  const savePending = saveOf(cardOf(tree1, 'zeta-custom')).props.onClick();
+  tree1 = await app1.settle(false);
+  scanTree(tree1);
+  assert.ok(collectText(tree1).includes('⟦save.busy⟧'), 'an in-flight save must render save.busy through t');
+  holdRoute();
+  holdRoute = null;
+  await savePending;
+  tree1 = await app1.settle();
+  scanTree(tree1);
+  assert.ok(collectText(tree1).includes('⟦notice.saved⟧'), 'a successful save must render notice.saved through t');
+
+  holdRoles = true;
+  findNodes(tree1, (n) => n.type === 'button' && n.props['aria-label'] === '⟦refresh.aria⟧')[0].props.onClick();
+  tree1 = await app1.settle(false);
+  scanTree(tree1);
+  assert.ok(collectText(tree1).includes('⟦refresh.busy⟧'), 'an in-flight refresh must render refresh.busy through t');
+  holdRoles();
+  holdRoles = null;
+  tree1 = await app1.settle();
+  scanTree(tree1);
+
+  routeMode = '409';
+  checkboxOf(cardOf(tree1, 'zeta-custom')).props.onChange({ target: { checked: true } });
+  tree1 = app1.renderCycle();
+  await saveOf(cardOf(tree1, 'zeta-custom')).props.onClick();
+  tree1 = app1.renderCycle();
+  scanTree(tree1);
+  assert.ok(collectText(tree1).includes('⟦error.conflict⟧'), 'a 409 save must render error.conflict through t');
+
+  routeMode = 'unchanged';
+  await saveOf(cardOf(tree1, 'zeta-custom')).props.onClick();
+  tree1 = app1.renderCycle();
+  scanTree(tree1);
+  assert.ok(collectText(tree1).includes('⟦notice.unchanged⟧'), 'an unchanged save must render notice.unchanged through t');
+  app1.unmount();
+
+  const vmTiming = mountVmClient(async (url) => {
+    if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles: gateRoles }), { status: 200, headers: { 'server-timing': 'reads;dur=12.3' } });
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify(gateCatalog), { status: 200, headers: { 'server-timing': 'catalog;dur=45.6' } });
+    if (url.startsWith(`/api/${NS}.efforts`)) return new Response(JSON.stringify(gateEfforts), { status: 200 });
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  }, { sentinelBind: true });
+  const appTiming = vmTiming.mountInstance();
+  const treeTiming = await appTiming.settle();
+  scanTree(treeTiming);
+  assert.ok(collectText(treeTiming).includes('⟦legend.timing⟧'), 'server-timing responses must render legend.timing through t');
+  appTiming.unmount();
+
+  let resolveEffort = null;
+  let effortStarted = null;
+  const effortReady = new Promise((resolve) => { effortStarted = resolve; });
+  const vmEffort = mountVmClient(async (url) => {
+    if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles: [gateRoles[0]] }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify(gateCatalog), { status: 200 });
+    if (url.startsWith(`/api/${NS}.efforts`)) {
+      return new Promise((resolve) => {
+        resolveEffort = resolve;
+        effortStarted();
+      });
+    }
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  }, { sentinelBind: true });
+  const appEffort = vmEffort.mountInstance();
+  await appEffort.settle(false);
+  await effortReady;
+  let treeEffort = appEffort.renderCycle();
+  scanTree(treeEffort);
+  assert.ok(collectText(treeEffort).includes('⟦effort.loading⟧'), 'a held efforts fetch must render effort.loading through t');
+  resolveEffort(new Response(JSON.stringify({ ok: false, error: 'temp down' }), { status: 503 }));
+  treeEffort = await appEffort.settle();
+  scanTree(treeEffort);
+  assert.ok(collectText(treeEffort).includes('⟦effort.unavailable⟧'), 'a failed efforts fetch must render effort.unavailable through t');
+  assert.ok(collectText(treeEffort).includes('⟦effort.errorLine⟧'), 'a failed efforts fetch must render effort.errorLine through t');
+  appEffort.unmount();
+
+  const vmStates = mountVmClient(async (url) => {
+    if (url.startsWith(`/api/${NS}.roles`)) {
+      return new Response(JSON.stringify({
+        ok: true,
+        roles: [
+          { ...gateRoles[0], reasoningEffort: 'xhigh' },
+          { id: 'ghost-role', name: 'ghost-role', description: 'Ghost route', provider: 'ghost', model: 'flash-a', reasoningEffort: null, disabled: false, mtimeMs: 1000 },
+          gateRoles[2]
+        ]
+      }), { status: 200 });
+    }
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify(gateCatalog), { status: 200 });
+    if (url.startsWith(`/api/${NS}.efforts`)) return new Response(JSON.stringify({ ok: true, defaultEffort: null, efforts: [] }), { status: 200 });
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  }, { sentinelBind: true });
+  const appStates = vmStates.mountInstance();
+  const treeStates = await appStates.settle();
+  scanTree(treeStates);
+  for (const key of ['effort.none', 'effort.auto', 'effort.savedUnavailable', 'option.unavailable']) {
+    assert.ok(collectText(treeStates).includes(`⟦${key}⟧`), `${key} must render through t in the effort/provider edge states`);
+  }
+  appStates.unmount();
+
+  const vmEmpty = mountVmClient(async (url) => {
+    if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles: [] }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify(gateCatalog), { status: 200 });
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  }, { sentinelBind: true });
+  const appEmpty = vmEmpty.mountInstance();
+  const treeInitial = appEmpty.renderCycle();
+  scanTree(treeInitial);
+  assert.ok(collectText(treeInitial).includes('⟦empty.loading⟧'), 'the initial render must show empty.loading through t');
+  const treeEmpty = await appEmpty.settle();
+  scanTree(treeEmpty);
+  assert.ok(collectText(treeEmpty).includes('⟦empty.noRoles⟧'), 'an empty role list must render empty.noRoles through t');
+  appEmpty.unmount();
+
+  const vmGroup = mountVmClient(async (url) => {
+    if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles: [gateRoles[0]] }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify(gateCatalog), { status: 200 });
+    if (url.startsWith(`/api/${NS}.efforts`)) return new Response(JSON.stringify(gateEfforts), { status: 200 });
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  }, { sentinelBind: true });
+  const appGroup = vmGroup.mountInstance();
+  let treeGroup = await appGroup.settle();
+  findNodes(treeGroup, (n) => n.type === 'button' && n.props.role === 'tab' && n.children[0] === '⟦phase.discovery⟧')[0].props.onClick();
+  treeGroup = appGroup.renderCycle();
+  scanTree(treeGroup);
+  assert.ok(collectText(treeGroup).includes('⟦empty.noGroup⟧'), 'an empty phase group must render empty.noGroup through t');
+  appGroup.unmount();
+
+  const okRolesReply = () => new Response(JSON.stringify({ ok: true, roles: gateRoles }), { status: 200 });
+  const bannerCases = [
+    {
+      roles: () => new Response(JSON.stringify({ ok: false, error: 'roles boom' }), { status: 500 }),
+      catalog: () => new Response(JSON.stringify({ ok: false, error: 'catalog boom' }), { status: 500 }),
+      keys: ['banner.loadError', 'banner.catalogError']
+    },
+    {
+      roles: () => new Response(JSON.stringify({ ok: true, roles: gateRoles, invalid: [{ id: 'broken-card', error: 'bad yaml' }] }), { status: 200 }),
+      catalog: () => new Response(JSON.stringify({ ...gateCatalog, degraded: true, failedProviders: ['ghost'] }), { status: 200 }),
+      keys: ['banner.invalidCards', 'banner.partialCatalog']
+    },
+    {
+      roles: okRolesReply,
+      catalog: () => new Response(JSON.stringify({ ...gateCatalog, degraded: true, failedProviders: [] }), { status: 200 }),
+      keys: ['banner.partialCatalogGeneric']
+    },
+    {
+      roles: okRolesReply,
+      catalog: () => new Response(JSON.stringify({ ok: true, available: true, degraded: false, default: null, groups: [] }), { status: 200 }),
+      keys: ['banner.catalogEmpty']
+    }
+  ];
+  for (const bannerCase of bannerCases) {
+    const vmBanner = mountVmClient(async (url) => {
+      if (url.startsWith(`/api/${NS}.roles`)) return bannerCase.roles();
+      if (url.startsWith(`/api/${NS}.catalog`)) return bannerCase.catalog();
+      if (url.startsWith(`/api/${NS}.efforts`)) return new Response(JSON.stringify(gateEfforts), { status: 200 });
+      return new Response(JSON.stringify({ ok: false }), { status: 404 });
+    }, { sentinelBind: true });
+    const appBanner = vmBanner.mountInstance();
+    const treeBanner = await appBanner.settle();
+    scanTree(treeBanner);
+    for (const key of bannerCase.keys) {
+      assert.ok(collectText(treeBanner).includes(`⟦${key}⟧`), `${key} must render through t in the banner states`);
+    }
+    appBanner.unmount();
+  }
+
+  const missingKeys = requiredKeys.filter((key) => !observedKeys.has(key));
+  assert.deepEqual(missingKeys, [], 'every panel dictionary key must render through t in at least one driven state');
+});
+
+const PANEL_RENDERABLE_KEYS = new Set([
+  'header.title', 'header.countsTitle', 'header.countRouted', 'header.countInherit', 'header.countDisabled', 'header.countRoles',
+  'refresh', 'refresh.aria',
+  'tab.all', 'tablist.aria',
+  'phase.discovery', 'phase.planning', 'phase.verification', 'phase.other',
+  'status.routed', 'status.inherit', 'status.disabled',
+  'field.provider', 'field.providerHelp', 'field.model', 'field.modelHelp', 'field.effort', 'field.effortHelp', 'disabled.label', 'save',
+  'inherit.label', 'effort.auto',
+  'locale.auto', 'locale.aria',
+  'legend.provider', 'legend.providerText', 'legend.model', 'legend.modelText', 'legend.effort', 'legend.effortText', 'legend.disabled', 'legend.disabledText', 'legend.inherit', 'legend.inheritText', 'legend.subagent', 'legend.apply', 'legend.summary'
+]);
+
+await test('panel language switch: override renders pt-BR/zh from dictionaries, Auto follows host, best-effort localStorage persists and restores, storage failure degrades to host language', async () => {
+  const switchRoles = [
+    { id: 'planner', name: 'planner', description: 'Plans the work', provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: null, disabled: false, mtimeMs: 1000 },
+    { id: 'zeta-custom', name: 'zeta-custom', description: 'Custom Z', provider: null, model: 'inherit', reasoningEffort: null, disabled: false, mtimeMs: 1000 }
+  ];
+  const switchCatalog = { ok: true, available: true, degraded: false, default: null, groups: [{ provider: EXAMPLE_HUB, name: 'Example Hub', models: [{ id: 'flash-a', name: 'Flash A' }, { id: 'flash-b', name: 'Flash B' }] }] };
+  const switchHandler = async (url) => {
+    if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles: switchRoles }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify(switchCatalog), { status: 200 });
+    if (url.startsWith(`/api/${NS}.efforts`)) return new Response(JSON.stringify({ ok: true, defaultEffort: 'medium', efforts: [{ id: 'high', name: 'High' }] }), { status: 200 });
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  };
+  const languageSelectOf = (tree, aria) => findNodes(tree, (n) => n.type === 'select' && n.props['aria-label'] === aria)[0];
+
+  const vm = mountVmClient(switchHandler);
+  const app = vm.mountInstance();
+  let tree = await app.settle();
+  assert.ok(languageSelectOf(tree, 'Panel language'), 'the header must render a panel language select labelled by locale.aria');
+  const enPanel = localePanelOf('en');
+  const ptPanel = localePanelOf('pt-BR');
+  const zhPanel = localePanelOf('zh');
+  assert.ok(collectText(tree).includes(enPanel['header.title']), 'the default render must use the host language (en)');
+
+  languageSelectOf(tree, enPanel['locale.aria']).props.onChange({ target: { value: 'pt-BR' } });
+  tree = app.renderCycle();
+  assert.ok(collectText(tree).includes(ptPanel['header.title']), 'the pt-BR override must render the pt-BR dictionary header');
+  assert.ok(findNodes(tree, (n) => n.type === 'button' && n.children[0] === ptPanel['save']).length > 0, 'the pt-BR override must render translated save buttons');
+  assert.equal(findNodes(tree, (n) => n.type === 'button' && n.props.role === 'tab' && n.children[0] === ptPanel['phase.discovery']).length, 1, 'the pt-BR override must translate the discovery phase tab');
+  assert.ok(languageSelectOf(tree, ptPanel['locale.aria']), 'the pt-BR override must translate the select aria-label');
+  assert.equal(vm.storage.get('dsh-orchestrator-kit.locale'), 'pt-BR', 'the override must persist to localStorage');
+
+  app.unmount();
+  const appRemount = vm.mountInstance();
+  let treeRemount = await appRemount.settle();
+  assert.ok(collectText(treeRemount).includes(ptPanel['header.title']), 'a fresh instance on the same vm must restore the stored override');
+  const remountSelect = languageSelectOf(treeRemount, ptPanel['locale.aria']);
+  assert.ok(remountSelect, 'the restored override must keep the translated select aria-label');
+  assert.equal(remountSelect.props.value, 'pt-BR', 'the restored override must select pt-BR');
+
+  remountSelect.props.onChange({ target: { value: '' } });
+  treeRemount = appRemount.renderCycle();
+  assert.ok(collectText(treeRemount).includes(enPanel['header.title']), 'Auto must return to the host language');
+  assert.equal(vm.storage.has('dsh-orchestrator-kit.locale'), false, 'Auto must clear the stored override');
+
+  vm.locale.active = 'zh';
+  vm.locale.revision += 1;
+  for (const fn of [...vm.locale.listeners]) fn();
+  treeRemount = appRemount.renderCycle();
+  assert.ok(collectText(treeRemount).includes(zhPanel['header.title']), 'Auto must follow a host language switch to zh');
+  const autoSelect = languageSelectOf(treeRemount, zhPanel['locale.aria']);
+  assert.ok(autoSelect, 'Auto must translate the select aria-label with the host language');
+
+  autoSelect.props.onChange({ target: { value: 'zh' } });
+  treeRemount = appRemount.renderCycle();
+  assert.ok(collectText(treeRemount).includes(zhPanel['header.title']), 'the zh override must render the zh dictionary');
+  assert.equal(vm.storage.get('dsh-orchestrator-kit.locale'), 'zh', 'the zh override must persist to localStorage');
+  appRemount.unmount();
+
+  const vmThrow = mountVmClient(switchHandler, { storage: 'throw' });
+  const appThrow = vmThrow.mountInstance();
+  const treeThrow = await appThrow.settle();
+  assert.ok(collectText(treeThrow).includes(enPanel['header.title']), 'storage failure must degrade to the host language without crashing');
+  const throwSelect = languageSelectOf(treeThrow, enPanel['locale.aria']);
+  assert.ok(throwSelect, 'the language select must still render when storage throws');
+  assert.equal(throwSelect.props.value, '', 'storage failure must leave the override unset');
+  throwSelect.props.onChange({ target: { value: 'pt-BR' } });
+  const treeThrowSwitched = appThrow.renderCycle();
+  assert.ok(collectText(treeThrowSwitched).includes(ptPanel['header.title']), 'a manual switch must still work in memory when storage throws');
+  appThrow.unmount();
+
+  const storageSeed = new Map([['dsh-orchestrator-kit.locale', 'zh']]);
+  const vmRestore = mountVmClient(switchHandler, { storageMap: storageSeed });
+  const appRestore = vmRestore.mountInstance();
+  const treeRestore = await appRestore.settle();
+  assert.ok(collectText(treeRestore).includes(zhPanel['header.title']), 'a fresh module load must restore the override from pre-seeded localStorage');
+  assert.equal(languageSelectOf(treeRestore, zhPanel['locale.aria']).props.value, 'zh', 'the restored select must show the seeded override');
+  appRestore.unmount();
+
+  const vmInterp = mountVmClient(switchHandler);
+  const appInterp = vmInterp.mountInstance();
+  let treeInterp = await appInterp.settle();
+  const interpSelect = languageSelectOf(treeInterp, enPanel['locale.aria']);
+  interpSelect.props.onChange({ target: { value: 'pt-BR' } });
+  treeInterp = appInterp.renderCycle();
+  assert.ok(collectText(treeInterp).includes('Padrão (medium)'), 'the makeT interpolation must render the {effort} param through the pt-BR effort.default template');
+  const interpNode = findNodes(treeInterp, (n) => n.type === 'option' && n.children[0] === 'Flash A (flash-a)')[0];
+  assert.ok(interpNode, 'the makeT interpolation must render the {id} param in the pt-BR model option');
+  appInterp.unmount();
+  vmInterp.runPluginDisposers();
+  assert.equal(vmInterp.locale.registrations.length, 0, 'plugin disposal must unregister every dictionary face');
+  assert.equal(vmInterp.locale.languages.length, 0, 'plugin disposal must remove the added pt-BR language');
+
+  const vmEnValues = mountVmClient(switchHandler);
+  const appEnValues = vmEnValues.mountInstance();
+  const treeEnValues = await appEnValues.settle();
+  const enDict = localePanelOf('en');
+  const scanEnValues = (node, acc) => {
+    if (typeof node === 'string' || typeof node === 'number') { acc.push(String(node)); return acc; }
+    if (node && typeof node === 'object') {
+      for (const prop of ['aria-label', 'title']) {
+        const value = node.props?.[prop];
+        if (typeof value === 'string') acc.push(value);
+      }
+      for (const child of node.children ?? []) scanEnValues(child, acc);
+    }
+    return acc;
+  };
+  const renderedStrings = scanEnValues(treeEnValues, []).join('\n');
+  for (const [key, value] of Object.entries(enDict)) {
+    if (!PANEL_RENDERABLE_KEYS.has(key)) continue;
+    assert.ok(renderedStrings.includes(value), 'the en value for ' + key + ' must render in the driven panel state');
+  }
+  appEnValues.unmount();
+  vmEnValues.runPluginDisposers();
+});
+
+await test('npm pack: dry-run file list matches the frozen 69-entry contract and packed content passes the forbidden-token scan', () => {
+  const dryRun = spawnSync('npm pack --dry-run --json', { cwd: packageDir, encoding: 'utf8', shell: true });
+  assert.equal(dryRun.status, 0, `npm pack --dry-run must succeed: ${dryRun.stderr}`);
+  const parsed = JSON.parse(dryRun.stdout);
+  assert.equal(parsed[0].filename, `${PKG.name}-${PKG.version}.tgz`);
+  assert.equal(parsed[0].entryCount, 69);
+  assert.deepEqual(parsed[0].files.map((entry) => entry.path).sort(), [...FROZEN_PACK_FILES].sort(), 'the packed file set must match the frozen 69-entry contract');
+
+  const tmp = mkdtempSync(path.join(tmpdir(), 'pack-scan-'));
+  try {
+    const packed = spawnSync('npm pack --pack-destination ' + JSON.stringify(tmp), { cwd: packageDir, encoding: 'utf8', shell: true });
+    assert.equal(packed.status, 0, `npm pack must succeed: ${packed.stderr}`);
+    const tarball = path.join(tmp, `${PKG.name}-${PKG.version}.tgz`);
+    const extracted = spawnSync('tar', ['-xzf', tarball, '-C', tmp], { encoding: 'utf8' });
+    assert.equal(extracted.status, 0, `tar extraction must succeed: ${extracted.stderr}`);
+    const packedRoot = path.join(tmp, 'package');
+    const packedFiles = [];
+    const visit = (dir) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) visit(full);
+        else if (entry.isFile()) packedFiles.push(full);
+      }
+    };
+    visit(packedRoot);
+    const relPaths = packedFiles.map((file) => path.relative(packedRoot, file).split(path.sep).join('/')).sort();
+    assert.deepEqual(relPaths, [...FROZEN_PACK_FILES].sort(), 'the extracted tarball content must match the frozen 69-entry contract');
+    for (const file of packedFiles) {
+      const rel = path.relative(packedRoot, file).split(path.sep).join('/');
+      const text = readFileSync(file, 'utf8').toLowerCase();
+      for (const token of FORBIDDEN_TOKENS) {
+        assert.ok(!text.includes(token.toLowerCase()), `packed ${rel} must not contain a forbidden machine token`);
+      }
+      assert.ok(!text.includes(BAK_LITERAL.toLowerCase()), `packed ${rel} must not reference backup artifacts`);
+    }
+    const packedPkg = JSON.parse(readFileSync(path.join(packedRoot, 'package.json'), 'utf8'));
+    assert.equal(packedPkg.name, PKG.name);
+    assert.equal(packedPkg.version, PKG.version);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
 });
 
 const codemapScript = path.join(packageDir, 'craft', 'skills', 'dev-flow', 'playbooks', 'codemap', 'scripts', 'codemap.mjs');

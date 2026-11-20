@@ -64,6 +64,8 @@ Unconfigured roles use `model: inherit` — they follow the chat's routing. Over
 
 The panel lays the roles out as a responsive card grid. A segmented filter at the top switches between All roles, the three Craft phases and Other (arrow keys move between tabs). A collapsible legend explains what each control does, each card carries a status badge (Routed, Inherits chat or Disabled), and the header summarizes the saved counts.
 
+The panel follows the harness language by default: English, Português (BR) and 简体中文 are fully translated, and other host languages fall back to English for panel text. A select in the header switches the panel between Auto (host language), English, Português (BR) and 简体中文 — it changes only the panel, never the harness language. The choice is remembered for the browser session through best-effort `localStorage`; on Desktop the local origin port can change between app restarts, so the override may not survive an app restart. If storage is unavailable, the panel silently follows the host language.
+
 Saving settings identical to the card's current ones is a no-op: the panel answers "Already up to date" and nothing is written. Cards with invalid frontmatter are named in a warning banner and cannot be edited here until the frontmatter is fixed.
 
 The panel talks to four routes: `GET /api/dsh-orchestrator-kit.roles`, `GET /api/dsh-orchestrator-kit.catalog`, `GET /api/dsh-orchestrator-kit.efforts` and `POST /api/dsh-orchestrator-kit.route`. Successful responses carry a `Server-Timing` header (durations only) when a timing metric was measured — roles reads, catalog reads, route validation and writes; an unchanged save that ran no route validation carries none. The legend shows the last load timings.
@@ -137,6 +139,12 @@ No. Routes are applied when DSH dispatches members through `subagent_role`, whic
 
 **Do I need provider API keys?**
 No. The kit has no embedded providers — the selects list what the harness catalog already offers, with the credentials the harness itself holds.
+
+**Which languages does the panel support?**
+English, Português (BR) and 简体中文 (en/pt-BR/zh). The panel follows the harness language by default, and the header select switches the panel manually without touching the harness language. While the plugin is active, Português (BR) also becomes a selectable harness language (removed when the plugin is deactivated), and generic Portuguese (`pt`) resolves to the pt-BR dictionary. Role names, card content, provider/model/effort names and counts are data and stay as-is.
+
+**How do I add or fix a translation?**
+Edit the `panel` object in `locale/<lang>.json`, then mirror the change verbatim into `PANEL_DICTS` in `client.js`. The test suite enforces parity — identical key sets across the three locale files and registered dictionaries identical to the JSON `panel` sections — so any drift fails the suite.
 
 ## Contributing
 

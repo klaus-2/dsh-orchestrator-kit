@@ -62,7 +62,9 @@ graph TD
 | **Save** | 先做 fail-closed 校验，再原子写入。 |
 | **重置 — 会话默认（继承）** | 将角色恢复为 `model: inherit`。 |
 
-面板以响应式卡片网格布局角色。顶部分段过滤器可在 All roles、三个 Craft 阶段与 Other 之间切换（方向键在标签间移动）。可折叠图例说明每个控件的作用，每张卡片带状态徽标（Routed、Inherits chat 或 Disabled），页眉汇总已保存的计数。控件标签以英文显示。
+面板以响应式卡片网格布局角色。顶部分段过滤器可在 All roles、三个 Craft 阶段与 Other 之间切换（方向键在标签间移动）。可折叠图例说明每个控件的作用，每张卡片带状态徽标（Routed、Inherits chat 或 Disabled），页眉汇总已保存的计数。
+
+面板默认跟随 harness 语言：English、Português (BR) 与 简体中文 提供完整翻译，其他宿主语言的面板文本回退到英文。页眉中的下拉框可在自动（宿主语言）、English、Português (BR) 与 简体中文 之间切换面板语言 — 只改变面板，绝不改变 harness 语言。该选择通过尽力而为的 `localStorage` 在当前浏览器会话内记住；在桌面端，本地源端口可能在应用重启之间变化，因此覆盖选择可能无法在应用重启后保留。若存储不可用，面板会静默跟随宿主语言。
 
 保存与卡片当前完全相同的设置是一次空操作：面板会提示 “Already up to date”，不会写入任何内容。frontmatter 无效的卡片会在警告横幅中列出，在 frontmatter 修复之前无法在此编辑。
 
@@ -137,6 +139,12 @@ graph TD
 
 **需要 provider 的 API 密钥吗？**
 不需要。本套件不内置 provider — 下拉列表显示 harness 目录已有的内容，凭据由 harness 自身持有。
+
+**面板支持哪些语言？**
+English、Português (BR) 与 简体中文（en/pt-BR/zh）。面板默认跟随 harness 语言，页眉下拉框可手动切换面板语言，不影响 harness 语言。插件激活期间，Português (BR) 也会成为可选的 harness 语言（停用插件时移除），通用葡萄牙语（`pt`）解析到 pt-BR 词典。角色名称、卡片内容、provider/模型/力度名称与计数属于数据，保持原样。
+
+**如何添加或修正翻译？**
+编辑 `locale/<lang>.json` 中的 `panel` 对象，并将改动逐字镜像到 `client.js` 的 `PANEL_DICTS`。测试套件强制保持同步 — 三个 locale 文件的键集合必须一致，注册的词典必须与 JSON 的 `panel` 部分完全相同 — 任何漂移都会导致测试失败。
 
 ## 贡献
 
