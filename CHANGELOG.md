@@ -20,6 +20,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Locale parity and sync tests: the three `locale/*.json` files must carry identical panel key sets against a frozen 72-key schema, and the dictionaries embedded in `client.js` must deep-equal the JSON `panel` sections.
 - Structural t-usage gate: a sentinel-bind render matrix proves every panel string flows through the locale system and all 72 dictionary keys are exercised.
 - `npm pack` guard: the dry-run file list must match a frozen 69-entry contract, and every file extracted from a real tarball is scanned for forbidden tokens.
+- View controls on the settings panel: a search box (role name or description), a status filter (All statuses / Routed / Inherits chat / Disabled), a sort select (by name, routed first, inherits first — applied within each section) and a density select (cards or compact one-line rows). All compose AND-style with the phase tabs, and a filtered-out view shows a distinct no-match state. Each tab shows its routed / inherit / disabled breakdown in saved state.
+- Unsaved-changes protection: editing a card marks it unsaved (amber border and an " (unsaved)" name suffix), leaving the page with dirty drafts triggers the browser's leave confirmation, Ctrl+S / Cmd+S saves the focused card, and unsaved drafts survive section remounts via mtime-keyed hoisting — kept only while the card's server mtime still matches the stored base, discarded when an external edit changed the card. The plain Refresh button still resets drafts.
+- Undo last save: every successful save offers a per-card Undo that restores the pre-save settings; one level per card, session-only, never persisted. The undo request carries the recorded post-save `mtimeMs`, so a card changed on disk in between answers `409` with the conflict message.
+- Corrective actions on save errors: a `409` conflict message gains a "Reload saved state, keep edits" action that re-reads the saved state and reapplies the draft without ever resending the stale `mtimeMs`; a `409` on a save that set a reasoning effort adds a hint pointing at the effort select. The 503 lock-timeout response keeps its server-provided guidance.
+- Accessible save feedback: a shared polite live region announces the last save or undo outcome, the header counts act as a polite live region, and a saved card keeps a green border until the next change (cleared by interaction, not timers).
+- Effective-route hint on inherit cards (shows the chat-default provider / model when the harness catalog exposes one) and `content-visibility` space reservation on comfortable grid cards.
+- Same-session panel prefs: tab choice, legend state and density persist through best-effort `localStorage` with the same semantics as the language override; search and sort are transient.
 
 ### Changed
 
@@ -30,6 +37,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A held writer lock now returns an actionable 503 error (`code: 'lock-timeout'`) naming the relative lock file with retry and operator guidance, instead of a generic 500; lock files are never removed automatically.
 - Panel strings (labels, badges, notices, banners, legend, empty states) resolve through the locale system and re-translate live on language switch; role, catalog and effort names and counts remain untranslated data. Phase tabs and sections are keyed by stable ids (`discovery` / `planning` / `verification` / `other`); rendered English text is unchanged.
 - The English-only test policy is replaced by trilingual parity: locale key parity, registered-dictionary sync and the structural t-usage gate (user decision).
+- Remounting the settings panel skips the catalog refetch while a cached catalog exists (roles always refetch; an explicit refresh always refetches both).
 
 ### Security
 

@@ -96,7 +96,30 @@ window.__ModuleLoader__.load({
         'empty.noRoles': 'No role cards found in the agent roles directory.',
         'empty.noGroup': 'No roles in this group yet. Add role cards to the agent roles directory to fill it.',
         'locale.auto': 'Auto (host language)',
-        'locale.aria': 'Panel language'
+        'locale.aria': 'Panel language',
+        'search.aria': 'Search roles',
+        'search.placeholder': 'Filter by name or description',
+        'empty.noMatch': 'No roles match the current search or filter.',
+        'filter.status.aria': 'Filter roles by status',
+        'filter.status.all': 'All statuses',
+        'sort.aria': 'Sort roles',
+        'sort.name': 'By name',
+        'sort.routedFirst': 'Routed first',
+        'sort.inheritsFirst': 'Inherits first',
+        'density.aria': 'Density',
+        'density.comfortable': 'Cards',
+        'density.compact': 'Compact list',
+        'tab.breakdownTitle': 'Routed / inherit / disabled counts for this tab',
+        'card.inheritHint': 'Inherits chat default: {provider} / {model}',
+        'card.dirtySuffix': ' (unsaved)',
+        'card.sealTitle': 'Changed during this session',
+        'undo.aria': 'Undo last save for {name}',
+        'undo.label': 'Undo',
+        'undo.busy': 'Undoing…',
+        'notice.undo': 'Undone — the previous settings are restored.',
+        'error.action.reget': 'Reload saved state, keep edits',
+        'error.action.regetAria': 'Reload saved state and keep edits for {name}',
+        'error.hint.effort': 'The chosen reasoning effort may not be supported by this route — check the Reasoning effort select.'
       },
       'pt-br': {
         'nav.label': 'Orchestrator',
@@ -170,7 +193,30 @@ window.__ModuleLoader__.load({
         'empty.noRoles': 'Nenhum cartão de papel encontrado no diretório de papéis do agente.',
         'empty.noGroup': 'Ainda não há papéis neste grupo. Adicione cartões de papel ao diretório de papéis do agente para preenchê-lo.',
         'locale.auto': 'Automático (idioma do host)',
-        'locale.aria': 'Idioma do painel'
+        'locale.aria': 'Idioma do painel',
+        'search.aria': 'Pesquisar papéis',
+        'search.placeholder': 'Filtrar por nome ou descrição',
+        'empty.noMatch': 'Nenhum papel corresponde à busca ou ao filtro atual.',
+        'filter.status.aria': 'Filtrar papéis por status',
+        'filter.status.all': 'Todos os status',
+        'sort.aria': 'Ordenar papéis',
+        'sort.name': 'Por nome',
+        'sort.routedFirst': 'Roteados primeiro',
+        'sort.inheritsFirst': 'Herdados primeiro',
+        'density.aria': 'Densidade',
+        'density.comfortable': 'Cartões',
+        'density.compact': 'Lista compacta',
+        'tab.breakdownTitle': 'Contagens de roteados / herdados / desativados nesta aba',
+        'card.inheritHint': 'Herdando o padrão do chat: {provider} / {model}',
+        'card.dirtySuffix': ' (não salvo)',
+        'card.sealTitle': 'Alterado nesta sessão',
+        'undo.aria': 'Desfazer o último salvamento de {name}',
+        'undo.label': 'Desfazer',
+        'undo.busy': 'Desfazendo…',
+        'notice.undo': 'Desfeito — as configurações anteriores foram restauradas.',
+        'error.action.reget': 'Recarregar estado salvo, manter edições',
+        'error.action.regetAria': 'Recarregar estado salvo e manter as edições de {name}',
+        'error.hint.effort': 'O esforço de raciocínio escolhido pode não ser suportado por esta rota — verifique a seleção de Esforço de raciocínio.'
       },
       zh: {
         'nav.label': 'Orchestrator',
@@ -244,7 +290,30 @@ window.__ModuleLoader__.load({
         'empty.noRoles': '在代理角色目录中未找到角色卡。',
         'empty.noGroup': '此分组暂无角色。向代理角色目录添加角色卡以填充。',
         'locale.auto': '自动（宿主语言）',
-        'locale.aria': '面板语言'
+        'locale.aria': '面板语言',
+        'search.aria': '搜索角色',
+        'search.placeholder': '按名称或描述筛选',
+        'empty.noMatch': '没有符合当前搜索或筛选条件的角色。',
+        'filter.status.aria': '按状态筛选角色',
+        'filter.status.all': '全部状态',
+        'sort.aria': '排序角色',
+        'sort.name': '按名称',
+        'sort.routedFirst': '已路由优先',
+        'sort.inheritsFirst': '继承优先',
+        'density.aria': '密度',
+        'density.comfortable': '卡片',
+        'density.compact': '紧凑列表',
+        'tab.breakdownTitle': '此标签页的已路由 / 继承 / 已禁用计数',
+        'card.inheritHint': '继承对话默认：{provider} / {model}',
+        'card.dirtySuffix': '（未保存）',
+        'card.sealTitle': '本次会话中已更改',
+        'undo.aria': '撤销 {name} 的上次保存',
+        'undo.label': '撤销',
+        'undo.busy': '撤销中…',
+        'notice.undo': '已撤销 — 已恢复之前的设置。',
+        'error.action.reget': '重新加载已保存状态，保留修改',
+        'error.action.regetAria': '重新加载 {name} 的已保存状态并保留修改',
+        'error.hint.effort': '所选的推理强度可能不受此路由支持 — 请检查推理强度选择框。'
       }
     };
     PANEL_DICTS.pt = PANEL_DICTS['pt-br'];
@@ -279,6 +348,47 @@ window.__ModuleLoader__.load({
 
     let localeOverride = readStoredLocale();
 
+    const draftStore = new Map();
+    const storeKeyOf = (id, baseMtimeMs) => `${id}:${baseMtimeMs}`;
+    const pruneStoreFor = (store, id) => {
+      for (const key of [...store.keys()]) {
+        if (key.split(':')[0] === id) store.delete(key);
+      }
+    };
+    const undoSnapshots = new Map();
+    const sessionChangedIds = new Set();
+
+    const PREFS_STORAGE_KEY = 'dsh-orchestrator-kit.prefs';
+    const TAB_IDS = ['all', 'discovery', 'planning', 'verification', 'other'];
+    const DENSITY_OPTIONS = ['comfortable', 'compact'];
+
+    function readStoredPrefs() {
+      try {
+        const raw = window.localStorage.getItem(PREFS_STORAGE_KEY);
+        if (raw === null) return {};
+        const parsed = JSON.parse(raw);
+        if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+        const prefs = {};
+        if (TAB_IDS.includes(parsed.tab)) prefs.tab = parsed.tab;
+        if (typeof parsed.legend === 'boolean') prefs.legend = parsed.legend;
+        if (DENSITY_OPTIONS.includes(parsed.density)) prefs.density = parsed.density;
+        return prefs;
+      } catch {
+        return {};
+      }
+    }
+
+    function writeStoredPrefs(value) {
+      try {
+        window.localStorage.setItem(PREFS_STORAGE_KEY, JSON.stringify(value));
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    let storedPrefs = readStoredPrefs();
+
     const SURFACE_TINT = 'rgba(127,127,127,0.08)';
     const controlStyle = { background: 'var(--dsw-alias-bg-base)', color: 'var(--dsw-alias-label-primary)', border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 8, padding: 8, fontSize: 13, width: '100%', minWidth: 0 };
     const buttonStyle = { background: 'none', border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 8, padding: '8px 12px', color: 'var(--dsw-alias-label-primary)', fontSize: 12, fontWeight: 500, cursor: 'pointer' };
@@ -301,6 +411,7 @@ window.__ModuleLoader__.load({
     const statusBadgeStyle = (tone) => ({ display: 'inline-flex', alignItems: 'center', gap: 6, borderRadius: 999, padding: '4px 8px', fontSize: 11, fontWeight: 500, background: tone.background, color: 'var(--dsw-alias-label-primary)', flex: 'none' });
     const statStyle = { fontWeight: 600, color: 'var(--dsw-alias-label-primary)', fontVariantNumeric: 'tabular-nums' };
     const bannerStyle = (kind) => ({ fontSize: 12, borderRadius: 8, padding: '8px 12px', color: 'var(--dsw-alias-label-primary)', background: kind === 'error' ? 'rgba(239,68,68,0.10)' : kind === 'warning' ? 'rgba(245,158,11,0.10)' : SURFACE_TINT });
+    const srOnlyStyle = { position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0, 0, 0, 0)', whiteSpace: 'nowrap', border: 0 };
 
     const effortKeyOf = (provider, model) => JSON.stringify([provider, model]);
 
@@ -353,6 +464,29 @@ window.__ModuleLoader__.load({
       return { role: data.role, unchanged: data.unchanged === true };
     }
 
+    async function runCardLoop(cards, runOne, options = {}) {
+      const results = [];
+      let aborted = false;
+      for (const card of cards) {
+        if (typeof options.alive === 'function' && !options.alive()) {
+          aborted = true;
+          break;
+        }
+        try {
+          const outcome = await runOne(card);
+          results.push({ id: card.id, ok: true, ...outcome });
+        } catch (error) {
+          const status = typeof error?.status === 'number' ? error.status : null;
+          results.push({ id: card.id, ok: false, status, detail: String(error?.message ?? error) });
+          if (status !== 409) {
+            aborted = true;
+            break;
+          }
+        }
+      }
+      return { results, aborted };
+    }
+
     const normalizeDraft = (role) => ({
       provider: role.provider ?? '',
       model: role.model === 'inherit' ? '' : (role.model ?? ''),
@@ -401,17 +535,39 @@ window.__ModuleLoader__.load({
 
     function createSettings(ctx) {
       const hostT = ctx.locale.bind(NS);
+      let focusedCardId = null;
       return function OrchestratorSettings() {
         const [mountToken] = React.useState(() => Symbol());
         const [tracker] = React.useState(() => ({ saves: 0 }));
+        const [mountState] = React.useState(() => ({ mounted: true }));
+        React.useEffect(() => () => { mountState.mounted = false; }, []);
         const [roles, setRoles] = React.useState(rolesCache);
         const [catalog, setCatalog] = React.useState(catalogCache);
-        const [drafts, setDrafts] = React.useState(() => (rolesCache ? Object.fromEntries(rolesCache.map((role) => [role.id, normalizeDraft(role)])) : null));
+        const [drafts, setDrafts] = React.useState(() => {
+          if (!rolesCache) return null;
+          for (const key of [...draftStore.keys()]) {
+            const [id, base] = key.split(':');
+            const role = rolesCache.find((entry) => entry.id === id);
+            if (!role || role.mtimeMs !== Number(base)) draftStore.delete(key);
+          }
+          return Object.fromEntries(rolesCache.map((role) => {
+            const stored = draftStore.get(storeKeyOf(role.id, role.mtimeMs));
+            return [role.id, stored ? stored.draft : normalizeDraft(role)];
+          }));
+        });
         const [messages, setMessages] = React.useState({});
         const [savingId, setSavingId] = React.useState(null);
         const [refreshing, setRefreshing] = React.useState(false);
         const [loadTick, setLoadTick] = React.useState(0);
-        const [activeTab, setActiveTab] = React.useState('all');
+        const [activeTabState, setActiveTabState] = React.useState(storedPrefs.tab ?? 'all');
+        const [lastNotice, setLastNotice] = React.useState(null);
+        const [highlightId, setHighlightId] = React.useState(null);
+        const [undoingId, setUndoingId] = React.useState(null);
+        const [search, setSearch] = React.useState('');
+        const [statusFilter, setStatusFilter] = React.useState('all');
+        const [sortMode, setSortMode] = React.useState('name');
+        const [density, setDensity] = React.useState(storedPrefs.density ?? 'comfortable');
+        const [legendOpen, setLegendOpen] = React.useState(storedPrefs.legend ?? true);
         const [, setEffortsTick] = React.useState(0);
         const [, setLocaleTick] = React.useState(0);
         React.useEffect(() => ctx.locale.subscribe(() => setLocaleTick((n) => n + 1)), []);
@@ -422,12 +578,18 @@ window.__ModuleLoader__.load({
           writeStoredLocale(localeOverride);
           setLocaleTick((n) => n + 1);
         };
+        const setActiveTab = (id) => {
+          setActiveTabState(id);
+          storedPrefs = { ...storedPrefs, tab: id };
+          writeStoredPrefs(storedPrefs);
+        };
 
         React.useEffect(() => {
           let alive = true;
           const startSaves = tracker.saves;
           setRefreshing(true);
-          Promise.allSettled([fetchJson(ROLES_ROUTE), fetchJson(CATALOG_ROUTE)])
+          const catalogRequest = loadTick === 0 && catalogCache !== null ? null : fetchJson(CATALOG_ROUTE);
+          Promise.allSettled([fetchJson(ROLES_ROUTE), catalogRequest])
             .then(([rolesOutcome, catalogOutcome]) => {
               if (!alive) return;
               if (rolesOutcome.status === 'fulfilled' && Array.isArray(rolesOutcome.value?.roles)) {
@@ -439,7 +601,15 @@ window.__ModuleLoader__.load({
                   }
                   rolesCache = list;
                   setRoles(list);
-                  setDrafts(Object.fromEntries(list.map((role) => [role.id, normalizeDraft(role)])));
+                  setDrafts(Object.fromEntries(list.map((role) => {
+                    const fresh = normalizeDraft(role);
+                    if (loadTick !== 0) return [role.id, fresh];
+                    for (const key of [...draftStore.keys()]) {
+                      const [id, base] = key.split(':');
+                      if (id === role.id && role.mtimeMs === Number(base)) return [role.id, draftStore.get(key).draft];
+                    }
+                    return [role.id, fresh];
+                  })));
                   setMessages((current) => {
                     const next = { ...current };
                     delete next.__load;
@@ -458,7 +628,14 @@ window.__ModuleLoader__.load({
                 setMessages((current) => ({ ...current, __load: { kind: 'error', key: 'banner.loadError', params: { error: String(error?.message ?? error) } } }));
               }
 
-              if (catalogOutcome.status === 'fulfilled' && Array.isArray(catalogOutcome.value?.groups)) {
+              if (catalogRequest === null) {
+                setCatalog(catalogCache);
+                setMessages((current) => {
+                  const next = { ...current };
+                  delete next.__catalog;
+                  return next;
+                });
+              } else if (catalogOutcome.status === 'fulfilled' && Array.isArray(catalogOutcome.value?.groups)) {
                 const catalogReply = catalogOutcome.value;
                 catalogCache = {
                   available: catalogReply.available !== false,
@@ -488,6 +665,22 @@ window.__ModuleLoader__.load({
             });
           return () => { alive = false; };
         }, [loadTick]);
+
+        React.useEffect(() => {
+          if (typeof window.addEventListener !== 'function') return undefined;
+          const handler = (event) => {
+            const dirtyNow = roles !== null && drafts !== null && Object.entries(drafts).some(([id, draft]) => {
+              const role = roles.find((entry) => entry.id === id);
+              return role ? evaluateDraftState(draft, normalizeDraft(role), false).dirty : false;
+            });
+            if (dirtyNow) {
+              event.preventDefault();
+              event.returnValue = '';
+            }
+          };
+          window.addEventListener('beforeunload', handler);
+          return () => window.removeEventListener('beforeunload', handler);
+        }, [roles, drafts]);
 
         React.useEffect(() => {
           if (!drafts) return undefined;
@@ -548,6 +741,7 @@ window.__ModuleLoader__.load({
 
         const refreshAll = () => {
           setMessages({});
+          setHighlightId(null);
           setLoadTick((n) => n + 1);
         };
 
@@ -556,10 +750,39 @@ window.__ModuleLoader__.load({
         const catalogPartialWarning = !messages.__catalog && catalog?.degraded === true && !catalogEmpty;
         const modelsOf = (provider) => groups.find((group) => group.provider === provider)?.models ?? [];
 
-        const setDraft = (id, patch) => setDrafts((current) => ({ ...current, [id]: { ...current[id], ...patch } }));
+        const setDraft = (id, patch) => {
+          setHighlightId(null);
+          setDrafts((current) => {
+            const next = { ...current, [id]: { ...current[id], ...patch } };
+            const role = (rolesCache ?? []).find((entry) => entry.id === id);
+            if (role) {
+              pruneStoreFor(draftStore, id);
+              draftStore.set(storeKeyOf(id, role.mtimeMs), { baseMtimeMs: role.mtimeMs, draft: next[id] });
+            }
+            return next;
+          });
+        };
+
+        const retryAfterConflict = async (id) => {
+          try {
+            const reply = await fetchJson(ROLES_ROUTE);
+            if (!Array.isArray(reply?.roles)) return;
+            rolesCache = reply.roles;
+            setRoles(reply.roles);
+            setMessages((current) => ({ ...current, [id]: undefined }));
+            const kept = drafts?.[id];
+            const fresh = reply.roles.find((entry) => entry.id === id);
+            if (kept && fresh) {
+              pruneStoreFor(draftStore, id);
+              draftStore.set(storeKeyOf(id, fresh.mtimeMs), { baseMtimeMs: fresh.mtimeMs, draft: kept });
+            }
+          } catch (error) {
+            setMessages((current) => ({ ...current, [id]: { kind: 'error', key: 'error.raw', params: { detail: String(error?.message ?? error) } } }));
+          }
+        };
 
         const save = async (role) => {
-          const busy = roles === null || drafts === null || savingId !== null || refreshing;
+          const busy = roles === null || drafts === null || savingId !== null || undoingId !== null || refreshing;
           const draft = drafts?.[role.id];
           if (busy || !draft) return;
           const base = normalizeDraft(role);
@@ -582,24 +805,100 @@ window.__ModuleLoader__.load({
           }
 
           setSavingId(role.id);
+          setHighlightId(null);
           setMessages((current) => ({ ...current, [role.id]: undefined }));
           try {
             const { role: saved, unchanged } = await postSettings(payload);
             tracker.saves += 1;
+            pruneStoreFor(undoSnapshots, role.id);
+            undoSnapshots.set(storeKeyOf(role.id, role.mtimeMs), {
+              id: role.id,
+              baseMtimeMs: role.mtimeMs,
+              postMtimeMs: saved.mtimeMs,
+              summary: {
+                provider: base.provider === '' ? null : base.provider,
+                model: base.model === '' ? null : base.model,
+                reasoningEffort: base.reasoningEffort === '' ? null : base.reasoningEffort,
+                disabled: base.disabled
+              }
+            });
+            sessionChangedIds.add(role.id);
             const nextRoles = (rolesCache ?? roles ?? []).map((entry) => (entry.id === role.id ? saved : entry));
             rolesCache = nextRoles;
             setRoles(nextRoles);
             setDrafts((current) => ({ ...current, [role.id]: normalizeDraft(saved) }));
-            setMessages((current) => ({ ...current, [role.id]: { kind: 'ok', key: unchanged ? 'notice.unchanged' : 'notice.saved' } }));
+            pruneStoreFor(draftStore, role.id);
+            const message = { kind: 'ok', key: unchanged ? 'notice.unchanged' : 'notice.saved' };
+            setLastNotice(message);
+            setMessages((current) => ({ ...current, [role.id]: message }));
+            setHighlightId(role.id);
           } catch (error) {
             const detail = String(error?.message ?? error);
             const message = error?.status === 409
-              ? { kind: 'error', key: 'error.conflict', params: { detail } }
+              ? { kind: 'error', key: 'error.conflict', params: { detail, ...(payload.reasoningEffort !== undefined ? { effortHint: true } : {}) } }
               : { kind: 'error', key: 'error.raw', params: { detail } };
+            setLastNotice(message);
             setMessages((current) => ({ ...current, [role.id]: message }));
           } finally {
             setSavingId(null);
           }
+        };
+
+        const undoEntryFor = (role) => {
+          for (const entry of undoSnapshots.values()) {
+            if (entry.id === role.id && entry.postMtimeMs === role.mtimeMs) return entry;
+          }
+          return null;
+        };
+
+        const undo = async (role) => {
+          const entry = undoEntryFor(role);
+          const busy = roles === null || drafts === null || savingId !== null || undoingId !== null || refreshing || entry === null;
+          if (busy) return;
+          setUndoingId(role.id);
+          setHighlightId(null);
+          setMessages((current) => ({ ...current, [role.id]: undefined }));
+          const payload = {
+            id: role.id,
+            expectedMtimeMs: entry.postMtimeMs,
+            provider: entry.summary.provider,
+            model: entry.summary.model,
+            disabled: entry.summary.disabled,
+            reasoningEffort: entry.summary.reasoningEffort
+          };
+          try {
+            const { results } = await runCardLoop([payload], (card) => postSettings(card), {
+              alive: () => mountState.mounted
+            });
+            const result = results[0];
+            if (result.ok) {
+              tracker.saves += 1;
+              const nextRoles = (rolesCache ?? roles ?? []).map((entry2) => (entry2.id === role.id ? result.role : entry2));
+              rolesCache = nextRoles;
+              setRoles(nextRoles);
+              setDrafts((current) => ({ ...current, [role.id]: normalizeDraft(result.role) }));
+              undoSnapshots.delete(storeKeyOf(role.id, entry.baseMtimeMs));
+              const notice = { kind: 'ok', key: result.unchanged ? 'notice.unchanged' : 'notice.undo' };
+              setLastNotice(notice);
+              setMessages((current) => ({ ...current, [role.id]: notice }));
+              setHighlightId(role.id);
+            } else {
+              const message = result.status === 409
+                ? { kind: 'error', key: 'error.conflict', params: { detail: result.detail, ...(payload.reasoningEffort !== undefined ? { effortHint: true } : {}) } }
+                : { kind: 'error', key: 'error.raw', params: { detail: result.detail } };
+              setLastNotice(message);
+              setMessages((current) => ({ ...current, [role.id]: message }));
+            }
+          } finally {
+            setUndoingId(null);
+          }
+        };
+
+        const onPanelKeyDown = (event) => {
+          if (!(event.ctrlKey || event.metaKey) || event.key !== 's') return;
+          event.preventDefault();
+          const role = (roles ?? []).find((entry) => entry.id === focusedCardId);
+          if (role) save(role);
         };
 
         const messageText = (message) => (message.key === 'error.raw' ? message.params.detail : t(message.key, message.params));
@@ -609,12 +908,42 @@ window.__ModuleLoader__.load({
           control,
           h('div', { style: fieldHelpStyle }, help));
 
-        const renderCard = (role) => {
+        const statusOf = (role) => (role.disabled === true ? 'disabled' : role.provider && role.model && role.model !== 'inherit' ? 'routed' : 'inherit');
+        const STATUS_RANKS = { name: null, routedFirst: { routed: 0, inherit: 1, disabled: 2 }, inheritsFirst: { inherit: 0, disabled: 1, routed: 2 } };
+        const byName = (left, right) => left.name.localeCompare(right.name);
+        const sortRoles = (list) => {
+          const rank = STATUS_RANKS[sortMode];
+          if (!rank) return [...list].sort(byName);
+          return [...list].sort((left, right) => (rank[statusOf(left)] - rank[statusOf(right)]) || byName(left, right));
+        };
+        const query = search.toLowerCase();
+        const matchesSearch = (role) => query === '' || role.name.toLowerCase().includes(query) || (typeof role.description === 'string' && role.description.toLowerCase().includes(query));
+        const matchesStatus = (role) => statusFilter === 'all' || statusOf(role) === statusFilter;
+        const visibleRoles = (list) => sortRoles(list.filter((role) => matchesSearch(role) && matchesStatus(role)));
+
+        const baseSections = roles ? groupRoles(roles) : [];
+        const sections = baseSections.map((section) => ({ ...section, roles: visibleRoles(section.roles) }));
+        const total = roles?.length ?? 0;
+        const routedCount = roles?.filter((role) => role.provider && role.model && role.model !== 'inherit').length ?? 0;
+        const disabledCount = roles?.filter((role) => role.disabled === true).length ?? 0;
+        const countOf = (id) => baseSections.find((section) => section.id === id)?.roles.length ?? 0;
+
+        const breakdownOf = (id) => {
+          const list = id === 'all' ? (roles ?? []) : (baseSections.find((section) => section.id === id)?.roles ?? []);
+          return {
+            routed: list.filter((role) => statusOf(role) === 'routed').length,
+            inherit: list.filter((role) => statusOf(role) === 'inherit').length,
+            disabled: list.filter((role) => statusOf(role) === 'disabled').length
+          };
+        };
+        const breakdownText = (id) => { const counts = breakdownOf(id); return `${counts.routed}/${counts.inherit}/${counts.disabled}`; };
+
+        const renderCard = (role, compact = false) => {
           const draft = drafts?.[role.id] ?? normalizeDraft(role);
           const base = normalizeDraft(role);
           const message = messages[role.id];
           const state = evaluateDraftState(draft, base, catalogEmpty);
-          const busy = roles === null || drafts === null || savingId !== null || refreshing;
+          const busy = roles === null || drafts === null || savingId !== null || undoingId !== null || refreshing;
           const isInherit = state.isInherit;
           const effortEntry = !isInherit ? effortsCache.get(effortKeyOf(draft.provider, draft.model)) : null;
           const effortLoading = effortEntry?.status === 'loading';
@@ -627,111 +956,158 @@ window.__ModuleLoader__.load({
           const saveDisabled = busy || state.saveBlocked;
           const tone = statusTone(draft.disabled, isInherit);
           const phaseTone = PHASE_TONE[phaseOf(role.id)] ?? PHASE_TONE.other;
+          const dirty = state.dirty;
+          const inheritHint = isInherit && catalog?.default?.provider && catalog?.default?.model
+            ? t('card.inheritHint', { provider: catalog.default.provider, model: catalog.default.model })
+            : null;
+          const sealDot = sessionChangedIds.has(role.id) && !dirty
+            ? h('span', { title: t('card.sealTitle'), style: dotStyle('var(--dsw-alias-state-info-primary, #4f8cff)') })
+            : null;
+          const cardAccent = {
+            ...(dirty ? { borderColor: 'var(--dsw-alias-state-warning-primary, #f59e0b)' } : {}),
+            ...(highlightId === role.id ? { borderColor: 'var(--dsw-alias-state-success-primary, #22c55e)' } : {})
+          };
+          const compactControlStyle = { ...controlStyle, width: 'auto', flex: '1 1 140px', minWidth: 0 };
+          const providerSelect = h('select', {
+            value: draft.provider,
+            disabled: busy || catalogEmpty,
+            style: compact ? compactControlStyle : controlStyle,
+            'aria-label': t('field.providerAria', { name: role.name }),
+            onChange: (event) => {
+              const provider = event.target.value;
+              if (provider === '') {
+                setDraft(role.id, { provider: '', model: '', reasoningEffort: '' });
+                return;
+              }
+              const keepsModel = modelsOf(provider).some((model) => model.id === draft.model);
+              setDraft(role.id, {
+                provider,
+                model: keepsModel ? draft.model : '',
+                reasoningEffort: keepsModel ? draft.reasoningEffort : ''
+              });
+            }
+          },
+            h('option', { value: '' }, t('inherit.label')),
+            providerMissing ? h('option', { value: draft.provider }, t('option.unavailable', { name: draft.provider })) : null,
+            groups.map((group) => h('option', { key: group.provider, value: group.provider }, group.name)));
+          const modelSelect = h('select', {
+            value: draft.model,
+            disabled: busy || catalogEmpty || draft.provider === '',
+            style: compact ? compactControlStyle : controlStyle,
+            'aria-label': t('field.modelAria', { name: role.name }),
+            onChange: (event) => {
+              const nextModel = event.target.value;
+              setDraft(role.id, {
+                model: nextModel,
+                reasoningEffort: nextModel === draft.model ? draft.reasoningEffort : ''
+              });
+            }
+          },
+            h('option', { value: '' }, t('inherit.label')),
+            modelMissing ? h('option', { value: draft.model }, t('option.unavailable', { name: draft.model })) : null,
+            providerModels.map((model) => h('option', { key: model.id, value: model.id }, model.name === model.id ? model.name : t('option.withId', { name: model.name, id: model.id }))));
+          const effortSelect = h('select', {
+            value: isInherit ? '' : draft.reasoningEffort,
+            disabled: effortDisabled,
+            style: compact ? compactControlStyle : controlStyle,
+            'aria-label': t('field.effortAria', { name: role.name }),
+            onChange: (event) => setDraft(role.id, { reasoningEffort: event.target.value })
+          },
+            h('option', { value: '' },
+              isInherit
+                ? t('effort.auto')
+                : effortLoading
+                  ? t('effort.loading')
+                  : effortEntry?.status === 'error'
+                    ? t('effort.unavailable')
+                    : effortEntry?.defaultEffort
+                      ? t('effort.default', { effort: effortEntry.defaultEffort })
+                      : efforts.length === 0
+                        ? t('effort.none')
+                        : t('effort.auto')),
+            !isInherit && effortMissing ? h('option', { value: draft.reasoningEffort }, t('effort.savedUnavailable', { effort: draft.reasoningEffort })) : null,
+            efforts.map((effort) => h('option', { key: effort.id, value: effort.id, title: effort.description },
+              effort.name === effort.id ? effort.name : t('option.withId', { name: effort.name, id: effort.id }))));
+          const undoButton = undoEntryFor(role) ? h('button', {
+            type: 'button',
+            onClick: () => undo(role),
+            disabled: busy || undoingId !== null,
+            style: buttonStyle,
+            'aria-label': t('undo.aria', { name: role.name })
+          }, undoingId === role.id ? t('undo.busy') : t('undo.label')) : null;
+          const saveButton = h('button', {
+            type: 'button',
+            onClick: () => save(role),
+            disabled: saveDisabled,
+            style: saveDisabled ? { ...buttonStyle, opacity: 0.5 } : primaryButtonStyle,
+            'aria-label': t('save.aria', { name: role.name })
+          }, savingId === role.id ? t('save.busy') : t('save'));
+          const disabledControl = h('label', { style: { display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--dsw-alias-label-secondary)', cursor: busy ? 'default' : 'pointer', padding: '4px 0' } },
+            h('input', {
+              type: 'checkbox',
+              checked: draft.disabled,
+              disabled: busy,
+              'aria-label': t('disabled.aria', { name: role.name }),
+              onChange: (event) => setDraft(role.id, { disabled: event.target.checked })
+            }),
+            t('disabled.label'));
+          const messageBlock = message ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, ...(compact ? { flexBasis: '100%' } : {}), color: message.kind === 'ok' ? 'var(--dsw-alias-state-success-primary, #22c55e)' : 'var(--dsw-alias-state-error-primary, #ef4444)' } },
+            messageText(message),
+            message.key === 'error.conflict' ? h('button', { type: 'button', onClick: () => retryAfterConflict(role.id), style: { ...buttonStyle, fontSize: 11, padding: '4px 8px', alignSelf: 'flex-start' }, 'aria-label': t('error.action.regetAria', { name: role.name }) }, t('error.action.reget')) : null,
+            message.key === 'error.conflict' && message.params?.effortHint ? h('div', { style: { fontSize: 11 } }, t('error.hint.effort')) : null) : null;
+          const nameChildren = [role.name, draft.disabled ? t('card.disabledSuffix') : '', dirty ? t('card.dirtySuffix') : ''];
 
-          return h('div', { key: role.id, style: { ...cardStyle, opacity: draft.disabled ? 0.7 : 1 } },
+          if (compact) {
+            return h('div', {
+              key: role.id,
+              style: { ...cardStyle, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, padding: 8, opacity: draft.disabled ? 0.7 : 1, ...cardAccent },
+              onFocusCapture: () => { focusedCardId = role.id; }
+            },
+              h('span', { title: role.description ?? role.name, style: { fontSize: 13, fontWeight: 600, color: 'var(--dsw-alias-label-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 } }, ...nameChildren),
+              inheritHint ? h('span', { style: { fontSize: 11, color: 'var(--dsw-alias-label-tertiary)', flex: 'none' } }, inheritHint) : null,
+              sealDot,
+              h('span', { style: statusBadgeStyle(tone) }, h('span', { style: dotStyle(tone.dot) }), t(tone.key)),
+              providerSelect,
+              modelSelect,
+              effortSelect,
+              disabledControl,
+              undoButton,
+              saveButton,
+              messageBlock);
+          }
+          return h('div', {
+            key: role.id,
+            style: { ...cardStyle, opacity: draft.disabled ? 0.7 : 1, contentVisibility: 'auto', containIntrinsicSize: 'auto 220px', ...cardAccent },
+            onFocusCapture: () => { focusedCardId = role.id; }
+          },
             h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 } },
               h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 } },
                 h('span', { style: dotStyle(phaseTone) }),
-                h('span', { title: role.name, style: { fontSize: 13, fontWeight: 600, color: 'var(--dsw-alias-label-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, role.name, draft.disabled ? t('card.disabledSuffix') : '')),
-              h('span', { style: statusBadgeStyle(tone) }, h('span', { style: dotStyle(tone.dot) }), t(tone.key))),
+                h('span', { title: role.name, style: { fontSize: 13, fontWeight: 600, color: 'var(--dsw-alias-label-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, ...nameChildren)),
+              h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, flex: 'none' } },
+                sealDot,
+                h('span', { style: statusBadgeStyle(tone) }, h('span', { style: dotStyle(tone.dot) }), t(tone.key)))),
             role.description ? h('div', { title: role.description, style: { fontSize: 12, color: 'var(--dsw-alias-label-tertiary)', lineHeight: '16px' } }, role.description) : null,
+            inheritHint ? h('div', { style: { fontSize: 11, color: 'var(--dsw-alias-label-tertiary)' } }, inheritHint) : null,
             h('div', { style: { display: 'flex', flexDirection: 'column', gap: 12 } },
-              renderField(t('field.provider'), t('field.providerHelp'),
-                h('select', {
-                  value: draft.provider,
-                  disabled: busy || catalogEmpty,
-                  style: controlStyle,
-                  'aria-label': t('field.providerAria', { name: role.name }),
-                  onChange: (event) => {
-                    const provider = event.target.value;
-                    if (provider === '') {
-                      setDraft(role.id, { provider: '', model: '', reasoningEffort: '' });
-                      return;
-                    }
-                    const keepsModel = modelsOf(provider).some((model) => model.id === draft.model);
-                    setDraft(role.id, {
-                      provider,
-                      model: keepsModel ? draft.model : '',
-                      reasoningEffort: keepsModel ? draft.reasoningEffort : ''
-                    });
-                  }
-                },
-                  h('option', { value: '' }, t('inherit.label')),
-                  providerMissing ? h('option', { value: draft.provider }, t('option.unavailable', { name: draft.provider })) : null,
-                  groups.map((group) => h('option', { key: group.provider, value: group.provider }, group.name)))),
-              renderField(t('field.model'), t('field.modelHelp'),
-                h('select', {
-                  value: draft.model,
-                  disabled: busy || catalogEmpty || draft.provider === '',
-                  style: controlStyle,
-                  'aria-label': t('field.modelAria', { name: role.name }),
-                  onChange: (event) => {
-                    const nextModel = event.target.value;
-                    setDraft(role.id, {
-                      model: nextModel,
-                      reasoningEffort: nextModel === draft.model ? draft.reasoningEffort : ''
-                    });
-                  }
-                },
-                  h('option', { value: '' }, t('inherit.label')),
-                  modelMissing ? h('option', { value: draft.model }, t('option.unavailable', { name: draft.model })) : null,
-                  providerModels.map((model) => h('option', { key: model.id, value: model.id }, model.name === model.id ? model.name : t('option.withId', { name: model.name, id: model.id }))))),
-              renderField(t('field.effort'), t('field.effortHelp'),
-                h('select', {
-                  value: isInherit ? '' : draft.reasoningEffort,
-                  disabled: effortDisabled,
-                  style: controlStyle,
-                  'aria-label': t('field.effortAria', { name: role.name }),
-                  onChange: (event) => setDraft(role.id, { reasoningEffort: event.target.value })
-                },
-                  h('option', { value: '' },
-                    isInherit
-                      ? t('effort.auto')
-                      : effortLoading
-                        ? t('effort.loading')
-                        : effortEntry?.status === 'error'
-                          ? t('effort.unavailable')
-                          : effortEntry?.defaultEffort
-                            ? t('effort.default', { effort: effortEntry.defaultEffort })
-                            : efforts.length === 0
-                              ? t('effort.none')
-                              : t('effort.auto')),
-                  !isInherit && effortMissing ? h('option', { value: draft.reasoningEffort }, t('effort.savedUnavailable', { effort: draft.reasoningEffort })) : null,
-                  efforts.map((effort) => h('option', { key: effort.id, value: effort.id, title: effort.description },
-                    effort.name === effort.id ? effort.name : t('option.withId', { name: effort.name, id: effort.id })))))),
+              renderField(t('field.provider'), t('field.providerHelp'), providerSelect),
+              renderField(t('field.model'), t('field.modelHelp'), modelSelect),
+              renderField(t('field.effort'), t('field.effortHelp'), effortSelect)),
             effortEntry?.status === 'error' ? h('div', { style: { fontSize: 11, color: 'var(--dsw-alias-label-tertiary)' } }, t('effort.errorLine', { error: effortEntry.error })) : null,
-            message ? h('div', { style: { fontSize: 12, color: message.kind === 'ok' ? 'var(--dsw-alias-state-success-primary, #22c55e)' : 'var(--dsw-alias-state-error-primary, #ef4444)' } }, messageText(message)) : null,
+            messageBlock,
             h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, borderTop: '1px solid var(--dsw-alias-border-l1)', paddingTop: 12 } },
-              h('label', { style: { display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--dsw-alias-label-secondary)', cursor: busy ? 'default' : 'pointer', padding: '4px 0' } },
-                h('input', {
-                  type: 'checkbox',
-                  checked: draft.disabled,
-                  disabled: busy,
-                  'aria-label': t('disabled.aria', { name: role.name }),
-                  onChange: (event) => setDraft(role.id, { disabled: event.target.checked })
-                }),
-                t('disabled.label')),
-              h('button', {
-                type: 'button',
-                onClick: () => save(role),
-                disabled: saveDisabled,
-                style: saveDisabled ? { ...buttonStyle, opacity: 0.5 } : primaryButtonStyle,
-                'aria-label': t('save.aria', { name: role.name })
-              }, savingId === role.id ? t('save.busy') : t('save'))));
+              disabledControl,
+              undoButton,
+              saveButton));
         };
 
-        const sections = roles ? groupRoles(roles) : [];
-        const total = roles?.length ?? 0;
-        const routedCount = roles?.filter((role) => role.provider && role.model && role.model !== 'inherit').length ?? 0;
-        const disabledCount = roles?.filter((role) => role.disabled === true).length ?? 0;
-        const countOf = (id) => sections.find((section) => section.id === id)?.roles.length ?? 0;
         const tabs = [
           { id: 'all', labelKey: 'tab.all', count: total },
           ...PHASE_SECTIONS.map((phase) => ({ id: phase.id, labelKey: 'phase.' + phase.id, count: countOf(phase.id) })),
           { id: 'other', labelKey: 'phase.other', count: countOf('other') }
         ];
-        const visibleSections = activeTab === 'all' ? sections : sections.filter((section) => section.id === activeTab);
-        const activeIndex = tabs.findIndex((tab) => tab.id === activeTab);
+        const visibleSections = activeTabState === 'all' ? sections : sections.filter((section) => section.id === activeTabState);
+        const activeIndex = tabs.findIndex((tab) => tab.id === activeTabState);
         const onTabListKeyDown = (event) => {
           if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(event.key)) return;
           event.preventDefault();
@@ -744,11 +1120,11 @@ window.__ModuleLoader__.load({
           setActiveTab(tabs[next].id);
         };
 
-        return h('div', { 'data-dsh-orchestrator-kit-settings': '', style: { display: 'flex', flexDirection: 'column', gap: 16 } },
+        return h('div', { 'data-dsh-orchestrator-kit-settings': '', style: { display: 'flex', flexDirection: 'column', gap: 16 }, onKeyDown: onPanelKeyDown },
           h('div', { style: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 } },
             h('div', { style: { minWidth: 0 } },
               h('div', { style: { fontSize: 14, fontWeight: 600, color: 'var(--dsw-alias-label-primary)' } }, t('header.title')),
-              h('div', { title: t('header.countsTitle'), style: { fontSize: 12, color: 'var(--dsw-alias-label-secondary)', marginTop: 4 } },
+              h('div', { role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true', title: t('header.countsTitle'), style: { fontSize: 12, color: 'var(--dsw-alias-label-secondary)', marginTop: 4 } },
                 h('span', { style: statStyle }, String(total)), t('header.countRoles'),
                 h('span', { style: statStyle }, String(routedCount)), t('header.countRouted'),
                 h('span', { style: statStyle }, String(total - routedCount)), t('header.countInherit'),
@@ -764,7 +1140,7 @@ window.__ModuleLoader__.load({
             h('button', {
               type: 'button',
               onClick: refreshAll,
-              disabled: refreshing || savingId !== null,
+              disabled: refreshing || savingId !== null || undoingId !== null,
               style: { ...buttonStyle, flex: 'none', opacity: refreshing || savingId !== null ? 0.5 : 1 },
               'aria-label': t('refresh.aria')
             }, refreshing ? t('refresh.busy') : t('refresh'))),
@@ -778,7 +1154,9 @@ window.__ModuleLoader__.load({
                   : t('banner.partialCatalogGeneric'))
             : null,
           catalogEmpty ? h('div', { style: bannerStyle('neutral') }, t('banner.catalogEmpty')) : null,
-          h('details', { open: true, style: legendStyle },
+          h('div', { role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true', style: srOnlyStyle },
+            lastNotice ? messageText(lastNotice) : ''),
+          h('details', { open: legendOpen, onToggle: (event) => { setLegendOpen(event.target.open); storedPrefs = { ...storedPrefs, legend: event.target.open }; writeStoredPrefs(storedPrefs); }, style: legendStyle },
             h('summary', { style: { cursor: 'pointer', fontWeight: 600, color: 'var(--dsw-alias-label-primary)', fontSize: 12 } }, t('legend.summary')),
             h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(220px, 100%), 1fr))', gap: 8, marginTop: 8 } },
               h('div', {}, h('span', { style: legendTermStyle }, t('legend.provider')), t('legend.providerText')),
@@ -789,31 +1167,45 @@ window.__ModuleLoader__.load({
               h('div', {}, t('legend.subagent')),
               h('div', {}, t('legend.apply')),
               lastServerTiming ? h('div', {}, t('legend.timing', { reads: lastServerTiming.reads ?? '—', catalog: lastServerTiming.catalog ?? '—' })) : null)),
+          h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' } },
+            h('input', { type: 'search', value: search, onChange: (event) => setSearch(event.target.value), placeholder: t('search.placeholder'), 'aria-label': t('search.aria'), style: { ...controlStyle, width: 'auto', flex: '1 1 200px', minWidth: 0 } }),
+            h('div', { role: 'group', 'aria-label': t('filter.status.aria'), style: { display: 'flex', flexWrap: 'wrap', gap: 4 } },
+              [{ id: 'all', labelKey: 'filter.status.all' }, { id: 'routed', labelKey: 'status.routed' }, { id: 'inherit', labelKey: 'status.inherit' }, { id: 'disabled', labelKey: 'status.disabled' }].map((option) =>
+                h('button', { key: option.id, type: 'button', 'aria-pressed': statusFilter === option.id, onClick: () => setStatusFilter(option.id), style: tabStyle(statusFilter === option.id) }, t(option.labelKey)))),
+            h('select', { value: sortMode, onChange: (event) => setSortMode(event.target.value), 'aria-label': t('sort.aria'), style: { ...controlStyle, width: 'auto', flex: 'none' } },
+              h('option', { value: 'name' }, t('sort.name')),
+              h('option', { value: 'routedFirst' }, t('sort.routedFirst')),
+              h('option', { value: 'inheritsFirst' }, t('sort.inheritsFirst'))),
+            h('select', { value: density, onChange: (event) => { const value = event.target.value; setDensity(value); storedPrefs = { ...storedPrefs, density: value }; writeStoredPrefs(storedPrefs); }, 'aria-label': t('density.aria'), style: { ...controlStyle, width: 'auto', flex: 'none' } },
+              h('option', { value: 'comfortable' }, t('density.comfortable')),
+              h('option', { value: 'compact' }, t('density.compact')))),
           h('div', { role: 'tablist', 'aria-label': t('tablist.aria'), style: tabRowStyle, onKeyDown: onTabListKeyDown },
             tabs.map((tab, index) => h('button', {
               key: tab.id,
               id: `orch-tab-${index}`,
               type: 'button',
               role: 'tab',
-              'aria-selected': activeTab === tab.id,
+              'aria-selected': activeTabState === tab.id,
               'aria-controls': 'orch-role-panel',
-              tabIndex: activeTab === tab.id ? 0 : -1,
+              tabIndex: activeTabState === tab.id ? 0 : -1,
               onClick: () => setActiveTab(tab.id),
-              style: tabStyle(activeTab === tab.id)
-            }, t(tab.labelKey), h('span', { style: { marginLeft: 8, color: 'var(--dsw-alias-label-tertiary)', fontVariantNumeric: 'tabular-nums' } }, tab.count)))),
+              style: tabStyle(activeTabState === tab.id)
+            }, t(tab.labelKey), h('span', { style: { marginLeft: 8, color: 'var(--dsw-alias-label-tertiary)', fontVariantNumeric: 'tabular-nums' } }, tab.count), h('span', { title: t('tab.breakdownTitle'), style: { marginLeft: 8, color: 'var(--dsw-alias-label-tertiary)', fontVariantNumeric: 'tabular-nums', fontSize: 11 } }, breakdownText(tab.id))))),
           h('div', { role: 'tabpanel', id: 'orch-role-panel', 'aria-labelledby': `orch-tab-${activeIndex}`, style: { display: 'flex', flexDirection: 'column', gap: 16 } },
             roles === null
               ? (messages.__load ? null : h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-tertiary)', padding: '8px 0' } }, t('empty.loading')))
               : roles.length === 0
                 ? h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-tertiary)', padding: '8px 0' } }, t('empty.noRoles'))
-                : visibleSections.length === 0
-                  ? h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-tertiary)', padding: '8px 0' } }, t('empty.noGroup'))
-                  : visibleSections.map((section) => h('div', { key: section.id, style: { display: 'flex', flexDirection: 'column', gap: 8 } },
-                      h('div', { style: sectionTitleStyle },
-                        h('span', { style: dotStyle(PHASE_TONE[section.id] ?? PHASE_TONE.other) }),
-                        t('phase.' + section.id),
-                        h('span', { style: { color: 'var(--dsw-alias-label-tertiary)', fontWeight: 400, fontVariantNumeric: 'tabular-nums' } }, section.roles.length)),
-                      h('div', { style: gridStyle }, section.roles.map(renderCard))))));
+                : (activeTabState === 'all' ? sections.reduce((sum, section) => sum + section.roles.length, 0) : (sections.find((section) => section.id === activeTabState)?.roles.length ?? 0)) === 0 && (activeTabState === 'all' ? total : countOf(activeTabState)) > 0
+                  ? h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-tertiary)', padding: '8px 0' } }, t('empty.noMatch'))
+                  : visibleSections.length === 0
+                    ? h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-tertiary)', padding: '8px 0' } }, t('empty.noGroup'))
+                    : visibleSections.map((section) => h('div', { key: section.id, style: { display: 'flex', flexDirection: 'column', gap: 8 } },
+                        h('div', { style: sectionTitleStyle },
+                          h('span', { style: dotStyle(PHASE_TONE[section.id] ?? PHASE_TONE.other) }),
+                          t('phase.' + section.id),
+                          h('span', { style: { color: 'var(--dsw-alias-label-tertiary)', fontWeight: 400, fontVariantNumeric: 'tabular-nums' } }, section.roles.length)),
+                        h('div', { style: gridStyle }, section.roles.map((role) => renderCard(role, density === 'compact')))))));
       };
     }
 

@@ -1987,6 +1987,7 @@ function mountVmClient(fetchHandler, options = {}) {
 
   const storageMap = options.storageMap instanceof Map ? options.storageMap : new Map();
   const storageThrows = options.storage === 'throw';
+  const windowListeners = [];
   const localeState = { active: options.active ?? 'en', revision: 0, registrations: [], languages: [], faces: new Map(), listeners: new Set() };
   const notifyLocale = () => { localeState.revision += 1; for (const fn of [...localeState.listeners]) fn(); };
   const lookupRegistered = (ns, key, params) => {
@@ -2043,6 +2044,11 @@ function mountVmClient(fetchHandler, options = {}) {
           if (storageThrows) throw new Error('storage disabled');
           storageMap.delete(key);
         }
+      },
+      addEventListener(type, handler) { windowListeners.push({ type, handler }); },
+      removeEventListener(type, handler) {
+        const index = windowListeners.findIndex((entry) => entry.type === type && entry.handler === handler);
+        if (index >= 0) windowListeners.splice(index, 1);
       }
     },
     fetch: (url, opts) => track(Promise.resolve().then(() => {
@@ -2166,7 +2172,7 @@ function mountVmClient(fetchHandler, options = {}) {
     return { renderCycle, settle, unmount, meta: sectionMeta };
   }
 
-  return { mountInstance, fetchCalls, locale: localeState, storage: storageMap, runPluginDisposers };
+  return { mountInstance, fetchCalls, locale: localeState, storage: storageMap, runPluginDisposers, windowListeners };
 }
 
 const collectText = (node, acc = []) => {
@@ -2183,6 +2189,22 @@ const findNodes = (node, pred, acc = []) => {
   }
   return acc;
 };
+
+const tabByLabel = (tree, label) => findNodes(tree, (n) => n.type === 'button' && n.props.role === 'tab' && n.children[0] === label)[0];
+const cardOf = (tree, id) => findNodes(tree, (n) => n.props?.key === id)[0];
+const checkboxOfId = (tree, id) => findNodes(tree, (n) => n.type === 'input' && n.props.type === 'checkbox' && n.props['aria-label'] === `Disable ${id}`)[0];
+const checkboxOfCard = (card) => findNodes(card, (n) => n.type === 'input' && n.props.type === 'checkbox')[0];
+const saveOfCard = (card) => findNodes(card, (n) => n.type === 'button' && n.props['aria-label'] === `Save ${card.props.key} settings`)[0];
+const providerSelectOfCard = (card) => findNodes(card, (n) => n.type === 'select' && n.props['aria-label'] === `Provider for ${card.props.key}`)[0];
+const modelSelectOfCard = (card) => findNodes(card, (n) => n.type === 'select' && n.props['aria-label'] === `Model for ${card.props.key}`)[0];
+const effortSelectOfCard = (card) => findNodes(card, (n) => n.type === 'select' && n.props['aria-label'] === `Reasoning effort for ${card.props.key}`)[0];
+const statusBadgeOf = (card) => findNodes(card, (n) => n.type === 'span' && typeof n.props.style?.background === 'string' && n.props.style.background.startsWith('rgba(') && n.props.style.borderRadius === 999)[0];
+const rootOf = (tree) => findNodes(tree, (n) => n.type === 'div' && n.props['data-dsh-orchestrator-kit-settings'] === '')[0];
+const fieldHelpOf = (card) => findNodes(card, (n) => n.type === 'div' && n.props.style?.fontSize === 11 && n.props.style?.marginTop === 4);
+const undoButtonsOf = (card) => findNodes(card, (n) => n.type === 'button' && (n.children[0] === 'Undo' || n.children[0] === 'Undoing…'));
+const visibleIds = (tree) => findNodes(tree, (n) => n.type === 'input' && n.props.type === 'checkbox').map((n) => n.props['aria-label'].replace('Disable ', ''));
+const routePostsOf = (vm) => vm.fetchCalls.filter((c) => c.url === `/api/${NS}.route`);
+const clickTab = (tree, app, label) => { tabByLabel(tree, label).props.onClick(); return app.renderCycle(); };
 
 await test('client.js: runtime module registration, phase grouping, save, 409, refresh failure retention, remount efforts, and catalog failure fallback', async () => {
   const mockRoles = [
@@ -2496,7 +2518,7 @@ await test('client.js: runtime module registration, phase grouping, save, 409, r
     tree4 = app4.renderCycle();
   };
   clickTab('Discovery & Advisory');
-  assert.deepEqual(checkboxNames(tree4), ['repo-scout', 'docs-scout', 'media-analyst', 'arch-advisor'], 'phase tab must filter the grid to that phase');
+  assert.deepEqual(checkboxNames(tree4), ['arch-advisor', 'docs-scout', 'media-analyst', 'repo-scout'], 'phase tab must filter the grid to that phase (sorted by name per the frozen sortRoles)');
   clickTab('Planning & Execution');
   assert.equal(checkboxNames(tree4).length, 6);
   clickTab('Verification, QA & Docs');
@@ -2697,7 +2719,30 @@ const PANEL_KEYS = [
   'empty.noRoles',
   'empty.noGroup',
   'locale.auto',
-  'locale.aria'
+  'locale.aria',
+  'search.aria',
+  'search.placeholder',
+  'empty.noMatch',
+  'filter.status.aria',
+  'filter.status.all',
+  'sort.aria',
+  'sort.name',
+  'sort.routedFirst',
+  'sort.inheritsFirst',
+  'density.aria',
+  'density.comfortable',
+  'density.compact',
+  'tab.breakdownTitle',
+  'card.inheritHint',
+  'card.dirtySuffix',
+  'card.sealTitle',
+  'undo.aria',
+  'undo.label',
+  'undo.busy',
+  'notice.undo',
+  'error.action.reget',
+  'error.action.regetAria',
+  'error.hint.effort'
 ];
 
 const FROZEN_PACK_FILES = [
@@ -2862,14 +2907,26 @@ await test('i18n structural gate: every panel string renders through t (sentinel
     { id: 'alpha-custom', name: 'alpha-custom', description: 'Custom A', provider: null, model: 'inherit', reasoningEffort: null, disabled: true, mtimeMs: 1000 },
     { id: 'zeta-custom', name: 'zeta-custom', description: 'Custom Z', provider: null, model: 'inherit', reasoningEffort: null, disabled: false, mtimeMs: 1000 }
   ];
-  const gateCatalog = { ok: true, available: true, degraded: false, default: null, groups: [{ provider: EXAMPLE_HUB, name: 'Example Hub', models: [{ id: 'flash-a', name: 'Flash A' }, { id: 'flash-b', name: 'Flash B' }] }] };
+  const gateCatalog = { ok: true, available: true, degraded: false, default: { provider: EXAMPLE_CLOUD, model: 'reasoner-d' }, groups: [{ provider: EXAMPLE_HUB, name: 'Example Hub', models: [{ id: 'flash-a', name: 'Flash A' }, { id: 'flash-b', name: 'Flash B' }] }] };
   const gateEfforts = { ok: true, defaultEffort: 'medium', efforts: [{ id: 'high', name: 'High' }] };
+  const gateStatusOf = (role) => (role.disabled === true ? 'disabled' : role.provider && role.model && role.model !== 'inherit' ? 'routed' : 'inherit');
+  const gateBreakdownText = (list) => `${list.filter((role) => gateStatusOf(role) === 'routed').length}/${list.filter((role) => gateStatusOf(role) === 'inherit').length}/${list.filter((role) => gateStatusOf(role) === 'disabled').length}`;
   const allowedData = new Set([
     'planner', 'alpha-custom', 'zeta-custom', 'ghost-role',
     'Plans the work', 'Custom A', 'Custom Z', 'Ghost route',
     EXAMPLE_HUB, 'Example Hub', 'flash-a', 'flash-b', 'Flash A', 'Flash B', 'high', 'High',
     'English', 'Português (BR)', '简体中文',
-    '—', '', '0', '1', '2', '3'
+    '—', '', '0', '1', '2', '3',
+    EXAMPLE_CLOUD, 'reasoner-d',
+    gateBreakdownText(gateRoles),
+    gateBreakdownText(gateRoles.slice(0, 1)),
+    gateBreakdownText(gateRoles.slice(1)),
+    gateBreakdownText(gateRoles.slice(2)),
+    gateBreakdownText([]),
+    gateBreakdownText([gateRoles[0], gateRoles[0], gateRoles[2]]),
+    gateBreakdownText([gateRoles[0], gateRoles[2]]),
+    gateBreakdownText([gateRoles[0], gateRoles[1], { ...gateRoles[2], disabled: true }]),
+    gateBreakdownText([{ ...gateRoles[1], disabled: true }, { ...gateRoles[2], disabled: true }])
   ]);
   const observedKeys = new Set();
   const sentinelRe = /^⟦([A-Za-z][A-Za-z0-9.]*)⟧$/;
@@ -2887,7 +2944,7 @@ await test('i18n structural gate: every panel string renders through t (sentinel
       return;
     }
     if (node && typeof node === 'object') {
-      for (const prop of ['aria-label', 'title']) {
+      for (const prop of ['aria-label', 'title', 'placeholder']) {
         const value = node.props?.[prop];
         if (typeof value === 'string') checkValue(value);
       }
@@ -2946,7 +3003,50 @@ await test('i18n structural gate: every panel string renders through t (sentinel
   await savePending;
   tree1 = await app1.settle();
   scanTree(tree1);
-  assert.ok(collectText(tree1).includes('⟦notice.saved⟧'), 'a successful save must render notice.saved through t');
+  assert.ok(collectText(tree1).join('').includes('⟦notice.saved⟧'), 'a successful save must render notice.saved through t');
+  assert.ok(collectText(tree1).join('').includes('⟦card.inheritHint⟧'), 'the catalog default must render the inherit hint through t');
+  assert.ok(findNodes(tree1, (n) => n.type === 'span' && n.props.title === '⟦card.sealTitle⟧')[0], 'a saved clean card must render the session seal through t');
+
+  holdRoute = true;
+  const undoPending = findNodes(tree1, (n) => n.type === 'button' && n.props['aria-label'] === '⟦undo.aria⟧')[0].props.onClick();
+  tree1 = await app1.settle(false);
+  scanTree(tree1);
+  assert.ok(collectText(tree1).join('').includes('⟦undo.busy⟧'), 'an in-flight undo must render undo.busy through t');
+  holdRoute();
+  holdRoute = null;
+  await undoPending;
+  tree1 = await app1.settle();
+  scanTree(tree1);
+  assert.ok(collectText(tree1).join('').includes('⟦notice.undo⟧'), 'a successful undo must render notice.undo through t');
+
+  routeMode = '409';
+  checkboxOf(cardOf(tree1, 'zeta-custom')).props.onChange({ target: { checked: true } });
+  tree1 = app1.renderCycle();
+  await saveOf(cardOf(tree1, 'zeta-custom')).props.onClick();
+  tree1 = app1.renderCycle();
+  scanTree(tree1);
+  const regetButton = findNodes(tree1, (n) => n.type === 'button' && n.props['aria-label'] === '⟦error.action.regetAria⟧')[0];
+  assert.ok(regetButton, 'a 409 save must render the re-GET action through t');
+  assert.ok(collectText(tree1).join('').includes('⟦error.action.reget⟧'), 'the re-GET action label must render through t');
+  regetButton.props.onClick();
+  tree1 = await app1.settle();
+
+  findNodes(tree1, (n) => n.type === 'select' && n.props['aria-label'] === '⟦field.effortAria⟧')[0].props.onChange({ target: { value: 'high' } });
+  tree1 = app1.renderCycle();
+  await saveOf(cardOf(tree1, 'planner')).props.onClick();
+  tree1 = app1.renderCycle();
+  scanTree(tree1);
+  assert.ok(collectText(tree1).join('').includes('⟦error.hint.effort⟧'), 'an effort-carrying 409 must render the effort hint through t');
+
+  const gateSearchInput = findNodes(tree1, (n) => n.type === 'input' && n.props['aria-label'] === '⟦search.aria⟧')[0];
+  assert.ok(gateSearchInput, 'the controls row must render the search input through t');
+  gateSearchInput.props.onChange({ target: { value: 'ghost' } });
+  tree1 = app1.renderCycle();
+  scanTree(tree1);
+  assert.ok(collectText(tree1).join('').includes('⟦empty.noMatch⟧'), 'a filtered empty view must render empty.noMatch through t');
+  findNodes(tree1, (n) => n.type === 'input' && n.props['aria-label'] === '⟦search.aria⟧')[0].props.onChange({ target: { value: '' } });
+  tree1 = app1.renderCycle();
+  scanTree(tree1);
 
   holdRoles = true;
   findNodes(tree1, (n) => n.type === 'button' && n.props['aria-label'] === '⟦refresh.aria⟧')[0].props.onClick();
@@ -2964,13 +3064,14 @@ await test('i18n structural gate: every panel string renders through t (sentinel
   await saveOf(cardOf(tree1, 'zeta-custom')).props.onClick();
   tree1 = app1.renderCycle();
   scanTree(tree1);
-  assert.ok(collectText(tree1).includes('⟦error.conflict⟧'), 'a 409 save must render error.conflict through t');
+  assert.ok(collectText(tree1).join('').includes('⟦error.conflict⟧'), 'a 409 save must render error.conflict through t');
+  assert.ok(findNodes(tree1, (n) => n.type === 'button' && n.props['aria-label'] === '⟦error.action.regetAria⟧')[0], 'the plain 409 message must still render the re-GET action through t');
 
   routeMode = 'unchanged';
   await saveOf(cardOf(tree1, 'zeta-custom')).props.onClick();
   tree1 = app1.renderCycle();
   scanTree(tree1);
-  assert.ok(collectText(tree1).includes('⟦notice.unchanged⟧'), 'an unchanged save must render notice.unchanged through t');
+  assert.ok(collectText(tree1).join('').includes('⟦notice.unchanged⟧'), 'an unchanged save must render notice.unchanged through t');
   app1.unmount();
 
   const vmTiming = mountVmClient(async (url) => {
@@ -3115,7 +3216,8 @@ const PANEL_RENDERABLE_KEYS = new Set([
   'field.provider', 'field.providerHelp', 'field.model', 'field.modelHelp', 'field.effort', 'field.effortHelp', 'disabled.label', 'save',
   'inherit.label', 'effort.auto',
   'locale.auto', 'locale.aria',
-  'legend.provider', 'legend.providerText', 'legend.model', 'legend.modelText', 'legend.effort', 'legend.effortText', 'legend.disabled', 'legend.disabledText', 'legend.inherit', 'legend.inheritText', 'legend.subagent', 'legend.apply', 'legend.summary'
+  'legend.provider', 'legend.providerText', 'legend.model', 'legend.modelText', 'legend.effort', 'legend.effortText', 'legend.disabled', 'legend.disabledText', 'legend.inherit', 'legend.inheritText', 'legend.subagent', 'legend.apply', 'legend.summary',
+  'search.aria', 'search.placeholder', 'filter.status.aria', 'filter.status.all', 'sort.aria', 'sort.name', 'sort.routedFirst', 'sort.inheritsFirst', 'density.aria', 'density.comfortable', 'density.compact', 'tab.breakdownTitle'
 ]);
 
 await test('panel language switch: override renders pt-BR/zh from dictionaries, Auto follows host, best-effort localStorage persists and restores, storage failure degrades to host language', async () => {
@@ -3217,7 +3319,7 @@ await test('panel language switch: override renders pt-BR/zh from dictionaries, 
   const scanEnValues = (node, acc) => {
     if (typeof node === 'string' || typeof node === 'number') { acc.push(String(node)); return acc; }
     if (node && typeof node === 'object') {
-      for (const prop of ['aria-label', 'title']) {
+      for (const prop of ['aria-label', 'title', 'placeholder']) {
         const value = node.props?.[prop];
         if (typeof value === 'string') acc.push(value);
       }
@@ -3226,12 +3328,711 @@ await test('panel language switch: override renders pt-BR/zh from dictionaries, 
     return acc;
   };
   const renderedStrings = scanEnValues(treeEnValues, []).join('\n');
-  for (const [key, value] of Object.entries(enDict)) {
-    if (!PANEL_RENDERABLE_KEYS.has(key)) continue;
-    assert.ok(renderedStrings.includes(value), 'the en value for ' + key + ' must render in the driven panel state');
+  for (const key of PANEL_RENDERABLE_KEYS) {
+    const value = enDict[key];
+    assert.ok(value !== undefined && renderedStrings.includes(value), 'the en value for ' + key + ' must render in the driven panel state');
   }
   appEnValues.unmount();
   vmEnValues.runPluginDisposers();
+});
+
+await test('save safety: mtime-keyed draft hoisting, dirty seal on every section, warn-before-unload and Ctrl+S on the focused card', async () => {
+  const roles = [
+    { id: 'planner', name: 'planner', description: 'Plans the work', provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: null, disabled: false, mtimeMs: 1000 },
+    { id: 'docs-scout', name: 'docs-scout', description: 'Searches the repo', provider: null, model: 'inherit', reasoningEffort: null, disabled: false, mtimeMs: 2000 },
+    { id: 'zeta-custom', name: 'zeta-custom', description: 'Custom Z', provider: null, model: 'inherit', reasoningEffort: null, disabled: false, mtimeMs: 3000 }
+  ];
+  let liveRoles = roles.map((role) => ({ ...role }));
+  let holdRoute = null;
+  const vm = mountVmClient(async (url, opts) => {
+    if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles: liveRoles }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify({ ok: true, available: true, degraded: false, default: null, groups: [{ provider: EXAMPLE_HUB, name: 'Example Hub', models: [{ id: 'flash-a', name: 'Flash A' }] }] }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.efforts`)) return new Response(JSON.stringify({ ok: true, defaultEffort: 'medium', efforts: [{ id: 'high', name: 'High' }] }), { status: 200 });
+    if (url === `/api/${NS}.route`) {
+      const payload = JSON.parse(opts.body);
+      const index = liveRoles.findIndex((r) => r.id === payload.id);
+      const base = liveRoles[index];
+      const next = { ...base, mtimeMs: base.mtimeMs + 10 };
+      if (payload.provider !== undefined) next.provider = payload.provider;
+      if (payload.model !== undefined) next.model = payload.model === null ? 'inherit' : payload.model;
+      if (payload.reasoningEffort !== undefined) next.reasoningEffort = payload.reasoningEffort;
+      if (payload.disabled !== undefined) next.disabled = payload.disabled;
+      if (holdRoute) {
+        return new Promise((resolve) => {
+          holdRoute = () => {
+            liveRoles[index] = next;
+            resolve(new Response(JSON.stringify({ ok: true, role: next }), { status: 200 }));
+          };
+        });
+      }
+      liveRoles[index] = next;
+      return new Response(JSON.stringify({ ok: true, role: next }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  });
+  const app = vm.mountInstance();
+  let tree = await app.settle();
+
+  const initialUnloads = vm.windowListeners.filter((entry) => entry.type === 'beforeunload');
+  assert.equal(initialUnloads.length, 1, 'the beforeunload guard must register exactly once at mount');
+  const spyCounts = { prevent: 0 };
+  const cleanEvent = { preventDefault: () => { spyCounts.prevent += 1; }, returnValue: '' };
+  initialUnloads[0].handler(cleanEvent);
+  assert.equal(spyCounts.prevent, 0, 'the guard must not preventDefault while every draft is clean');
+
+  for (const id of ['planner', 'docs-scout', 'zeta-custom']) {
+    const card = cardOf(tree, id);
+    assert.ok(card, `the ${id} card must render`);
+    checkboxOfCard(card).props.onChange({ target: { checked: true } });
+  }
+  tree = app.renderCycle();
+  for (const id of ['planner', 'docs-scout', 'zeta-custom']) {
+    const card = cardOf(tree, id);
+    assert.equal(card.props.style.borderColor, 'var(--dsw-alias-state-warning-primary, #f59e0b)', `the dirty ${id} card must carry the amber border`);
+    assert.ok(collectText(card).join('').includes(' (unsaved)'), `the dirty ${id} card must render the unsaved suffix`);
+  }
+  const unloads = vm.windowListeners.filter((entry) => entry.type === 'beforeunload');
+  assert.equal(unloads.length, 1, 'a dirty panel must re-register exactly one beforeunload guard');
+  assert.notEqual(unloads[0].handler, initialUnloads[0].handler, 'the [roles, drafts] deps change must swap the guard handler');
+  const dirtyEvent = { preventDefault: () => { spyCounts.prevent += 1; }, returnValue: '' };
+  unloads[0].handler(dirtyEvent);
+  assert.equal(spyCounts.prevent, 1, 'the guard must preventDefault while drafts are dirty');
+
+  holdRoute = true;
+  saveOfCard(cardOf(tree, 'planner')).props.onClick();
+  tree = await app.settle(false);
+  assert.ok(collectText(cardOf(tree, 'planner')).join('').includes('Saving…'), 'the in-flight save must render save.busy through t');
+  holdRoute();
+  holdRoute = null;
+  tree = await app.settle();
+
+  const unloadsAfter = vm.windowListeners.filter((entry) => entry.type === 'beforeunload');
+  assert.equal(unloadsAfter.length, 1, 'the guard must re-register while other drafts stay dirty');
+  const stillDirtyEvent = { preventDefault: () => { spyCounts.prevent += 1; } };
+  unloadsAfter[0].handler(stillDirtyEvent);
+  assert.equal(spyCounts.prevent, 2, 'the guard must still preventDefault for the remaining dirty cards');
+  const plannerCard = cardOf(tree, 'planner');
+  assert.ok(!collectText(plannerCard).join('').includes(' (unsaved)'), 'the saved planner card must lose its dirty suffix');
+  assert.equal(plannerCard.props.style.borderColor, 'var(--dsw-alias-state-success-primary, #22c55e)', 'the saved planner card must show the highlight border (highlight wins)');
+
+  await saveOfCard(cardOf(tree, 'docs-scout')).props.onClick();
+  await saveOfCard(cardOf(tree, 'zeta-custom')).props.onClick();
+  tree = await app.settle();
+  assert.equal(vm.windowListeners.filter((entry) => entry.type === 'beforeunload').length, 1, 'the guard must still be registered exactly once on the clean panel');
+
+  checkboxOfId(tree, 'zeta-custom').props.onChange({ target: { checked: false } });
+  tree = app.renderCycle();
+  const card = cardOf(tree, 'zeta-custom');
+  card.props.onFocusCapture();
+  const savedCount = routePostsOf(vm).length;
+  rootOf(tree).props.onKeyDown({ key: 's', ctrlKey: true, preventDefault() {} });
+  tree = await app.settle();
+  assert.equal(routePostsOf(vm).length, savedCount + 1, 'Ctrl+S must issue exactly one POST');
+  assert.deepEqual(JSON.parse(routePostsOf(vm).at(-1).opts.body), { id: 'zeta-custom', expectedMtimeMs: 3010, disabled: false }, 'Ctrl+S must save the focused card with the current draft payload');
+
+  checkboxOfId(tree, 'zeta-custom').props.onChange({ target: { checked: true } });
+  tree = app.renderCycle();
+  cardOf(tree, 'zeta-custom').props.onFocusCapture();
+  rootOf(tree).props.onKeyDown({ key: 's', metaKey: true, preventDefault() {} });
+  tree = await app.settle();
+  assert.deepEqual(JSON.parse(routePostsOf(vm).at(-1).opts.body), { id: 'zeta-custom', expectedMtimeMs: 3020, disabled: true }, 'metaKey+s must trigger the focused-card save');
+
+  const beforeNoop = routePostsOf(vm).length;
+  rootOf(tree).props.onKeyDown({ key: 'x', ctrlKey: true, preventDefault() {} });
+  tree = await app.settle();
+  assert.equal(routePostsOf(vm).length, beforeNoop, 'a non-s key must not POST');
+
+  checkboxOfId(tree, 'zeta-custom').props.onChange({ target: { checked: false } });
+  tree = app.renderCycle();
+  const secondMount = vm.mountInstance();
+  const hoistTree = secondMount.renderCycle();
+  assert.equal(checkboxOfId(hoistTree, 'zeta-custom').props.checked, false, 'the mtime-matched draft must hoist into the remount init state');
+
+  liveRoles = liveRoles.map((role) => ({ ...role, mtimeMs: role.mtimeMs + 1000 }));
+  const remountFresh = vm.mountInstance();
+  await remountFresh.settle();
+  const remountStale = vm.mountInstance();
+  const staleTree = remountStale.renderCycle();
+  assert.equal(checkboxOfId(staleTree, 'zeta-custom').props.checked, true, 'an mtime mismatch must discard the stored draft and re-normalize from the server state');
+  await remountStale.settle();
+  const freshServerMtime = liveRoles.find((role) => role.id === 'zeta-custom').mtimeMs;
+  checkboxOfId(staleTree, 'zeta-custom').props.onChange({ target: { checked: false } });
+  tree = remountStale.renderCycle();
+  assert.equal(saveOfCard(cardOf(tree, 'zeta-custom')).props.disabled, false, 'the fresh-draft card must be saveable');
+  await saveOfCard(cardOf(tree, 'zeta-custom')).props.onClick();
+  tree = remountStale.renderCycle();
+  assert.deepEqual(JSON.parse(routePostsOf(vm).at(-1).opts.body), { id: 'zeta-custom', expectedMtimeMs: freshServerMtime, disabled: false }, 'the next save must carry the fresh mtime');
+
+  const cleanMount = vm.mountInstance();
+  const cleanTree = cleanMount.renderCycle();
+  assert.ok(!collectText(cardOf(cleanTree, 'zeta-custom')).join('').includes(' (unsaved)'), 'a clean save must prune the draft store (no dirty state on remount)');
+  cleanMount.unmount();
+  remountStale.unmount();
+  remountFresh.unmount();
+  secondMount.unmount();
+  app.unmount();
+});
+
+await test('undo last save: reverse POST of the pre-save summary with the post-save mtime, snapshot lifecycle and loop-helper guards', async () => {
+  const roles = [
+    { id: 'planner', name: 'planner', description: 'Plans the work', provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: null, disabled: false, mtimeMs: 1000 },
+    { id: 'zeta-custom', name: 'zeta-custom', description: 'Custom Z', provider: null, model: 'inherit', reasoningEffort: null, disabled: false, mtimeMs: 3000 }
+  ];
+  let liveRoles = roles.map((role) => ({ ...role }));
+  let routeMode = 'ok';
+  let holdUndo = null;
+  const vm = mountVmClient(async (url, opts) => {
+    if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles: liveRoles }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify({ ok: true, available: true, degraded: false, default: null, groups: [{ provider: EXAMPLE_HUB, name: 'Example Hub', models: [{ id: 'flash-a', name: 'Flash A' }] }] }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.efforts`)) return new Response(JSON.stringify({ ok: true, defaultEffort: 'medium', efforts: [{ id: 'high', name: 'High' }] }), { status: 200 });
+    if (url === `/api/${NS}.route`) {
+      const payload = JSON.parse(opts.body);
+      const index = liveRoles.findIndex((r) => r.id === payload.id);
+      const base = liveRoles[index];
+      if (routeMode === '409') return new Response(JSON.stringify({ ok: false, error: 'stale mtime' }), { status: 409 });
+      if (routeMode === 'unchanged') return new Response(JSON.stringify({ ok: true, unchanged: true, role: { ...base, disabled: payload.disabled ?? base.disabled } }), { status: 200 });
+      const next = { ...base, mtimeMs: base.mtimeMs + 10 };
+      if (payload.provider !== undefined) next.provider = payload.provider;
+      if (payload.model !== undefined) next.model = payload.model === null ? 'inherit' : payload.model;
+      if (payload.reasoningEffort !== undefined) next.reasoningEffort = payload.reasoningEffort;
+      if (payload.disabled !== undefined) next.disabled = payload.disabled;
+      if (holdUndo) {
+        return new Promise((resolve) => {
+          holdUndo = () => {
+            liveRoles[index] = next;
+            resolve(new Response(JSON.stringify({ ok: true, role: next }), { status: 200 }));
+          };
+        });
+      }
+      liveRoles[index] = next;
+      return new Response(JSON.stringify({ ok: true, role: next }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  });
+  const app = vm.mountInstance();
+  let tree = await app.settle();
+
+  assert.equal(undoButtonsOf(cardOf(tree, 'zeta-custom')).length + undoButtonsOf(cardOf(tree, 'planner')).length, 0, 'no snapshot must mean no undo button');
+
+  checkboxOfId(tree, 'zeta-custom').props.onChange({ target: { checked: true } });
+  tree = app.renderCycle();
+  await saveOfCard(cardOf(tree, 'zeta-custom')).props.onClick();
+  tree = await app.settle();
+  const zetaCard = cardOf(tree, 'zeta-custom');
+  const undoButton = undoButtonsOf(zetaCard)[0];
+  assert.ok(undoButton, 'the undo button must appear after a save');
+  assert.equal(undoButton.props['aria-label'], 'Undo last save for zeta-custom', 'the undo button must carry the undo.aria label');
+
+  const postsBeforeUndo = routePostsOf(vm).length;
+  holdUndo = true;
+  undoButton.props.onClick();
+  tree = await app.settle(false);
+  assert.deepEqual(JSON.parse(routePostsOf(vm).at(-1).opts.body), { id: 'zeta-custom', expectedMtimeMs: 3010, provider: null, model: null, disabled: false, reasoningEffort: null }, 'the undo POST must reverse the pre-save summary with the post-save mtime');
+  const busyUndo = undoButtonsOf(cardOf(app.renderCycle(), 'zeta-custom'))[0];
+  assert.equal(busyUndo.children[0], 'Undoing…', 'the in-flight undo must read undo.busy');
+  assert.equal(saveOfCard(cardOf(app.renderCycle(), 'zeta-custom')).props.disabled, true, 'save must be disabled while undo is in flight');
+  holdUndo();
+  holdUndo = null;
+  tree = await app.settle();
+  assert.equal(routePostsOf(vm).length, postsBeforeUndo + 1, 'the undo must issue exactly one POST');
+  assert.equal(checkboxOfId(tree, 'zeta-custom').props.checked, false, 'the undo must restore the pre-save state');
+  assert.ok(collectText(tree).join('').includes('Undone — the previous settings are restored.'), 'a successful undo must render notice.undo');
+  assert.equal(undoButtonsOf(cardOf(tree, 'zeta-custom')).length, 0, 'the consumed snapshot must remove the undo button');
+
+  effortSelectOfCard(cardOf(tree, 'planner')).props.onChange({ target: { value: 'high' } });
+  tree = app.renderCycle();
+  const plannerSave = saveOfCard(cardOf(tree, 'planner'));
+  assert.equal(plannerSave.props.disabled, false, 'the effort-dirty planner draft must be saveable');
+  const plannerPosts = routePostsOf(vm).length;
+  await plannerSave.props.onClick();
+  tree = await app.settle();
+  const plannerUndo = undoButtonsOf(cardOf(tree, 'planner'))[0];
+  assert.ok(plannerUndo, 'the route-dirty planner save must expose the undo button');
+  plannerUndo.props.onClick();
+  tree = await app.settle();
+  assert.deepEqual(JSON.parse(routePostsOf(vm)[plannerPosts + 1].opts.body), { id: 'planner', expectedMtimeMs: 1010, provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: null, disabled: false }, 'the route-dirty undo must carry the pre-save provider/model strings and clear the effort');
+
+  routeMode = 'ok';
+  checkboxOfId(tree, 'zeta-custom').props.onChange({ target: { checked: true } });
+  tree = app.renderCycle();
+  await saveOfCard(cardOf(tree, 'zeta-custom')).props.onClick();
+  tree = await app.settle();
+  const secondUndo = undoButtonsOf(cardOf(tree, 'zeta-custom'))[0];
+  assert.ok(secondUndo, 'the latest save must expose the undo button');
+  secondUndo.props.onClick();
+  tree = await app.settle();
+  assert.equal(checkboxOfId(tree, 'zeta-custom').props.checked, false, 'the undo must restore the pre-save state');
+  assert.equal(undoButtonsOf(cardOf(tree, 'zeta-custom')).length, 0, 'undo must never create a snapshot');
+
+  routeMode = '409';
+  checkboxOfId(tree, 'zeta-custom').props.onChange({ target: { checked: true } });
+  tree = app.renderCycle();
+  await saveOfCard(cardOf(tree, 'zeta-custom')).props.onClick();
+  tree = await app.settle();
+  assert.ok(collectText(cardOf(tree, 'zeta-custom')).join('').includes('Conflict/validation error (409)'), 'a 409 save must render the conflict text');
+  assert.equal(undoButtonsOf(cardOf(tree, 'zeta-custom')).length, 0, 'a failed save must never expose an undo button');
+
+  routeMode = 'ok';
+  checkboxOfId(tree, 'zeta-custom').props.onChange({ target: { checked: true } });
+  tree = app.renderCycle();
+  assert.equal(saveOfCard(cardOf(tree, 'zeta-custom')).props.disabled, false, 'the re-dirtied draft must be saveable');
+  await saveOfCard(cardOf(tree, 'zeta-custom')).props.onClick();
+  tree = await app.settle();
+  const retainedUndo = undoButtonsOf(cardOf(tree, 'zeta-custom'))[0];
+  assert.ok(retainedUndo, 'the successful save must expose the undo button');
+  routeMode = '409';
+  retainedUndo.props.onClick();
+  tree = await app.settle();
+  assert.ok(collectText(cardOf(tree, 'zeta-custom')).join('').includes('Conflict/validation error (409)'), 'an undo 409 must render the conflict text');
+  assert.equal(undoButtonsOf(cardOf(tree, 'zeta-custom')).length, 1, 'a failed undo must retain the snapshot');
+  assert.ok(collectText(tree).some((value) => value.includes('reasoning effort') || value.includes('effort')), 'an undo 409 for an effort-carrying route must render the effort hint');
+  const undoRegion = findNodes(tree, (n) => n.props?.role === 'status' && n.props['aria-live'] === 'polite' && n.props['aria-atomic'] === 'true').find((n) => n.props.style?.position === 'absolute' && n.props.style?.width === 1);
+  assert.ok(undoRegion && collectText(undoRegion).some((value) => value.includes('Conflict')), 'a failed undo must be announced in the shared aria-live region');
+
+  routeMode = 'ok';
+  checkboxOfId(tree, 'zeta-custom').props.onChange({ target: { checked: true } });
+  tree = app.renderCycle();
+  await saveOfCard(cardOf(tree, 'zeta-custom')).props.onClick();
+  tree = await app.settle();
+  const aliveUndo = undoButtonsOf(cardOf(tree, 'zeta-custom'))[0];
+  assert.ok(aliveUndo, 'the final save must expose the undo button for the alive-guard drive');
+  holdUndo = true;
+  aliveUndo.props.onClick();
+  await app.settle(false);
+  app.unmount();
+  holdUndo();
+  holdUndo = null;
+  await new Promise((r) => setTimeout(r, 0));
+});
+
+await test('save error actions: 409 re-GET keeps the draft and never resends a stale mtime; effort hint; lock-timeout guidance renders', async () => {
+  const roles = [
+    { id: 'planner', name: 'planner', description: 'Plans the work', provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: null, disabled: false, mtimeMs: 1000 }
+  ];
+  let rolesMtime = 1000;
+  let routeMode = '409';
+  const vm = mountVmClient(async (url, opts) => {
+    if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles: [{ ...roles[0], mtimeMs: rolesMtime }] }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify({ ok: true, available: true, degraded: false, default: null, groups: [{ provider: EXAMPLE_HUB, name: 'Example Hub', models: [{ id: 'flash-a', name: 'Flash A' }] }] }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.efforts`)) return new Response(JSON.stringify({ ok: true, defaultEffort: 'medium', efforts: [{ id: 'high', name: 'High' }] }), { status: 200 });
+    if (url === `/api/${NS}.route`) {
+      const payload = JSON.parse(opts.body);
+      const base = roles[0];
+      if (routeMode === '409') return new Response(JSON.stringify({ ok: false, error: 'stale mtime' }), { status: 409 });
+      if (routeMode === '503lock') return new Response(JSON.stringify({ ok: false, error: 'lock-timeout on role cards: retry after the in-flight write completes' }), { status: 503 });
+      return new Response(JSON.stringify({ ok: true, role: { ...base, disabled: payload.disabled ?? base.disabled, reasoningEffort: payload.reasoningEffort === undefined ? base.reasoningEffort : payload.reasoningEffort, mtimeMs: base.mtimeMs + 10 } }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  });
+  const app = vm.mountInstance();
+  let tree = await app.settle();
+
+  const postsBefore = routePostsOf(vm).length;
+  checkboxOfId(tree, 'planner').props.onChange({ target: { checked: true } });
+  tree = app.renderCycle();
+  await saveOfCard(cardOf(tree, 'planner')).props.onClick();
+  tree = app.renderCycle();
+  assert.equal(routePostsOf(vm).length, postsBefore + 1, 'the conflicting save must have POSTed once');
+  const card = cardOf(tree, 'planner');
+  const regetButton = findNodes(card, (n) => n.type === 'button' && n.props['aria-label'] === 'Reload saved state and keep edits for planner')[0];
+  assert.ok(regetButton, 'the 409 message must render the re-GET action button');
+  assert.ok(regetButton.children.includes('Reload saved state, keep edits'), 'the action button must read error.action.reget');
+  assert.ok(collectText(card).join('').includes('Conflict/validation error (409)'), 'the 409 message text must render');
+
+  rolesMtime = 1500;
+  const rolesCallsBefore = vm.fetchCalls.filter((c) => c.url.startsWith(`/api/${NS}.roles`)).length;
+  const routeCallsBefore = routePostsOf(vm).length;
+  regetButton.props.onClick();
+  tree = await app.settle();
+  assert.equal(vm.fetchCalls.filter((c) => c.url.startsWith(`/api/${NS}.roles`)).length, rolesCallsBefore + 1, 'the action must re-GET roles');
+  assert.equal(routePostsOf(vm).length, routeCallsBefore, 'the action must issue ZERO new .route calls');
+  assert.ok(!collectText(cardOf(tree, 'planner')).join('').includes('Conflict/validation error (409)'), 'the action must clear the conflict message');
+  assert.equal(checkboxOfId(tree, 'planner').props.checked, true, 'the action must keep the draft dirty');
+  assert.ok(collectText(cardOf(tree, 'planner')).join('').includes(' (unsaved)'), 'the kept draft must still render the unsaved suffix');
+
+  routeMode = 'ok';
+  await saveOfCard(cardOf(tree, 'planner')).props.onClick();
+  tree = app.renderCycle();
+  assert.deepEqual(JSON.parse(routePostsOf(vm).at(-1).opts.body), { id: 'planner', expectedMtimeMs: 1500, disabled: true }, 'the next save must carry the fresh mtime, never the stale one');
+  assert.ok(collectText(cardOf(tree, 'planner')).join('').includes('Saved — applies on the next turn / next subagent_role.'), 'the retried save must succeed');
+
+  effortSelectOfCard(cardOf(tree, 'planner')).props.onChange({ target: { value: 'high' } });
+  tree = app.renderCycle();
+  routeMode = '409';
+  await saveOfCard(cardOf(tree, 'planner')).props.onClick();
+  tree = app.renderCycle();
+  assert.ok(collectText(cardOf(tree, 'planner')).join('').includes('The chosen reasoning effort may not be supported by this route'), 'an effort-carrying 409 must render the effort hint');
+
+  routeMode = '503lock';
+  checkboxOfId(tree, 'planner').props.onChange({ target: { checked: false } });
+  tree = app.renderCycle();
+  await saveOfCard(cardOf(tree, 'planner')).props.onClick();
+  tree = app.renderCycle();
+  const lockCard = cardOf(tree, 'planner');
+  assert.ok(collectText(lockCard).join('').includes('lock-timeout on role cards'), 'the lock-timeout guidance must render via error.raw');
+  assert.ok(collectText(lockCard).join('').includes('retry after the in-flight write completes'), 'the retry instruction must render');
+  assert.equal(findNodes(lockCard, (n) => n.type === 'button' && n.props['aria-label'] === 'Reload saved state and keep edits for planner').length, 0, 'the lock-timeout message must not render a re-GET action');
+  app.unmount();
+});
+
+await test('accessible save confirmation: shared polite region announces success/failure/unchanged, saved-card highlight and live top summary', async () => {
+  const roles = [
+    { id: 'planner', name: 'planner', description: 'Plans the work', provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: null, disabled: false, mtimeMs: 1000 }
+  ];
+  let routeMode = 'ok';
+  const vm = mountVmClient(async (url, opts) => {
+    if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify({ ok: true, available: true, degraded: false, default: null, groups: [{ provider: EXAMPLE_HUB, name: 'Example Hub', models: [{ id: 'flash-a', name: 'Flash A' }] }] }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.efforts`)) return new Response(JSON.stringify({ ok: true, defaultEffort: 'medium', efforts: [{ id: 'high', name: 'High' }] }), { status: 200 });
+    if (url === `/api/${NS}.route`) {
+      const payload = JSON.parse(opts.body);
+      const base = roles.find((r) => r.id === payload.id);
+      if (routeMode === '409') return new Response(JSON.stringify({ ok: false, error: 'stale mtime' }), { status: 409 });
+      if (routeMode === 'unchanged') return new Response(JSON.stringify({ ok: true, unchanged: true, role: { ...base, disabled: payload.disabled ?? base.disabled } }), { status: 200 });
+      return new Response(JSON.stringify({ ok: true, role: { ...base, disabled: payload.disabled ?? base.disabled, mtimeMs: base.mtimeMs + 10 } }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  });
+  const app = vm.mountInstance();
+  let tree = await app.settle();
+  const regions = findNodes(tree, (n) => n.props?.role === 'status' && n.props['aria-live'] === 'polite' && n.props['aria-atomic'] === 'true');
+  assert.ok(regions.length >= 2, 'the shared sr-only region and the live top summary must exist');
+  const regionText = (node) => collectText(node).join('');
+  const srRegion = regions.find((n) => n.props.style?.position === 'absolute' && n.props.style?.width === 1);
+  assert.ok(srRegion, 'one polite region must carry the sr-only style');
+  const summaryRegion = regions.find((n) => n.props.style?.position !== 'absolute');
+  assert.ok(summaryRegion, 'one polite region must be the header counts summary');
+  assert.ok(regionText(summaryRegion).includes(' roles · '), 'the summary region must carry the saved-state counts');
+  assert.ok(regionText(summaryRegion).includes('0 disabled'), 'the summary must start at the saved-state counts');
+
+  checkboxOfId(tree, 'planner').props.onChange({ target: { checked: true } });
+  tree = app.renderCycle();
+  await saveOfCard(cardOf(tree, 'planner')).props.onClick();
+  tree = await app.settle();
+  const srAfterSave = findNodes(app.renderCycle(), (n) => n.props?.role === 'status' && n.props['aria-live'] === 'polite' && n.props['aria-atomic'] === 'true').find((n) => n.props.style?.position === 'absolute' && n.props.style?.width === 1);
+  assert.ok(regionText(srAfterSave).includes('Saved — applies'), 'the region must announce the saved notice after success');
+  const savedCard = cardOf(tree, 'planner');
+  assert.equal(savedCard.props.style.borderColor, 'var(--dsw-alias-state-success-primary, #22c55e)', 'the saved card must carry the green highlight border');
+  const summaryAfterSave = findNodes(app.renderCycle(), (n) => n.props?.role === 'status' && n.props['aria-live'] === 'polite' && n.props['aria-atomic'] === 'true').find((n) => n.props.style?.position !== 'absolute');
+  assert.ok(regionText(summaryAfterSave).includes('1 disabled'), 'the summary must update after a save');
+
+  checkboxOfId(tree, 'planner').props.onChange({ target: { checked: false } });
+  tree = app.renderCycle();
+  assert.ok(cardOf(tree, 'planner').props.style.borderColor !== 'var(--dsw-alias-state-success-primary, #22c55e)', 'the next interaction must clear the green highlight (the new draft turns the border amber)');
+
+  routeMode = '409';
+  effortSelectOfCard(cardOf(tree, 'planner')).props.onChange({ target: { value: 'high' } });
+  tree = app.renderCycle();
+  assert.equal(saveOfCard(cardOf(tree, 'planner')).props.disabled, false, 'the effort-dirty draft must be saveable');
+  await saveOfCard(cardOf(tree, 'planner')).props.onClick();
+  tree = await app.settle();
+  const srAfterFail = findNodes(app.renderCycle(), (n) => n.props?.role === 'status' && n.props['aria-live'] === 'polite' && n.props['aria-atomic'] === 'true').find((n) => n.props.style?.position === 'absolute' && n.props.style?.width === 1);
+  assert.ok(regionText(srAfterFail).includes('Conflict/validation error (409)'), 'the region must announce the conflict message on failure');
+  assert.ok(cardOf(tree, 'planner').props.style.borderColor !== 'var(--dsw-alias-state-success-primary, #22c55e)', 'a failed save must not highlight the card');
+
+  routeMode = 'unchanged';
+  effortSelectOfCard(cardOf(tree, 'planner')).props.onChange({ target: { value: null } });
+  tree = app.renderCycle();
+  assert.equal(saveOfCard(cardOf(tree, 'planner')).props.disabled, false, 'the re-dirtied draft must be saveable');
+  await saveOfCard(cardOf(tree, 'planner')).props.onClick();
+  tree = await app.settle();
+  const srAfterUnchanged = findNodes(app.renderCycle(), (n) => n.props?.role === 'status' && n.props['aria-live'] === 'polite' && n.props['aria-atomic'] === 'true').find((n) => n.props.style?.position === 'absolute' && n.props.style?.width === 1);
+  assert.ok(regionText(srAfterUnchanged).includes('Already up to date'), 'the region must announce the unchanged notice');
+  app.unmount();
+});
+
+await test('role view controls: search, status filter, sort selector and per-tab status breakdown compose with phase tabs', async () => {
+  const roles = [
+    { id: 'planner', name: 'planner', description: 'Plans the work', provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: null, disabled: false, mtimeMs: 1000 },
+    { id: 'alpha-custom', name: 'alpha-custom', description: 'Alpha notes', provider: null, model: 'inherit', reasoningEffort: null, disabled: false, mtimeMs: 2000 },
+    { id: 'zeta-custom', name: 'zeta-custom', description: 'Custom Z', provider: null, model: 'inherit', reasoningEffort: null, disabled: true, mtimeMs: 3000 },
+    { id: 'ghost', name: 'ghost', description: 'Ghost route', provider: 'ghost', model: 'flash-a', reasoningEffort: null, disabled: false, mtimeMs: 4000 }
+  ];
+  const vm = mountVmClient(async (url) => {
+    if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify({ ok: true, available: true, degraded: false, default: null, groups: [{ provider: EXAMPLE_HUB, name: 'Example Hub', models: [{ id: 'flash-a', name: 'Flash A' }] }] }), { status: 200 });
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  });
+  const app = vm.mountInstance();
+  let tree = await app.settle();
+  assert.equal(visibleIds(tree).length, 4, 'the default view must render all four roles');
+  const searchInput0 = findNodes(tree, (n) => n.type === 'input' && n.props['aria-label'] === 'Search roles')[0];
+  assert.ok(searchInput0, 'the search input must render');
+  assert.equal(searchInput0.props.placeholder, 'Filter by name or description', 'the search input must carry the placeholder');
+  let searchInput = searchInput0;
+
+  searchInput.props.onChange({ target: { value: 'plan' } });
+  tree = app.renderCycle();
+  assert.deepEqual(visibleIds(tree), ['planner'], 'the name search must hide zeta-custom and show planner');
+
+  searchInput.props.onChange({ target: { value: 'ghost route' } });
+  tree = app.renderCycle();
+  assert.deepEqual(visibleIds(tree), ['ghost'], 'the description fragment must match too');
+
+  searchInput.props.onChange({ target: { value: '' } });
+  tree = app.renderCycle();
+  const filterButton = (label) => findNodes(tree, (n) => n.type === 'button' && n.props['aria-pressed'] !== undefined && n.children[0] === label)[0];
+  assert.equal(filterButton('All statuses').props['aria-pressed'], true, 'All statuses must start pressed');
+
+  filterButton('Routed').props.onClick();
+  tree = app.renderCycle();
+  assert.deepEqual(visibleIds(tree).sort(), ['ghost', 'planner'], 'the routed filter must compose AND with the all tab');
+  clickTab(tree, app, 'Planning & Execution');
+  tree = app.renderCycle();
+  assert.deepEqual(visibleIds(tree), ['planner'], 'the routed filter must compose AND with a phase tab');
+  filterButton('Disabled').props.onClick();
+  tree = app.renderCycle();
+  assert.equal(visibleIds(tree).length, 0, 'the disabled filter must compose AND with the planning tab');
+  clickTab(tree, app, 'All roles');
+  tree = app.renderCycle();
+  assert.deepEqual(visibleIds(tree), ['zeta-custom'], 'the disabled filter must compose AND with the all tab');
+  filterButton('Inherits chat').props.onClick();
+  tree = app.renderCycle();
+  assert.deepEqual(visibleIds(tree), ['alpha-custom'], 'the inherit filter must compose with the search');
+  filterButton('All statuses').props.onClick();
+  tree = app.renderCycle();
+
+  const sortSelect = findNodes(tree, (n) => n.type === 'select' && n.props['aria-label'] === 'Sort roles')[0];
+  assert.ok(sortSelect, 'the sort selector must render');
+  sortSelect.props.onChange({ target: { value: 'routedFirst' } });
+  tree = app.renderCycle();
+  assert.deepEqual(visibleIds(tree), ['planner', 'ghost', 'alpha-custom', 'zeta-custom'], 'routed-first must reorder within each section');
+  const badgeTextOfId = (id) => statusBadgeOf(cardOf(tree, id)).children[statusBadgeOf(cardOf(tree, id)).children.length - 1];
+  assert.deepEqual(visibleIds(tree).map(badgeTextOfId), ['Routed', 'Routed', 'Inherits chat', 'Disabled'], 'routed-first must order routed, inherit, disabled');
+
+  sortSelect.props.onChange({ target: { value: 'inheritsFirst' } });
+  tree = app.renderCycle();
+  assert.deepEqual(visibleIds(tree), ['planner', 'alpha-custom', 'zeta-custom', 'ghost'], 'inherits-first must reorder within each section');
+  assert.deepEqual(visibleIds(tree).map(badgeTextOfId), ['Routed', 'Inherits chat', 'Disabled', 'Routed'], 'inherits-first must order inherit, disabled, routed');
+  sortSelect.props.onChange({ target: { value: 'name' } });
+  tree = app.renderCycle();
+
+  const breakdownOf = (label) => {
+    const button = tabByLabel(tree, label);
+    const spans = findNodes(button, (n) => n.type === 'span' && n.props.title === 'Routed / inherit / disabled counts for this tab');
+    return spans[0]?.children[0];
+  };
+  assert.equal(breakdownOf('All roles'), '2/1/1', 'the all tab must show its routed/inherit/disabled breakdown');
+  assert.equal(breakdownOf('Planning & Execution'), '1/0/0', 'the planning tab must show its breakdown');
+  assert.equal(breakdownOf('Discovery & Advisory'), '0/0/0', 'the empty discovery tab must show a zero breakdown');
+  assert.equal(breakdownOf('Other'), '1/1/1', 'the other tab must show its breakdown');
+
+  searchInput.props.onChange({ target: { value: 'zzz-no-match' } });
+  tree = app.renderCycle();
+  assert.ok(collectText(tree).join('').includes('No roles match the current search or filter.'), 'an empty filtered view must show the no-match state');
+  searchInput = findNodes(tree, (n) => n.type === 'input' && n.props['aria-label'] === 'Search roles')[0];
+  searchInput.props.onChange({ target: { value: '' } });
+  tree = app.renderCycle();
+  clickTab(tree, app, 'Discovery & Advisory');
+  tree = app.renderCycle();
+  assert.ok(collectText(tree).join('').includes('No roles in this group yet.'), 'a genuinely empty phase must still show the no-group state');
+  app.unmount();
+});
+
+await test('density modes: compact one-line rows keep the same controls; grid cards reserve space via content-visibility; inherit hint shows the chat default', async () => {
+  const roles = [
+    { id: 'planner', name: 'planner', description: 'Plans the work', provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: null, disabled: false, mtimeMs: 1000 },
+    { id: 'alpha-custom', name: 'alpha-custom', description: 'Alpha notes', provider: null, model: 'inherit', reasoningEffort: null, disabled: false, mtimeMs: 2000 }
+  ];
+  const vm = mountVmClient(async (url, opts) => {
+    if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify({ ok: true, available: true, degraded: false, default: { provider: EXAMPLE_CLOUD, model: 'reasoner-d' }, groups: [{ provider: EXAMPLE_HUB, name: 'Example Hub', models: [{ id: 'flash-a', name: 'Flash A' }] }] }), { status: 200 });
+    if (url === `/api/${NS}.route`) {
+      const payload = JSON.parse(opts.body);
+      const base = roles.find((r) => r.id === payload.id);
+      return new Response(JSON.stringify({ ok: true, role: { ...base, disabled: payload.disabled ?? base.disabled, provider: payload.provider === undefined ? base.provider : payload.provider, model: payload.model === undefined ? base.model : (payload.model === null ? 'inherit' : payload.model), reasoningEffort: payload.reasoningEffort === undefined ? base.reasoningEffort : payload.reasoningEffort, mtimeMs: base.mtimeMs + 10 } }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  });
+  const app = vm.mountInstance();
+  let tree = await app.settle();
+  const plannerCard = cardOf(tree, 'planner');
+  assert.equal(plannerCard.props.style.contentVisibility, 'auto', 'comfortable cards must set contentVisibility');
+  assert.equal(plannerCard.props.style.containIntrinsicSize, 'auto 220px', 'comfortable cards must set containIntrinsicSize');
+  assert.ok(collectText(cardOf(tree, 'alpha-custom')).join('').includes('Inherits chat default: example-cloud / reasoner-d'), 'the inherit hint must render the chat default');
+  assert.equal(fieldHelpOf(cardOf(tree, 'planner')).length, 3, 'comfortable cards keep the three field help nodes');
+
+  const densitySelect = findNodes(tree, (n) => n.type === 'select' && n.props['aria-label'] === 'Density')[0];
+  assert.ok(densitySelect, 'the density select must render');
+  densitySelect.props.onChange({ target: { value: 'compact' } });
+  tree = app.renderCycle();
+  const compactCard = cardOf(tree, 'planner');
+  assert.equal(compactCard.props.style.flexDirection, 'row', 'compact rows must lay out as a row');
+  assert.equal(compactCard.props.style.contentVisibility, undefined, 'compact rows must not carry contentVisibility');
+  assert.equal(compactCard.props.style.containIntrinsicSize, undefined, 'compact rows must not carry containIntrinsicSize');
+  assert.ok(checkboxOfCard(compactCard), 'the compact row must keep the disabled checkbox');
+  const compactProvider = providerSelectOfCard(compactCard);
+  const compactModel = modelSelectOfCard(compactCard);
+  assert.ok(compactProvider && compactModel, 'the compact row must keep both selects');
+  assert.equal(compactProvider.props['aria-label'], 'Provider for planner', 'the compact provider select must keep its aria-label');
+  assert.equal(compactModel.props['aria-label'], 'Model for planner', 'the compact model select must keep its aria-label');
+  assert.ok(saveOfCard(compactCard), 'the compact row must keep the save button');
+  assert.equal(fieldHelpOf(compactCard).length, 0, 'compact rows must render zero field help nodes');
+  assert.ok(collectText(cardOf(tree, 'alpha-custom')).join('').includes('Inherits chat default: example-cloud / reasoner-d'), 'the compact inherit row must keep the inherit hint');
+
+  providerSelectOfCard(cardOf(app.renderCycle(), 'planner')).props.onChange({ target: { value: '' } });
+  tree = app.renderCycle();
+  assert.ok(collectText(cardOf(tree, 'planner')).join('').includes(' (unsaved)'), 'drafting in compact mode must mark the card dirty');
+  assert.equal(undoButtonsOf(cardOf(tree, 'planner')).length, 0, 'undo must not render without a snapshot');
+  await saveOfCard(cardOf(tree, 'planner')).props.onClick();
+  tree = await app.settle();
+  assert.ok(collectText(cardOf(tree, 'planner')).join('').includes('Saved — applies'), 'saving from compact mode must show the notice');
+  assert.equal(undoButtonsOf(cardOf(tree, 'planner')).length, 1, 'a successful compact save must expose the undo button in the one-line row');
+  await undoButtonsOf(cardOf(tree, 'planner'))[0].props.onClick();
+  tree = await app.settle();
+  assert.ok(collectText(cardOf(tree, 'planner')).join('').includes('Undone'), 'undo must render its notice in compact mode too');
+
+  const secondVm = mountVmClient(async (url) => {
+    if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify({ ok: true, available: true, degraded: false, default: null, groups: [{ provider: EXAMPLE_HUB, name: 'Example Hub', models: [{ id: 'flash-a', name: 'Flash A' }] }] }), { status: 200 });
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  });
+  const secondApp = secondVm.mountInstance();
+  const secondTree = await secondApp.settle();
+  assert.ok(!collectText(cardOf(secondTree, 'alpha-custom')).join('').includes('Inherits chat default:'), 'a null chat default must render no inherit hint');
+  secondApp.unmount();
+  app.unmount();
+});
+
+await test('panel prefs: tab, legend and density persist same-session with best-effort localStorage and degrade silently', async () => {
+  const roles = [{ id: 'zeta-custom', name: 'zeta-custom', description: 'Custom Z', provider: null, model: 'inherit', reasoningEffort: null, disabled: false, mtimeMs: 3000 }];
+  const handler = async (url) => {
+    if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify({ ok: true, available: true, degraded: false, default: null, groups: [{ provider: EXAMPLE_HUB, name: 'Example Hub', models: [{ id: 'flash-a', name: 'Flash A' }] }] }), { status: 200 });
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  };
+  const vm = mountVmClient(handler);
+  const app = vm.mountInstance();
+  let tree = await app.settle();
+  assert.equal(vm.storage.has('dsh-orchestrator-kit.prefs'), false, 'no prefs must exist before a first change');
+
+  clickTab(tree, app, 'Other');
+  tree = app.renderCycle();
+  assert.ok(vm.storage.has('dsh-orchestrator-kit.prefs'), 'the tab switch must persist the prefs key');
+  assert.deepEqual(JSON.parse(vm.storage.get('dsh-orchestrator-kit.prefs')), { tab: 'other' }, 'the tab switch must persist tab: other');
+
+  const details = findNodes(tree, (n) => n.type === 'details')[0];
+  assert.ok(details, 'the legend details must render');
+  assert.equal(details.props.open, true, 'the legend must start open');
+  details.props.onToggle({ target: { open: false } });
+  tree = app.renderCycle();
+  assert.deepEqual(JSON.parse(vm.storage.get('dsh-orchestrator-kit.prefs')), { tab: 'other', legend: false }, 'the legend toggle must persist legend: false');
+
+  findNodes(tree, (n) => n.type === 'select' && n.props['aria-label'] === 'Density')[0].props.onChange({ target: { value: 'compact' } });
+  tree = app.renderCycle();
+  assert.deepEqual(JSON.parse(vm.storage.get('dsh-orchestrator-kit.prefs')), { tab: 'other', legend: false, density: 'compact' }, 'the density switch must persist density: compact');
+  app.unmount();
+
+  const appRemount = vm.mountInstance();
+  tree = await appRemount.settle();
+  assert.equal(tabByLabel(tree, 'Other').props['aria-selected'], true, 'the restored prefs must select the persisted tab');
+  assert.equal(findNodes(tree, (n) => n.type === 'details')[0].props.open, false, 'the restored prefs must keep the legend closed');
+  assert.equal(findNodes(tree, (n) => n.type === 'select' && n.props['aria-label'] === 'Density')[0].props.value, 'compact', 'the restored prefs must select compact density');
+  appRemount.unmount();
+
+  const vmThrow = mountVmClient(handler, { storage: 'throw' });
+  const appThrow = vmThrow.mountInstance();
+  tree = await appThrow.settle();
+  clickTab(tree, appThrow, 'Other');
+  tree = appThrow.renderCycle();
+  assert.equal(tabByLabel(tree, 'Other').props['aria-selected'], true, 'a storage failure must still switch the tab in memory');
+  assert.equal(vmThrow.storage.size, 0, 'a storage failure must keep the storage empty');
+  findNodes(tree, (n) => n.type === 'details')[0].props.onToggle({ target: { open: false } });
+  tree = appThrow.renderCycle();
+  assert.equal(findNodes(tree, (n) => n.type === 'details')[0].props.open, false, 'the legend toggle must work in memory when storage throws');
+  appThrow.unmount();
+
+  const seed = new Map([['dsh-orchestrator-kit.prefs', '{broken']]);
+  const vmInvalid = mountVmClient(handler, { storageMap: seed });
+  const appInvalid = vmInvalid.mountInstance();
+  tree = await appInvalid.settle();
+  assert.equal(tabByLabel(tree, 'All roles').props['aria-selected'], true, 'invalid stored JSON must fall back to the default tab');
+  assert.equal(findNodes(tree, (n) => n.type === 'details')[0].props.open, true, 'invalid stored JSON must fall back to the open legend');
+  assert.equal(findNodes(tree, (n) => n.type === 'select' && n.props['aria-label'] === 'Density')[0].props.value, 'comfortable', 'invalid stored JSON must fall back to comfortable density');
+  appInvalid.unmount();
+});
+
+await test('remount cache: a fresh catalog cache skips the catalog refetch while roles still refetch; explicit refresh always refetches both', async () => {
+  const roles = [{ id: 'zeta-custom', name: 'zeta-custom', description: 'Custom Z', provider: null, model: 'inherit', reasoningEffort: null, disabled: false, mtimeMs: 3000 }];
+  const vm = mountVmClient(async (url) => {
+    if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify({ ok: true, available: true, degraded: false, default: null, groups: [{ provider: EXAMPLE_HUB, name: 'Example Hub', models: [{ id: 'flash-a', name: 'Flash A' }] }] }), { status: 200 });
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  });
+  const app = vm.mountInstance();
+  await app.settle();
+  const catalogFetches = () => vm.fetchCalls.filter((c) => c.url.startsWith(`/api/${NS}.catalog`)).length;
+  const rolesFetches = () => vm.fetchCalls.filter((c) => c.url.startsWith(`/api/${NS}.roles`)).length;
+  assert.equal(catalogFetches(), 1, 'the first mount must fetch the catalog once');
+  assert.equal(rolesFetches(), 1, 'the first mount must fetch roles once');
+  const dirtyCheckbox = findNodes(app.renderCycle(), (n) => n.type === 'input' && n.props['aria-label'] === 'Disable zeta-custom')[0];
+  dirtyCheckbox.props.onChange({ target: { checked: true } });
+  let tree = app.renderCycle();
+  assert.ok(collectText(tree).join('').includes(' (unsaved)'), 'the draft must be dirty before refresh');
+
+  const second = vm.mountInstance();
+  await second.settle();
+  assert.equal(rolesFetches(), 2, 'a remount must refetch roles');
+  assert.equal(catalogFetches(), 1, 'a remount must skip the catalog refetch while a cached catalog exists');
+
+  findNodes(app.renderCycle(), (n) => n.type === 'button' && n.props['aria-label'] === 'Refresh roles and catalog')[0].props.onClick();
+  await app.settle();
+  assert.equal(rolesFetches(), 3, 'an explicit refresh must refetch roles');
+  assert.equal(catalogFetches(), 2, 'an explicit refresh must refetch the catalog');
+  tree = app.renderCycle();
+  assert.equal(findNodes(tree, (n) => n.type === 'input' && n.props['aria-label'] === 'Disable zeta-custom')[0].props.checked, false, 'the explicit Refresh must reset drafts to the saved state');
+  assert.ok(!collectText(tree).join('').includes(' (unsaved)'), 'the explicit Refresh must clear the dirty seal');
+  app.unmount();
+  second.unmount();
+});
+
+await test('catalog 503 state: banner renders, provider/model selects disable, route saves block and disabled-only saves still work', async () => {
+  const roles = [
+    { id: 'planner', name: 'planner', description: 'Plans the work', provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: null, disabled: false, mtimeMs: 1000 }
+  ];
+  let routeMode = 'ok';
+  const vm = mountVmClient(async (url, opts) => {
+    if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify({ ok: false, error: 'catalog temporarily unavailable' }), { status: 503 });
+    if (url === `/api/${NS}.route`) {
+      const payload = JSON.parse(opts.body);
+      const base = roles.find((r) => r.id === payload.id);
+      if (routeMode === '409') return new Response(JSON.stringify({ ok: false, error: 'stale mtime' }), { status: 409 });
+      return new Response(JSON.stringify({ ok: true, role: { ...base, disabled: payload.disabled ?? base.disabled, mtimeMs: base.mtimeMs + 10 } }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  });
+  const app = vm.mountInstance();
+  let tree = await app.settle();
+  assert.ok(collectText(tree).join('').includes('catalog temporarily unavailable'), 'the catalog 503 must render the banner');
+  const card = cardOf(tree, 'planner');
+  const providerSelect = providerSelectOfCard(card);
+  const modelSelect = modelSelectOfCard(card);
+  assert.equal(providerSelect.props.disabled, true, 'the provider select must disable when the catalog is unavailable');
+  assert.equal(modelSelect.props.disabled, true, 'the model select must disable when the catalog is unavailable');
+
+  checkboxOfId(tree, 'planner').props.onChange({ target: { checked: true } });
+  tree = app.renderCycle();
+  const disabledSave = saveOfCard(cardOf(tree, 'planner'));
+  assert.equal(disabledSave.props.disabled, false, 'a disabled-only save must stay enabled');
+  await disabledSave.props.onClick();
+  tree = await app.settle();
+  assert.deepEqual(JSON.parse(routePostsOf(vm).at(-1).opts.body), { id: 'planner', expectedMtimeMs: 1000, disabled: true }, 'the disabled-only save must POST');
+  assert.ok(collectText(cardOf(tree, 'planner')).join('').includes('Saved — applies'), 'the disabled-only save must succeed');
+
+  providerSelectOfCard(cardOf(tree, 'planner')).props.onChange({ target: { value: '' } });
+  tree = app.renderCycle();
+  const blockedSave = saveOfCard(cardOf(tree, 'planner'));
+  assert.equal(blockedSave.props.disabled, true, 'a route-dirty save must block while the catalog is unavailable');
+  app.unmount();
+});
+
+await test('client.js pass-3 static markers: contentVisibility, undoSnapshots, prefs key and aria-live present in source', () => {
+  const clientText = readFileSync(path.join(packageDir, 'client.js'), 'utf8');
+  assert.ok(clientText.includes('contentVisibility'), 'client.js must declare contentVisibility');
+  assert.ok(clientText.includes('undoSnapshots'), 'client.js must declare the undo snapshot map');
+  assert.ok(clientText.includes('dsh-orchestrator-kit.prefs'), 'client.js must declare the prefs storage key');
+  assert.ok(clientText.includes('aria-live'), 'client.js must declare aria-live regions');
 });
 
 await test('npm pack: dry-run file list matches the frozen 69-entry contract and packed content passes the forbidden-token scan', () => {
