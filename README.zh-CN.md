@@ -64,13 +64,19 @@ graph TD
 
 面板以响应式卡片网格布局角色。顶部分段过滤器可在 All roles、三个 Craft 阶段与 Other 之间切换（方向键在标签间移动）。可折叠图例说明每个控件的作用，每张卡片带状态徽标（Routed、Inherits chat 或 Disabled），页眉汇总已保存的计数。控件标签以英文显示。
 
-面板使用四条路由：`GET /api/dsh-orchestrator-kit.roles`、`GET /api/dsh-orchestrator-kit.catalog`、`GET /api/dsh-orchestrator-kit.efforts` 和 `POST /api/dsh-orchestrator-kit.route`。
+保存与卡片当前完全相同的设置是一次空操作：面板会提示 “Already up to date”，不会写入任何内容。frontmatter 无效的卡片会在警告横幅中列出，在 frontmatter 修复之前无法在此编辑。
+
+面板使用四条路由：`GET /api/dsh-orchestrator-kit.roles`、`GET /api/dsh-orchestrator-kit.catalog`、`GET /api/dsh-orchestrator-kit.efforts` 和 `POST /api/dsh-orchestrator-kit.route`。成功的响应在实际测量到耗时指标时才带有 `Server-Timing` 头（仅含耗时）——roles 读取、catalog 读取、路由校验与写入；未执行路由校验的无变更保存不带该头。图例显示最近一次加载的耗时。
 
 每次保存都有端到端保护：
 
 - **fail-closed 校验** — 未知的角色、模型或力度返回 `409`；目录不可用返回 `503`。绝不盲目写入。
 - **原子写入** — 文件锁串行化写入者，TOCTOU 防护加写入后复检确认卡片，并核对预期的 `mtimeMs`，并发编辑器绝不会被静默覆盖。
 - **唯一写入者** — 面板是这些路由唯一的写入者，保存的路由在下一轮生效。
+- **严格的 frontmatter 写入门槛** — 拒绝锚点、别名与自定义 YAML 标签，frontmatter 上限 65536 字节并限制嵌套深度。带锚点、标签或嵌套过深的卡片仍会列出但只读（每次写入都返回 `400`），直到被清理；带别名或超出字节上限的卡片连宽松的列表解析都无法通过，只出现在无效卡片警告横幅中，不在网格里。
+- **请求限制** — 路由保存请求体上限 65536 字节（超出返回 `413`，先于任何磁盘读取），且只接受已知字段（未知字段返回 `400`）。
+- **锁占用的可操作提示** — 当其他写入者持有卡片锁时，保存返回 `503` 并给出锁名与重试指引；锁文件绝不会被自动删除。
+- **密钥脱敏** — 错误响应体与日志中已知形式的密钥和用户主目录路径会被替换为 `[redacted]` 与 `[home]` 标记，错误码与上下文保持完整。
 
 ## 20 个角色
 
@@ -113,6 +119,12 @@ graph TD
 
 **保存模型时为什么会收到 409？**
 面板会用运行中 harness 的目录校验每次保存。409 表示所选的角色、模型或力度在其中不存在 — 请选择有效条目，而不是绕过校验。
+
+**保存时为什么收到 503“busy”错误？**
+另一个写入者正持有该卡片的锁。稍等片刻后重试。如果锁因其持有进程崩溃而成为孤儿锁，需要由操作员移除卡片旁的 `<card>.md.lock` 文件 — 插件绝不会自动删除锁。
+
+**“Already up to date”是什么意思？**
+这次保存是空操作：提交的设置与卡片完全一致，因此没有写入任何内容，也没有获取锁。校验仍会先执行 — 磁盘上已变更的卡片仍返回 `409`。只有当保存设置了显式路由时才会查询目录：设置相同路由的保存在目录不可用时仍返回 `503`，而仅重复当前 disabled 标记或推理力度的保存（以及重置为 inherit）不会查询目录。
 
 **角色卡片存放在哪里？**
 设置了 `$DSH_AGENTS_HOME` 时在 `$DSH_AGENTS_HOME/agents/`，否则在 `~/.agents/agents/`。面板是路由 frontmatter 的唯一写入者。

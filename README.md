@@ -64,13 +64,19 @@ Unconfigured roles use `model: inherit` — they follow the chat's routing. Over
 
 The panel lays the roles out as a responsive card grid. A segmented filter at the top switches between All roles, the three Craft phases and Other (arrow keys move between tabs). A collapsible legend explains what each control does, each card carries a status badge (Routed, Inherits chat or Disabled), and the header summarizes the saved counts.
 
-The panel talks to four routes: `GET /api/dsh-orchestrator-kit.roles`, `GET /api/dsh-orchestrator-kit.catalog`, `GET /api/dsh-orchestrator-kit.efforts` and `POST /api/dsh-orchestrator-kit.route`.
+Saving settings identical to the card's current ones is a no-op: the panel answers "Already up to date" and nothing is written. Cards with invalid frontmatter are named in a warning banner and cannot be edited here until the frontmatter is fixed.
+
+The panel talks to four routes: `GET /api/dsh-orchestrator-kit.roles`, `GET /api/dsh-orchestrator-kit.catalog`, `GET /api/dsh-orchestrator-kit.efforts` and `POST /api/dsh-orchestrator-kit.route`. Successful responses carry a `Server-Timing` header (durations only) when a timing metric was measured — roles reads, catalog reads, route validation and writes; an unchanged save that ran no route validation carries none. The legend shows the last load timings.
 
 Every save is protected end to end:
 
 - **Fail-closed validation** — an unknown role, model or effort returns `409`; an unavailable catalog returns `503`. Nothing is written blind.
 - **Atomic writes** — a file lock serializes writers, a TOCTOU guard plus post-write revalidation confirm the card, and the expected `mtimeMs` is checked so a concurrent editor is never silently overwritten.
 - **Single writer** — the panel is the only writer of these routes, and a saved route takes effect on the next turn.
+- **Strict frontmatter write gate** — anchors, aliases and custom YAML tags are refused, and frontmatter is capped at 65536 bytes with a nesting limit. Anchored, tagged or deeply nested cards stay listed but read-only (every write returns `400`) until cleaned; aliased or oversized cards fail even the lenient listing parse and appear only in the invalid-card warning banner, not in the grid.
+- **Request limits** — route-save bodies are capped at 65536 bytes (`413` beyond that, before any disk read) and only known fields are accepted (unknown fields return `400`).
+- **Busy-lock guidance** — when another writer holds the card lock, the save returns `503` with the lock name and retry guidance; lock files are never removed automatically.
+- **Secret redaction** — known secret shapes and user-home paths in error bodies and logs are replaced by `[redacted]` and `[home]` markers, keeping error codes and context intact.
 
 ## The 20 roles
 
@@ -113,6 +119,12 @@ Every save is protected end to end:
 
 **Why do I get a 409 when saving a model?**
 The panel validates every save against the catalog of the running harness. A 409 means the role, model or effort you picked does not exist there — pick a valid entry instead of bypassing the check.
+
+**Why do I get a 503 "busy" error when saving?**
+Another writer holds the card's lock. Retry in a moment. If the lock is orphaned because its owner crashed, an operator must remove the `<card>.md.lock` file beside the card — the plugin never removes locks automatically.
+
+**What does "Already up to date" mean?**
+The save was a no-op: the settings match the card exactly, so nothing was written and no lock was acquired. Validation still runs first — a card that changed on disk still returns `409`. The catalog is checked only when the save sets an explicit route: an identical route save still returns `503` when the catalog is unavailable, while identical disabled-only or effort-only saves (and resets to inherit) never consult the catalog.
 
 **Where do the role cards live?**
 Under `$DSH_AGENTS_HOME/agents/` when that variable is set, otherwise `~/.agents/agents/`. The panel is the only writer of route frontmatter.

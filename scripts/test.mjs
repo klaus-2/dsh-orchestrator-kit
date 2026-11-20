@@ -35,6 +35,8 @@ const EXAMPLE_HUB = 'example-hub';
 const EXAMPLE_CLOUD = 'example-cloud';
 const EXAMPLE_OPEN = 'example-open';
 
+const source = readFileSync(path.join(packageDir, 'client.js'), 'utf8');
+
 const LF_CARD = `---
 name: reviewer
 description: >
@@ -942,6 +944,799 @@ await test('HTTP API: POST .route decoupled disabled, validation, effort 400/409
   }
 });
 
+const SYNTHETIC_KEY = ['sk-', 'testonly', '0123456789abcdef'].join('');
+const SYNTHETIC_WIN_PATH = [WIN_HOME_TOKEN, String.fromCharCode(92), 'fixture-user', String.fromCharCode(92), '.agents', String.fromCharCode(92), 'agents', String.fromCharCode(92), 'planner.md'].join('');
+const SYNTHETIC_POSIX_PATH = ['/home/', 'fixture-user', '/.agents/agents/planner.md'].join('');
+const SYNTHETIC_CRED_URL = 'https://fixture-user:fixture-pass@example.invalid/v1';
+const SYNTHETIC_AUTH_HEADER = 'Authorization: Bearer fixture0123456789abcdef';
+
+const flashCatalogLlm = () => ({
+  listProviders: () => [{ id: EXAMPLE_HUB, name: 'Example Hub' }],
+  listModels: async () => [{ id: 'flash-a', name: 'Flash A' }, { id: 'flash-b', name: 'Flash B' }],
+  resolveModelInfo: async (provider, model) => ({
+    provider,
+    id: model,
+    name: model,
+    reasoning: { defaultEffort: 'medium', efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }] }
+  })
+});
+
+await test('strict frontmatter: parseRoleCard strict mode rejects anchors, aliases, explicit tags, deep nesting and oversized blocks; lenient mode unchanged', () => {
+  const anchorCard = '---\nname: anchored\nprovider: &p example-hub\nmodel: flash-a\n---\n\nBody\n';
+  const aliasCard = '---\nname: aliased\nmodel: *p\n---\n\nBody\n';
+  const tagCard = '---\nname: tagged\nmodel: !!str flash-a\n---\n\nBody\n';
+  const deepCard = `---\nname: deep\ncustom: ${'['.repeat(25)}x${']'.repeat(25)}\n---\n\nBody\n`;
+  const moderateCard = '---\nname: moderate\ncustom: {a: {b: 1}}\n---\n\nBody\n';
+  const oversizedCard = `---\nkey: ${'v'.repeat(65537)}\n---\n\nBody\n`;
+
+  assert.throws(() => parseRoleCard(anchorCard, 'anchored.md', { strict: true }), /anchored\.md: frontmatter anchors are not allowed/);
+  assert.equal(parseRoleCard(anchorCard).provider, EXAMPLE_HUB);
+
+  assert.throws(() => parseRoleCard(aliasCard, 'aliased.md', { strict: true }), /aliased\.md: frontmatter aliases are not allowed/);
+  assert.throws(() => parseRoleCard(aliasCard), /alias/i);
+
+  assert.throws(() => parseRoleCard(tagCard, 'tagged.md', { strict: true }), /tagged\.md: frontmatter custom tags are not allowed/);
+  assert.equal(parseRoleCard(tagCard).model, 'flash-a');
+
+  assert.throws(() => parseRoleCard(deepCard, 'deep.md', { strict: true }), /deep\.md: frontmatter nesting is too deep/);
+  assert.equal(parseRoleCard(deepCard).name, 'deep');
+
+  assert.equal(parseRoleCard(moderateCard, 'moderate.md', { strict: true }).name, 'moderate');
+
+  assert.throws(() => parseRoleCard(oversizedCard, 'oversized.md', { strict: true }), /oversized\.md: frontmatter exceeds the 65536-byte limit/);
+  assert.throws(() => parseRoleCard(oversizedCard, 'oversized.md'), /oversized\.md: frontmatter exceeds the 65536-byte limit/);
+
+  assert.throws(() => applyCardSettings(anchorCard, { disabled: true }), /anchors are not allowed/);
+});
+
+await test('HTTP API: GET .roles surfaces parse-failed cards in invalid[] with redacted errors and keeps valid roles sorted', async () => {
+  const tmpHome = mkdtempSync(path.join(tmpdir(), 'map-http-invalid-'));
+  try {
+    const dir = path.join(tmpHome, 'agents');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, 'zeta-valid.md'), '---\nname: zeta-valid\ndescription: Z\nmodel: inherit\n---\n\nBody\n', 'utf8');
+    writeFileSync(path.join(dir, 'alpha-valid.md'), `---\nname: alpha-valid\ndescription: A\nprovider: ${EXAMPLE_HUB}\nmodel: flash-a\n---\n\nBody\n`, 'utf8');
+    writeFileSync(path.join(dir, 'broken-card.md'), '---\nname: [unterminated\n---\n\nBody\n', 'utf8');
+    writeFileSync(path.join(dir, 'aliased-card.md'), '---\nname: aliased-card\nmodel: *p\n---\n\nBody\n', 'utf8');
+
+    await withMockHost({ agentsHome: tmpHome }, async ({ call }) => {
+      const prevWarn = console.warn;
+      const warns = [];
+      console.warn = (...a) => warns.push(a.join(' '));
+      try {
+        const { status, data } = await call(`/api/${NS}.roles`);
+        assert.equal(status, 200);
+        assert.equal(data.ok, true);
+        assert.deepEqual(data.roles.map((r) => r.id), ['alpha-valid', 'zeta-valid']);
+        assert.ok(Array.isArray(data.invalid), 'GET .roles must always carry an invalid array');
+        assert.deepEqual(data.invalid.map((entry) => entry.id), ['aliased-card', 'broken-card']);
+        for (const entry of data.invalid) {
+          assert.equal(typeof entry.error, 'string');
+          assert.ok(entry.error.length > 0, `invalid entry ${entry.id} must carry a non-empty error`);
+        }
+        assert.ok(warns.some((w) => w.includes('broken-card')), 'the broken-YAML card must still log console.warn');
+        assert.ok(warns.some((w) => w.includes('aliased-card')), 'the aliased card must still log console.warn');
+        const mod = await import('../index.js');
+        assert.equal(typeof mod.redactText, 'function');
+        for (const entry of data.invalid) {
+          assert.equal(mod.redactText(entry.error), entry.error, `invalid error for ${entry.id} must already be redacted (idempotent)`);
+        }
+      } finally {
+        console.warn = prevWarn;
+      }
+    });
+  } finally {
+    rmSync(tmpHome, { recursive: true, force: true });
+  }
+});
+
+await test('HTTP API: POST .route refuses anchored, aliased, tagged, deep or oversized frontmatter with 400 before any write', async () => {
+  const tmpHome = mkdtempSync(path.join(tmpdir(), 'map-http-strict-post-'));
+  try {
+    const dir = path.join(tmpHome, 'agents');
+    mkdirSync(dir, { recursive: true });
+    const fixtures = [
+      { id: 'anchored', text: '---\nname: anchored\nprovider: &p example-hub\nmodel: flash-a\n---\n\nBody\n', message: /anchored\.md: frontmatter anchors are not allowed/ },
+      { id: 'aliased', text: '---\nname: aliased\nmodel: *p\n---\n\nBody\n', message: /aliased\.md: frontmatter aliases are not allowed/ },
+      { id: 'tagged', text: '---\nname: tagged\nmodel: !!str flash-a\n---\n\nBody\n', message: /tagged\.md: frontmatter custom tags are not allowed/ },
+      { id: 'deep', text: `---\nname: deep\ncustom: ${'['.repeat(25)}x${']'.repeat(25)}\n---\n\nBody\n`, message: /deep\.md: frontmatter nesting is too deep/ },
+      { id: 'oversized', text: `---\nkey: ${'v'.repeat(65537)}\n---\n\nBody\n`, message: /oversized\.md: frontmatter exceeds the 65536-byte limit/ }
+    ];
+    for (const fixture of fixtures) {
+      writeFileSync(path.join(dir, `${fixture.id}.md`), fixture.text, 'utf8');
+    }
+    writeFileSync(path.join(dir, 'clean.md'), '---\nname: clean\ndescription: Clean\nmodel: inherit\n# keep this comment\ncustom:\n  nested: value\n---\n\nBody\n', 'utf8');
+
+    await withMockHost({ agentsHome: tmpHome, llm: undefined }, async ({ call }) => {
+      for (const fixture of fixtures) {
+        const file = path.join(dir, `${fixture.id}.md`);
+        const before = readFileSync(file, 'utf8');
+        const res = await call(`/api/${NS}.route`, {
+          method: 'POST',
+          body: JSON.stringify({ id: fixture.id, disabled: true })
+        });
+        assert.equal(res.status, 400, `${fixture.id} must be refused with 400`);
+        assert.match(res.data.error, fixture.message);
+        assert.equal(readFileSync(file, 'utf8'), before, `${fixture.id} must be byte-identical after the refused write`);
+      }
+
+      const cleanRes = await call(`/api/${NS}.route`, {
+        method: 'POST',
+        body: JSON.stringify({ id: 'clean', disabled: true })
+      });
+      assert.equal(cleanRes.status, 200);
+      const cleanNext = readFileSync(path.join(dir, 'clean.md'), 'utf8');
+      assert.match(cleanNext, /# keep this comment/);
+      assert.match(cleanNext, /nested: value/);
+      assert.match(cleanNext, /disabled: true/);
+
+      const prevWarn = console.warn;
+      console.warn = () => {};
+      try {
+        const listed = await call(`/api/${NS}.roles`);
+        assert.equal(listed.status, 200);
+        const listedIds = listed.data.roles.map((r) => r.id);
+        for (const id of ['anchored', 'tagged', 'deep', 'clean']) {
+          assert.ok(listedIds.includes(id), `${id} must stay listable in the lenient GET`);
+        }
+        assert.deepEqual(listed.data.invalid.map((entry) => entry.id), ['aliased', 'oversized']);
+      } finally {
+        console.warn = prevWarn;
+      }
+    });
+  } finally {
+    rmSync(tmpHome, { recursive: true, force: true });
+  }
+});
+
+await test('redactText: credential URLs, authorization headers, key assignments, key shapes and home paths become markers; codes and plain URLs survive', async () => {
+  const mod = await import('../index.js');
+  const redactText = mod.redactText;
+  assert.equal(typeof redactText, 'function', 'index.js must export redactText');
+
+  const winOut = redactText(SYNTHETIC_WIN_PATH);
+  assert.ok(winOut.startsWith('[home]'), 'the Windows home prefix must become the [home] marker');
+  assert.ok(winOut.includes('planner.md'), 'the path tail must survive redaction');
+  assert.ok(!winOut.includes('fixture-user'), 'the username must not survive redaction');
+  assert.ok(!winOut.toLowerCase().includes(WIN_HOME_TOKEN), 'no Windows home token may survive');
+  assert.ok(!winOut.toLowerCase().includes(POSIX_HOME_TOKEN), 'no POSIX home token may survive');
+
+  assert.equal(redactText(SYNTHETIC_POSIX_PATH), '[home]/.agents/agents/planner.md');
+  assert.equal(redactText(SYNTHETIC_CRED_URL), 'https://[redacted]@example.invalid/v1');
+  assert.equal(redactText(redactText(SYNTHETIC_CRED_URL)), redactText(SYNTHETIC_CRED_URL), 'redaction must be idempotent');
+  assert.equal(redactText(SYNTHETIC_AUTH_HEADER), 'Authorization: [redacted]');
+  assert.equal(redactText('api_key=fixturevalue123'), 'api_key=[redacted]');
+  assert.equal(redactText(SYNTHETIC_KEY), '[redacted]');
+
+  const fsError = redactText(`EACCES: permission denied, open ${SYNTHETIC_WIN_PATH}`);
+  assert.ok(fsError.startsWith('EACCES'), 'error codes must survive redaction');
+  assert.ok(fsError.includes('[home]'), 'the home prefix in fs errors must become the marker');
+
+  assert.equal(redactText('https://example.invalid/home/guide'), 'https://example.invalid/home/guide', 'URL interiors must not be treated as home paths');
+  const realHomePath = redactText(path.join(homedir(), 'agents', 'x.md'));
+  assert.ok(!realHomePath.includes(homedir()), 'the real home directory must never survive redaction');
+  assert.equal(redactText('provider: example-hub\nmodel: flash-a'), 'provider: example-hub\nmodel: flash-a', 'plain card frontmatter must pass through unchanged');
+});
+
+await test('HTTP API: catalog failures and unreadable-directory errors redact secrets and home paths in bodies and logs', async () => {
+  const tmpHome = mkdtempSync(path.join(tmpdir(), 'map-http-redact-'));
+  const prevWarn = console.warn;
+  const warns = [];
+  console.warn = (...a) => warns.push(a.join(' '));
+  try {
+    const throwingCatalogLlm = {
+      listProviders: () => { throw new Error(`upstream failed: ${SYNTHETIC_AUTH_HEADER} at ${SYNTHETIC_WIN_PATH}`); },
+      listModels: async () => []
+    };
+    await withMockHost({ agentsHome: tmpHome, llm: throwingCatalogLlm }, async ({ call }) => {
+      const cat = await call(`/api/${NS}.catalog`);
+      assert.equal(cat.status, 200);
+      assert.equal(cat.data.degraded, true);
+    });
+    const catalogWarn = warns.join('\n');
+    assert.ok(catalogWarn.includes('[redacted]'), 'catalog failure logs must redact secrets');
+    assert.ok(catalogWarn.includes('[home]'), 'catalog failure logs must redact home paths');
+    assert.ok(!catalogWarn.includes('fixture-user'), 'no fixture username may survive in logs');
+    assert.ok(!catalogWarn.includes('fixture0123456789abcdef'), 'no fixture bearer token may survive in logs');
+    for (const token of [WIN_HOME_TOKEN, POSIX_HOME_TOKEN]) {
+      assert.ok(!catalogWarn.toLowerCase().includes(token), 'no home token may survive in logs');
+    }
+
+    warns.length = 0;
+    const throwingEffortLlm = {
+      resolveModelInfo: async () => { throw new Error(`lookup failed ${SYNTHETIC_CRED_URL}`); }
+    };
+    await withMockHost({ agentsHome: tmpHome, llm: throwingEffortLlm }, async ({ call }) => {
+      const eff = await call(`/api/${NS}.efforts?provider=${EXAMPLE_HUB}&model=flash-a`);
+      assert.equal(eff.status, 503);
+      assert.ok(eff.data.error.includes('[redacted]'), 'effort error bodies must redact credential URLs');
+      assert.ok(!eff.data.error.includes('fixture-pass'), 'no fixture password may survive in the body');
+    });
+
+    warns.length = 0;
+    const fileHome = mkdtempSync(path.join(tmpdir(), 'map-http-redact-file-'));
+    try {
+      writeFileSync(path.join(fileHome, 'agents'), 'not a directory\n', 'utf8');
+      await withMockHost({ agentsHome: fileHome }, async ({ call }) => {
+        const roles = await call(`/api/${NS}.roles`);
+        assert.equal(roles.status, 500);
+        assert.ok(roles.data.error.includes('unreadable'), 'the unreadable-directory error must keep its context');
+        for (const token of [WIN_HOME_TOKEN, POSIX_HOME_TOKEN]) {
+          assert.ok(!roles.data.error.toLowerCase().includes(token), 'no home token may survive in the error body');
+        }
+        if (process.platform === 'win32') {
+          assert.ok(roles.data.error.includes('[home]'), 'real fs errors must carry the [home] marker on win32');
+        }
+      });
+      const dirWarn = warns.join('\n');
+      assert.ok(dirWarn.includes('unreadable'), 'the unreadable-directory warn must keep its context');
+      for (const token of [WIN_HOME_TOKEN, POSIX_HOME_TOKEN]) {
+        assert.ok(!dirWarn.toLowerCase().includes(token), 'no home token may survive in the warn');
+      }
+      if (process.platform === 'win32') {
+        assert.ok(dirWarn.includes('[home]'), 'real fs warns must carry the [home] marker on win32');
+      }
+    } finally {
+      rmSync(fileHome, { recursive: true, force: true });
+    }
+  } finally {
+    console.warn = prevWarn;
+    rmSync(tmpHome, { recursive: true, force: true });
+  }
+});
+
+await test('HTTP API: POST .route enforces the 65536-byte body cap and rejects unknown fields', async () => {
+  const tmpHome = mkdtempSync(path.join(tmpdir(), 'map-http-limits-'));
+  try {
+    const dir = path.join(tmpHome, 'agents');
+    mkdirSync(dir, { recursive: true });
+    const cardFile = path.join(dir, 'planner.md');
+    const cardText = '---\nname: planner\ndescription: Plans\nmodel: inherit\n---\n\nPlan body\n';
+    writeFileSync(cardFile, cardText, 'utf8');
+
+    await withMockHost({ agentsHome: tmpHome, llm: undefined }, async ({ call }) => {
+      const unknown = await call(`/api/${NS}.route`, {
+        method: 'POST',
+        body: JSON.stringify({ id: 'planner', disabled: true, surprise: 'x' })
+      });
+      assert.equal(unknown.status, 400);
+      assert.match(unknown.data.error, /unknown field/);
+      assert.equal(readFileSync(cardFile, 'utf8'), cardText, 'an unknown-field refusal must not touch the disk');
+
+      const padded = await call(`/api/${NS}.route`, {
+        method: 'POST',
+        body: JSON.stringify({ id: 'planner', disabled: true, padding: 'x'.repeat(70000) })
+      });
+      assert.equal(padded.status, 413);
+      assert.match(padded.data.error, /exceeds the 65536-byte limit/);
+      assert.equal(readFileSync(cardFile, 'utf8'), cardText, 'an oversized body must be refused before any write');
+
+      const keyField = await call(`/api/${NS}.route`, {
+        method: 'POST',
+        body: JSON.stringify({ id: 'planner', disabled: true, [SYNTHETIC_KEY]: 'x' })
+      });
+      assert.equal(keyField.status, 400);
+      assert.ok(keyField.data.error.includes('[redacted]'), 'unknown field names must be redacted');
+      assert.ok(!keyField.data.error.includes(SYNTHETIC_KEY), 'the raw key shape must not be echoed');
+      assert.equal(readFileSync(cardFile, 'utf8'), cardText);
+    });
+
+    const longProvider = 'p'.repeat(32000);
+    const longModel = 'm'.repeat(32000);
+    const bigBody = JSON.stringify({ id: 'planner', provider: longProvider, model: longModel });
+    const bigBytes = Buffer.byteLength(bigBody, 'utf8');
+    assert.ok(bigBytes > 60000 && bigBytes < 65536, 'the under-cap body must sit just below the limit');
+    const bigLlm = {
+      listProviders: () => [{ id: longProvider, name: 'Long Provider' }],
+      listModels: async () => [{ id: longModel, name: 'Long Model' }]
+    };
+    await withMockHost({ agentsHome: tmpHome, llm: bigLlm }, async ({ call }) => {
+      const saved = await call(`/api/${NS}.route`, { method: 'POST', body: bigBody });
+      assert.equal(saved.status, 200, 'a known-fields-only body under the cap must save normally');
+      assert.equal(saved.data.role.provider, longProvider);
+      assert.equal(saved.data.role.model, longModel);
+    });
+
+    await withMockHost({ agentsHome: tmpHome, llm: undefined }, async ({ routes }) => {
+      const before = readFileSync(cardFile, 'utf8');
+      const res = await routes.get(`/api/${NS}.route`).fetch(new Request(`http://localhost/api/${NS}.route`, {
+        method: 'POST',
+        body: JSON.stringify({ id: 'planner', disabled: true }),
+        headers: { 'content-type': 'application/json', 'content-length': '70000' }
+      }));
+      const data = await res.json();
+      assert.equal(res.status, 413, 'an oversized content-length must be refused before the body is read');
+      assert.match(data.error, /exceeds the 65536-byte limit/);
+      assert.equal(readFileSync(cardFile, 'utf8'), before, 'the pre-check refusal must not touch the disk');
+    });
+  } finally {
+    rmSync(tmpHome, { recursive: true, force: true });
+  }
+});
+
+await test('HTTP API: POST .route identical payload answers unchanged:true without a write; stale expectedMtimeMs still 409 first', async () => {
+  const tmpHome = mkdtempSync(path.join(tmpdir(), 'map-http-noop-'));
+  try {
+    const dir = path.join(tmpHome, 'agents');
+    mkdirSync(dir, { recursive: true });
+    const cardFile = path.join(dir, 'planner.md');
+    const cardText = `---\nname: planner\ndescription: Plans\nprovider: ${EXAMPLE_HUB}\nmodel: flash-a\nreasoning_effort: high\n---\n\nPlan body\n`;
+    writeFileSync(cardFile, cardText, 'utf8');
+
+    await withMockHost({ agentsHome: tmpHome, llm: flashCatalogLlm() }, async ({ call }) => {
+      const roles0 = await call(`/api/${NS}.roles`);
+      const planner0 = roles0.data.roles.find((r) => r.id === 'planner');
+      const identicalPayload = { id: 'planner', provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: 'high', expectedMtimeMs: planner0.mtimeMs };
+
+      const unchanged = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify(identicalPayload) });
+      assert.equal(unchanged.status, 200);
+      assert.equal(unchanged.data.unchanged, true, 'an identical payload must answer unchanged:true');
+      assert.deepEqual(unchanged.data.role, planner0, 'the unchanged response must carry the GET summary at read-time mtime');
+      assert.equal(readFileSync(cardFile, 'utf8'), cardText, 'an unchanged save must not rewrite the card bytes');
+      assert.equal(statSync(cardFile).mtimeMs, planner0.mtimeMs, 'an unchanged save must not bump the mtime');
+
+      const stale = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ ...identicalPayload, expectedMtimeMs: planner0.mtimeMs - 5000 }) });
+      assert.equal(stale.status, 409, 'the stale-mtime check must fire before the no-op branch');
+
+      const changed = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'planner', provider: EXAMPLE_HUB, model: 'flash-b', expectedMtimeMs: planner0.mtimeMs }) });
+      assert.equal(changed.status, 200);
+      assert.equal(changed.data.unchanged, undefined, 'a real write must not carry unchanged');
+      assert.equal(changed.data.role.model, 'flash-b');
+      assert.equal(changed.data.role.reasoningEffort, null, 'a route change clears the effort');
+
+      const roles1 = await call(`/api/${NS}.roles`);
+      const planner1 = roles1.data.roles.find((r) => r.id === 'planner');
+      const disable = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'planner', disabled: true, expectedMtimeMs: planner1.mtimeMs }) });
+      assert.equal(disable.status, 200);
+      assert.equal(disable.data.unchanged, undefined);
+
+      const roles2 = await call(`/api/${NS}.roles`);
+      const planner2 = roles2.data.roles.find((r) => r.id === 'planner');
+      const disabledNoop = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'planner', disabled: true, expectedMtimeMs: planner2.mtimeMs }) });
+      assert.equal(disabledNoop.status, 200);
+      assert.equal(disabledNoop.data.unchanged, true, 'a disabled-only no-op must answer unchanged:true');
+      assert.equal(statSync(cardFile).mtimeMs, planner2.mtimeMs);
+    });
+
+    await withMockHost({ agentsHome: tmpHome, llm: undefined }, async ({ call }) => {
+      const mtime = statSync(cardFile).mtimeMs;
+      const res = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'planner', provider: EXAMPLE_HUB, model: 'flash-b', disabled: true, expectedMtimeMs: mtime }) });
+      assert.equal(res.status, 503, 'a no-op must NOT bypass fail-closed catalog validation');
+    });
+  } finally {
+    rmSync(tmpHome, { recursive: true, force: true });
+  }
+});
+
+await test('HTTP API: simultaneous POST .route on one role serializes to one 200 and one 409 with card integrity', async () => {
+  const tmpHome = mkdtempSync(path.join(tmpdir(), 'map-http-race-'));
+  try {
+    const dir = path.join(tmpHome, 'agents');
+    mkdirSync(dir, { recursive: true });
+    const cardFile = path.join(dir, 'planner.md');
+    writeFileSync(cardFile, `---\nname: planner\ndescription: Plans\nprovider: ${EXAMPLE_HUB}\nmodel: flash-start\n---\n\nPlan body\n`, 'utf8');
+    const past = new Date(Date.now() - 60000);
+    utimesSync(cardFile, past, past);
+
+    await withMockHost({ agentsHome: tmpHome, llm: flashCatalogLlm() }, async ({ call }) => {
+      const roles0 = await call(`/api/${NS}.roles`);
+      const planner0 = roles0.data.roles.find((r) => r.id === 'planner');
+      const [resA, resB] = await Promise.all([
+        call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'planner', provider: EXAMPLE_HUB, model: 'flash-a', expectedMtimeMs: planner0.mtimeMs }) }),
+        call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'planner', provider: EXAMPLE_HUB, model: 'flash-b', expectedMtimeMs: planner0.mtimeMs }) })
+      ]);
+      assert.deepEqual([resA.status, resB.status].sort(), [200, 409], 'exactly one writer must win the lock');
+      const loser = resA.status === 409 ? resA : resB;
+      const winner = resA.status === 200 ? resA : resB;
+      assert.match(loser.data.error, /changed on disk/);
+      const diskMeta = parseRouteText(readFileSync(cardFile, 'utf8'));
+      assert.equal(diskMeta.model, winner.data.role.model, 'the disk must hold the winner\'s model');
+      const roles1 = await call(`/api/${NS}.roles`);
+      const planner1 = roles1.data.roles.find((r) => r.id === 'planner');
+      assert.equal(planner1.model, winner.data.role.model, 'GET must reflect the winner');
+      assert.equal(planner1.mtimeMs, winner.data.role.mtimeMs);
+    });
+  } finally {
+    rmSync(tmpHome, { recursive: true, force: true });
+  }
+});
+
+await test('HTTP API: a held writer lock yields 503 lock-timeout with a relative lock name and is never auto-recovered', async () => {
+  const tmpHome = mkdtempSync(path.join(tmpdir(), 'map-http-lock-'));
+  try {
+    const dir = path.join(tmpHome, 'agents');
+    mkdirSync(dir, { recursive: true });
+    const cardFile = path.join(dir, 'planner.md');
+    writeFileSync(cardFile, '---\nname: planner\ndescription: Plans\nmodel: inherit\n---\n\nPlan body\n', 'utf8');
+    const lockFile = `${cardFile}.lock`;
+    writeFileSync(lockFile, '0\n', 'utf8');
+
+    await withMockHost({ agentsHome: tmpHome, llm: undefined }, async ({ call }) => {
+      const prevWarn = console.warn;
+      const warns = [];
+      console.warn = (...a) => warns.push(a.join(' '));
+      let busy;
+      try {
+        busy = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'planner', disabled: true }) });
+      } finally {
+        console.warn = prevWarn;
+      }
+      assert.equal(busy.status, 503, 'a held writer lock must answer 503, not a generic 500');
+      assert.equal(busy.data.code, 'lock-timeout');
+      assert.ok(busy.data.error.includes('agents/planner.md.lock'), 'the error must name the relative lock file');
+      assert.ok(busy.data.error.includes('operator'), 'the error must carry operator recovery guidance');
+      assert.ok(!busy.data.error.includes(tmpHome), 'the error must never carry the absolute tmp path');
+      assert.ok(existsSync(lockFile), 'the plugin must never auto-remove a lock it did not create');
+      const lockWarn = warns.join('\n');
+      for (const token of [WIN_HOME_TOKEN, POSIX_HOME_TOKEN]) {
+        assert.ok(!lockWarn.toLowerCase().includes(token), 'the lock-timeout warn must not leak home tokens');
+      }
+
+      rmSync(lockFile);
+      const retry = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'planner', disabled: true }) });
+      assert.equal(retry.status, 200, 'after the operator removes the lock the save must succeed');
+      assert.equal(retry.data.role.disabled, true);
+    });
+  } finally {
+    rmSync(tmpHome, { recursive: true, force: true });
+  }
+});
+
+await test('HTTP API: Server-Timing on roles/catalog/route success carries durations only', async () => {
+  const tmpHome = mkdtempSync(path.join(tmpdir(), 'map-http-timing-'));
+  try {
+    const dir = path.join(tmpHome, 'agents');
+    mkdirSync(dir, { recursive: true });
+    const cardFile = path.join(dir, 'planner.md');
+    writeFileSync(cardFile, `---\nname: planner\ndescription: Plans\nprovider: ${EXAMPLE_HUB}\nmodel: flash-a\n---\n\nPlan body\n`, 'utf8');
+
+    await withMockHost({ agentsHome: tmpHome, llm: flashCatalogLlm() }, async ({ routes }) => {
+      const rawGet = (routePath) => {
+        const url = new URL(routePath, 'http://localhost');
+        return routes.get(url.pathname).fetch(new Request(url.toString()));
+      };
+      const rawPost = (payload) => routes.get(`/api/${NS}.route`).fetch(new Request(`http://localhost/api/${NS}.route`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+        headers: { 'content-type': 'application/json' }
+      }));
+      const assertDurationsOnly = (header) => {
+        assert.equal(typeof header, 'string', 'a success response must carry server-timing');
+        assert.match(header, /^[A-Za-z0-9_-]+;dur=\d+(\.\d+)?(?:, [A-Za-z0-9_-]+;dur=\d+(\.\d+)?)*$/, 'server-timing must carry metrics and durations only');
+        const metrics = [...header.matchAll(/([A-Za-z0-9_-]+);dur=([0-9]+(?:\.[0-9]+)?)/g)];
+        assert.ok(metrics.length > 0, 'server-timing must carry at least one metric');
+        for (const metric of metrics) {
+          const value = Number(metric[2]);
+          assert.ok(Number.isFinite(value) && value >= 0, 'every duration must be finite and >= 0');
+        }
+        assert.ok(!header.includes(tmpHome), 'server-timing must never carry paths');
+        assert.ok(!header.includes('planner'), 'server-timing must never carry role ids');
+      };
+
+      const rolesRes = await rawGet(`/api/${NS}.roles`);
+      assert.equal(rolesRes.status, 200);
+      const rolesTiming = rolesRes.headers.get('server-timing');
+      assert.ok(typeof rolesTiming === 'string' && /^reads;dur=\d+(\.\d+)?$/.test(rolesTiming), 'GET .roles must carry exactly reads;dur=<ms>');
+      assertDurationsOnly(rolesTiming);
+
+      const catalogRes = await rawGet(`/api/${NS}.catalog`);
+      assert.equal(catalogRes.status, 200);
+      const catalogTiming = catalogRes.headers.get('server-timing');
+      assert.ok(typeof catalogTiming === 'string' && /^catalog;dur=\d+(\.\d+)?$/.test(catalogTiming), 'GET .catalog must carry exactly catalog;dur=<ms>');
+      assertDurationsOnly(catalogTiming);
+
+      const mtime0 = statSync(cardFile).mtimeMs;
+      const writeRes = await rawPost({ id: 'planner', provider: EXAMPLE_HUB, model: 'flash-b', expectedMtimeMs: mtime0 });
+      assert.equal(writeRes.status, 200);
+      const writeTiming = writeRes.headers.get('server-timing');
+      assert.ok(typeof writeTiming === 'string' && writeTiming.includes('catalog;dur=') && writeTiming.includes('write;dur='), 'a route-changing success must carry catalog and write metrics');
+      assertDurationsOnly(writeTiming);
+
+      const staleRes = await rawPost({ id: 'planner', disabled: true, expectedMtimeMs: mtime0 - 5000 });
+      assert.equal(staleRes.status, 409);
+      assert.equal(staleRes.headers.get('server-timing'), null, 'error responses must carry no timing header');
+
+      const mtime1 = statSync(cardFile).mtimeMs;
+      const unchangedRes = await rawPost({ id: 'planner', provider: EXAMPLE_HUB, model: 'flash-b', expectedMtimeMs: mtime1 });
+      assert.equal(unchangedRes.status, 200);
+      const unchangedData = await unchangedRes.json();
+      assert.equal(unchangedData.unchanged, true);
+      const unchangedTiming = unchangedRes.headers.get('server-timing');
+      assert.ok(typeof unchangedTiming === 'string' && unchangedTiming.includes('catalog;dur='), 'the unchanged response keeps the catalog metric when validation ran');
+      assert.ok(!unchangedTiming.includes('write;dur='), 'the unchanged response must never carry a write metric');
+      assertDurationsOnly(unchangedTiming);
+
+      const effortsRes = await rawGet(`/api/${NS}.efforts?provider=${EXAMPLE_HUB}&model=flash-b`);
+      assert.equal(effortsRes.status, 200);
+      assert.equal(effortsRes.headers.get('server-timing'), null, 'GET .efforts must carry no timing header');
+    });
+  } finally {
+    rmSync(tmpHome, { recursive: true, force: true });
+  }
+});
+
+await test('HTTP API: GET .roles with 40 cards returns every card sorted (bounded parallel reads)', async () => {
+  const tmpHome = mkdtempSync(path.join(tmpdir(), 'map-http-forty-'));
+  try {
+    const dir = path.join(tmpHome, 'agents');
+    mkdirSync(dir, { recursive: true });
+    const expectedIds = Array.from({ length: 40 }, (_, i) => `role-${String(i).padStart(2, '0')}`);
+    for (const id of expectedIds) {
+      writeFileSync(path.join(dir, `${id}.md`), `---\nname: ${id}\nmodel: inherit\n---\n\nBody\n`, 'utf8');
+    }
+    await withMockHost({ agentsHome: tmpHome }, async ({ call }) => {
+      const { status, data } = await call(`/api/${NS}.roles`);
+      assert.equal(status, 200);
+      assert.equal(data.ok, true);
+      assert.equal(data.roles.length, 40);
+      assert.deepEqual(data.roles.map((r) => r.id), expectedIds, 'every card must appear exactly once, sorted by id');
+    });
+  } finally {
+    rmSync(tmpHome, { recursive: true, force: true });
+  }
+});
+
+await test('no-op save detects an external edit during the validation window', async () => {
+  const tmpHome = mkdtempSync(path.join(tmpdir(), 'map-http-noop-toctou-'));
+  try {
+    const dir = path.join(tmpHome, 'agents');
+    mkdirSync(dir, { recursive: true });
+    const cardFile = path.join(dir, 'planner.md');
+    const cardText = `---\nname: planner\ndescription: Plans\nprovider: ${EXAMPLE_HUB}\nmodel: flash-a\nreasoning_effort: high\n---\n\nPlan body\n`;
+    writeFileSync(cardFile, cardText, 'utf8');
+
+    let toctouHook = null;
+    const baseLlm = flashCatalogLlm();
+    const llm = {
+      ...baseLlm,
+      resolveModelInfo: async (provider, model) => {
+        if (toctouHook) await toctouHook();
+        return baseLlm.resolveModelInfo(provider, model);
+      }
+    };
+
+    await withMockHost({ agentsHome: tmpHome, llm }, async ({ call }) => {
+      const roles0 = await call(`/api/${NS}.roles`);
+      const readMtime = roles0.data.roles.find((r) => r.id === 'planner').mtimeMs;
+      const externalContent = `---\nname: planner\ndescription: External edit\nprovider: ${EXAMPLE_HUB}\nmodel: flash-a\nreasoning_effort: low\n---\n\nPlan body\n`;
+      toctouHook = async () => {
+        writeFileSync(cardFile, externalContent, 'utf8');
+        const bumped = new Date(readMtime + 2000);
+        utimesSync(cardFile, bumped, bumped);
+      };
+      const res = await call(`/api/${NS}.route`, {
+        method: 'POST',
+        body: JSON.stringify({ id: 'planner', reasoningEffort: 'high', expectedMtimeMs: readMtime })
+      });
+      toctouHook = null;
+      assert.equal(res.status, 409, 'an external edit during the validation window must conflict even when the rendered save is a no-op');
+      assert.match(res.data.error, /changed on disk/);
+      assert.equal(readFileSync(cardFile, 'utf8'), externalContent, 'the external edit must be preserved, never overwritten');
+      assert.ok(!existsSync(`${cardFile}.lock`), 'the conflicted no-op must not acquire or orphan a lock');
+      assert.notEqual(res.data.unchanged, true, 'a conflicted no-op must not answer unchanged:true');
+    });
+  } finally {
+    rmSync(tmpHome, { recursive: true, force: true });
+  }
+});
+
+await test('redaction: adversarial secret shapes are fully redacted and linear', async () => {
+  const mod = await import('../index.js');
+  const redactText = mod.redactText;
+  assert.equal(typeof redactText, 'function', 'index.js must export redactText');
+
+  const hex32 = '0123456789abcdef'.repeat(2);
+  for (const key of ['api_key', 'token', 'password']) {
+    const jsonShape = `{"${key}":"${hex32}"}`;
+    const out = redactText(jsonShape);
+    assert.ok(out.includes('[redacted]'), `the JSON ${key} value must be redacted`);
+    assert.ok(!out.includes(hex32), `the JSON ${key} value must not survive redaction`);
+    assert.equal(redactText(out), out, `JSON ${key} redaction must be idempotent`);
+  }
+
+  const atUrl = 'https://svcuser:Sup3r@Secret@api.example.invalid/v1';
+  assert.equal(redactText(atUrl), 'https://[redacted]@api.example.invalid/v1', 'a password containing @ must be consumed whole, with no tail');
+  assert.equal(redactText(redactText(atUrl)), redactText(atUrl), 'the @-password redaction must be idempotent');
+
+  const quoted = 'password="correct horse battery staple"';
+  assert.equal(redactText(quoted), 'password="[redacted]"', 'a double-quoted multi-word secret must leave no trailing words');
+  const singleQuoted = "password='correct horse battery staple'";
+  assert.equal(redactText(singleQuoted), "password='[redacted]'", 'a single-quoted multi-word secret must leave no trailing words');
+  assert.equal(redactText(redactText(quoted)), redactText(quoted), 'the quoted redaction must be idempotent');
+  assert.equal(redactText(redactText(singleQuoted)), redactText(singleQuoted), 'the single-quoted redaction must be idempotent');
+
+  const googleKey = ['AI', 'za', 'FixtureKey0123456789abcdef'].join('');
+  const keyUrl = `https://api.example.invalid/v1/models?key=${googleKey}`;
+  const keyOut = redactText(keyUrl);
+  assert.equal(keyOut, 'https://api.example.invalid/v1/models?key=[redacted]', 'the AIza key must become the marker with host and path intact');
+  assert.ok(!keyOut.includes(googleKey), 'the raw AIza key must not survive');
+  assert.equal(redactText(keyOut), keyOut, 'the AIza redaction must be idempotent');
+
+  const colonRun = 'a://' + ':'.repeat(60000);
+  const colonOut = redactText(colonRun);
+  assert.equal(typeof colonOut, 'string', 'the colon-run input must return a string');
+  assert.equal(redactText(colonOut), colonOut, 'the colon-run output must be idempotent');
+
+  const dotRun = 'a.'.repeat(30000);
+  const dotOut = redactText(dotRun);
+  assert.equal(typeof dotOut, 'string', 'the dot-run input must return a string');
+  assert.equal(redactText(dotOut), dotOut, 'the dot-run output must be idempotent');
+
+  const escapedDouble = '{"api_key":"abc\\"def"}';
+  assert.equal(redactText(escapedDouble), '{"api_key":"[redacted]"}', 'an escaped quote inside a double-quoted secret must not leak the tail');
+  const escapedSingle = "password='abc\\'def'";
+  assert.equal(redactText(escapedSingle), "password='[redacted]'", 'an escaped quote inside a single-quoted secret must not leak the tail');
+  assert.equal(redactText(redactText(escapedDouble)), redactText(escapedDouble), 'the escaped-quote redaction must be idempotent');
+
+  assert.equal(redactText('git+ssh://u:p@example.invalid/x'), 'git+ssh://[redacted]@example.invalid/x', 'a compound scheme must still redact its userinfo');
+
+  const basicB64 = 'dXNlcjpwYXNzMTIzNDU2';
+  const jsonAuth = `{"Authorization": "Basic ${basicB64}"}`;
+  const jsonAuthOut = redactText(jsonAuth);
+  assert.equal(jsonAuthOut, '{"Authorization": "[redacted]"}', 'a JSON-quoted Basic authorization header must redact whole');
+  assert.ok(!jsonAuthOut.includes(basicB64), 'the Basic credential must not survive');
+  const jsonBearer = '{"Authorization": "Bearer fixture0123456789abcdef"}';
+  assert.equal(redactText(jsonBearer), '{"Authorization": "[redacted]"}', 'a JSON-quoted Bearer authorization header must redact whole');
+  const quotedAuth = 'Authorization: "Bearer abc def ghi"';
+  assert.equal(redactText(quotedAuth), 'Authorization: "[redacted]"', 'a quoted multi-word authorization value must leave no trailing words');
+  const multiAuth = 'Authorization: Bearer abc def';
+  assert.equal(redactText(multiAuth), 'Authorization: [redacted]', 'an unquoted multi-word authorization value must leave no tail');
+  assert.equal(redactText(redactText(jsonAuth)), redactText(jsonAuth), 'authorization redaction must be idempotent (JSON form)');
+  assert.equal(redactText(redactText(quotedAuth)), redactText(quotedAuth), 'authorization redaction must be idempotent (quoted form)');
+  assert.equal(redactText(redactText(multiAuth)), redactText(multiAuth), 'authorization redaction must be idempotent (unquoted form)');
+  const proseAuth = redactText(`upstream failed: Authorization: Bearer fixture0123456789abcdef at ${SYNTHETIC_WIN_PATH}`);
+  assert.ok(proseAuth.includes('[redacted]'), 'the token in error prose must redact');
+  assert.ok(proseAuth.includes('[home]'), 'the path clause in error prose must survive to the home marker');
+  assert.ok(proseAuth.includes('planner.md'), 'the path tail must survive');
+  assert.ok(!proseAuth.includes('fixture0123456789abcdef'), 'the token must not survive prose redaction');
+
+  assert.equal(redactText(SYNTHETIC_CRED_URL), 'https://[redacted]@example.invalid/v1');
+  assert.equal(redactText('api_key=fixturevalue123'), 'api_key=[redacted]');
+  assert.equal(redactText(SYNTHETIC_AUTH_HEADER), 'Authorization: [redacted]');
+  assert.equal(redactText('Bearer fixture0123456789abcdef'), 'Bearer [redacted]');
+  assert.equal(redactText(SYNTHETIC_KEY), '[redacted]');
+  const winOut = redactText(SYNTHETIC_WIN_PATH);
+  assert.ok(winOut.startsWith('[home]'), 'the Windows home prefix must still become the marker');
+  assert.ok(winOut.includes('planner.md'), 'the path tail must still survive');
+  assert.ok(!winOut.includes('fixture-user'), 'the fixture username must still be redacted');
+  assert.equal(redactText(SYNTHETIC_POSIX_PATH), '[home]/.agents/agents/planner.md');
+  assert.equal(redactText('https://host/home/guide'), 'https://host/home/guide', 'plain URL interiors must stay unchanged');
+});
+
+await test('request and frontmatter caps enforce UTF-8 bytes at the exact boundary', async () => {
+  const tmpHome = mkdtempSync(path.join(tmpdir(), 'map-http-byte-caps-'));
+  try {
+    const dir = path.join(tmpHome, 'agents');
+    mkdirSync(dir, { recursive: true });
+    const cardFile = path.join(dir, 'planner.md');
+    const cardText = '---\nname: planner\ndescription: Plans\nmodel: inherit\n---\n\nPlan body\n';
+    writeFileSync(cardFile, cardText, 'utf8');
+    const past = new Date(Date.now() - 60000);
+    utimesSync(cardFile, past, past);
+    const baselineMtime = statSync(cardFile).mtimeMs;
+
+    const astralBody = JSON.stringify({ id: 'planner', provider: '\u{1F600}'.repeat(60000), model: 'flash-a' });
+    assert.ok(Buffer.byteLength(astralBody, 'utf8') > 65536, 'the astral body must exceed the byte cap');
+    const bmpBody = JSON.stringify({ id: 'planner', provider: '\u4E00'.repeat(30000), model: 'flash-a' });
+    assert.ok(bmpBody.length < 65536 && Buffer.byteLength(bmpBody, 'utf8') > 65536, 'the BMP body must be under the cap in UTF-16 units but over in bytes');
+
+    await withMockHost({ agentsHome: tmpHome, llm: undefined }, async ({ call }) => {
+      for (const [label, body] of [['astral', astralBody], ['bmp', bmpBody]]) {
+        const res = await call(`/api/${NS}.route`, { method: 'POST', body });
+        assert.equal(res.status, 413, `the ${label} multibyte body must be refused by the byte cap`);
+        assert.match(res.data.error, /exceeds the 65536-byte limit/);
+        assert.equal(readFileSync(cardFile, 'utf8'), cardText, `the ${label} refusal must not touch the disk`);
+        assert.equal(statSync(cardFile).mtimeMs, baselineMtime, `the ${label} refusal must not bump the mtime`);
+      }
+
+      const skeleton = (pad) => JSON.stringify({ id: 'absent-role', provider: pad, model: 'flash-a' });
+      const padLen = 65536 - Buffer.byteLength(skeleton(''), 'utf8');
+      const exactBody = skeleton('p'.repeat(padLen));
+      const overBody = skeleton('p'.repeat(padLen + 1));
+      assert.equal(Buffer.byteLength(exactBody, 'utf8'), 65536, 'the exact-cap body must measure exactly 65536 bytes');
+      assert.equal(Buffer.byteLength(overBody, 'utf8'), 65537, 'the over-cap body must measure exactly 65537 bytes');
+      const exactRes = await call(`/api/${NS}.route`, { method: 'POST', body: exactBody });
+      assert.notEqual(exactRes.status, 413, 'a body of exactly 65536 bytes must pass the cap');
+      assert.equal(exactRes.status, 404, 'the exact-cap body must reach card lookup (absent card)');
+      const overRes = await call(`/api/${NS}.route`, { method: 'POST', body: overBody });
+      assert.equal(overRes.status, 413, 'a body of 65537 bytes must be refused');
+      assert.match(overRes.data.error, /exceeds the 65536-byte limit/);
+      assert.equal(readFileSync(cardFile, 'utf8'), cardText);
+      assert.equal(statSync(cardFile).mtimeMs, baselineMtime);
+    });
+
+    const fmBlock = (filler) => `name: wide\ndescription: ${filler}\nmodel: inherit\ndisabled: true`;
+    const need = 65536 - Buffer.byteLength(fmBlock(''), 'utf8');
+    const filler = '\u00E9'.repeat(Math.floor(need / 2)) + (need % 2 === 1 ? 'x' : '');
+    const exactBlock = fmBlock(filler);
+    const overBlock = fmBlock(filler + 'x');
+    assert.equal(Buffer.byteLength(exactBlock, 'utf8'), 65536, 'the exact-cap frontmatter must measure exactly 65536 bytes');
+    assert.equal(Buffer.byteLength(overBlock, 'utf8'), 65537, 'the over-cap frontmatter must measure exactly 65537 bytes');
+    assert.ok(exactBlock.length < 65536 && overBlock.length < 65536, 'the multibyte blocks must be under the cap in UTF-16 units');
+    const wideText = `---\n${exactBlock}\n---\n\nBody\n`;
+    const wideOverText = `---\n${overBlock}\n---\n\nBody\n`;
+    writeFileSync(path.join(dir, 'wide.md'), wideText, 'utf8');
+    writeFileSync(path.join(dir, 'wide-over.md'), wideOverText, 'utf8');
+
+    await withMockHost({ agentsHome: tmpHome, llm: undefined }, async ({ call }) => {
+      const prevWarn = console.warn;
+      console.warn = () => {};
+      let listed;
+      try {
+        listed = await call(`/api/${NS}.roles`);
+      } finally {
+        console.warn = prevWarn;
+      }
+      assert.equal(listed.status, 200);
+      assert.ok(listed.data.roles.some((r) => r.id === 'wide'), 'the exact-cap frontmatter must stay listable in the lenient GET');
+      const invalidEntry = listed.data.invalid.find((entry) => entry.id === 'wide-over');
+      assert.ok(invalidEntry, 'the 65537-byte frontmatter must surface in invalid[]');
+      assert.match(invalidEntry.error, /exceeds the 65536-byte limit/);
+
+      const wideRes = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'wide', disabled: false }) });
+      assert.equal(wideRes.status, 200, 'the exact-cap frontmatter must not be cap-rejected on the write path');
+      assert.equal(wideRes.data.unchanged, undefined, 'removing the disabled key is a real write');
+      assert.ok(!readFileSync(path.join(dir, 'wide.md'), 'utf8').includes('disabled: true'), 'the write must have removed the disabled key');
+
+      const overRes = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'wide-over', disabled: true }) });
+      assert.equal(overRes.status, 400, 'the 65537-byte frontmatter must be refused on the write path');
+      assert.match(overRes.data.error, /wide-over\.md: frontmatter exceeds the 65536-byte limit/);
+      assert.equal(readFileSync(path.join(dir, 'wide-over.md'), 'utf8'), wideOverText, 'the refused oversized frontmatter must stay byte-identical');
+    });
+  } finally {
+    rmSync(tmpHome, { recursive: true, force: true });
+  }
+});
+
+await test('no-op save honors CRLF cards and the depth cap boundary', async () => {
+  const tmpHome = mkdtempSync(path.join(tmpdir(), 'map-http-crlf-depth-'));
+  try {
+    const dir = path.join(tmpHome, 'agents');
+    mkdirSync(dir, { recursive: true });
+    const crlfFile = path.join(dir, 'crlf.md');
+    const crlfText = `---\r\nname: crlf\r\ndescription: Plans\r\nprovider: ${EXAMPLE_HUB}\r\nmodel: flash-a\r\nreasoning_effort: high\r\n---\r\n\r\nPlan body\r\n`;
+    writeFileSync(crlfFile, crlfText, 'utf8');
+    const past = new Date(Date.now() - 60000);
+    utimesSync(crlfFile, past, past);
+
+    const deepCard = (levels) => `---\nname: deep\ncustom: ${'['.repeat(levels)}x${']'.repeat(levels)}\n---\n\nBody\n`;
+    const deep21Text = deepCard(21);
+    const deep22Text = deepCard(22);
+    writeFileSync(path.join(dir, 'deep21.md'), deep21Text, 'utf8');
+    writeFileSync(path.join(dir, 'deep22.md'), deep22Text, 'utf8');
+    assert.equal(parseRoleCard(deep21Text, 'deep21.md', { strict: true }).name, 'deep', '21 nested collections must pass the strict parser');
+    assert.throws(() => parseRoleCard(deep22Text, 'deep22.md', { strict: true }), /deep22\.md: frontmatter nesting is too deep/);
+
+    await withMockHost({ agentsHome: tmpHome, llm: flashCatalogLlm() }, async ({ call }) => {
+      const roles0 = await call(`/api/${NS}.roles`);
+      const crlf0 = roles0.data.roles.find((r) => r.id === 'crlf');
+      assert.ok(crlf0, 'the CRLF card must be listable');
+      const res = await call(`/api/${NS}.route`, {
+        method: 'POST',
+        body: JSON.stringify({ id: 'crlf', provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: 'high', expectedMtimeMs: crlf0.mtimeMs })
+      });
+      assert.equal(res.status, 200);
+      assert.equal(res.data.unchanged, true, 'an identical POST on a CRLF card must answer unchanged:true');
+      assert.deepEqual(res.data.role, crlf0, 'the unchanged response must carry the GET summary at read-time mtime');
+      assert.equal(readFileSync(crlfFile, 'utf8'), crlfText, 'the CRLF bytes must stay identical');
+      assert.equal(statSync(crlfFile).mtimeMs, crlf0.mtimeMs, 'the CRLF no-op must not bump the mtime');
+      assert.ok(!existsSync(`${crlfFile}.lock`), 'the CRLF no-op must not create a lock file');
+
+      const accepted = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'deep21', disabled: true }) });
+      assert.equal(accepted.status, 200, '21 nested collections (path length 24) must pass the strict write gate');
+      assert.equal(accepted.data.unchanged, undefined, 'the depth-boundary save is a real write');
+      assert.match(readFileSync(path.join(dir, 'deep21.md'), 'utf8'), /disabled: true/);
+
+      const refused = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'deep22', disabled: true }) });
+      assert.equal(refused.status, 400, '22 nested collections (path length 25) must be refused');
+      assert.match(refused.data.error, /deep22\.md: frontmatter nesting is too deep/);
+      assert.equal(readFileSync(path.join(dir, 'deep22.md'), 'utf8'), deep22Text, 'the refused deep card must stay byte-identical');
+    });
+  } finally {
+    rmSync(tmpHome, { recursive: true, force: true });
+  }
+});
+
 await test('yaml-ok: cordis.patch.yml parses with the plugin row, preset row, portable customSkillDirs, and fixed subagent config', () => {
   const rawYaml = readFileSync(path.join(packageDir, 'cordis.patch.yml'), 'utf8');
   assert.doesNotMatch(rawYaml, new RegExp(OLD_PLUGIN_NAME), 'cordis.patch.yml must not keep the old local plugin id');
@@ -1161,6 +1956,7 @@ await test('client.js static contract: phase grouping, save flow markers, and no
   const PT_BR_WORD_RE = /\b(desativado|desativar|provedor|modelo de|esforço|salvar|salvando|atualizar|atualizando|carregando|herdar|configuração|indisponível|padrão)\b/i;
   assert.doesNotMatch(clientText, PT_BR_WORD_RE, 'client.js UI strings must stay in English (panel ships to every locale)');
   assert.ok(!readFileSync(path.join(packageDir, 'index.js'), 'utf8').includes(OLD_PLUGIN_NAME), 'index.js must not keep the old local plugin identity');
+  assert.ok(!readFileSync(path.join(packageDir, 'index.js'), 'utf8').includes('failsafe'), 'index.js must never use the failsafe YAML schema');
 });
 
 await test('node --check passes on the shipped files', () => {
@@ -1178,153 +1974,151 @@ await test('all shipped files exist with UTF-8 no BOM and pure LF', () => {
   }
 });
 
-await test('client.js: runtime module registration, phase grouping, save, 409, refresh failure retention, remount efforts, and catalog failure fallback', async () => {
-  const source = readFileSync(path.join(packageDir, 'client.js'), 'utf8');
+function mountVmClient(fetchHandler) {
+  let registeredModule = null;
+  let injectedFactory = null;
+  const slotsSection = [];
+  const fetchCalls = [];
+  const inflight = new Set();
+  const track = (promise) => {
+    inflight.add(promise);
+    return promise.finally(() => inflight.delete(promise));
+  };
 
-  function mountVmClient(fetchHandler) {
-    let registeredModule = null;
-    let injectedFactory = null;
-    const slotsSection = [];
-    const fetchCalls = [];
-    const inflight = new Set();
-    const track = (promise) => {
-      inflight.add(promise);
-      return promise.finally(() => inflight.delete(promise));
+  const sandbox = createContext({
+    window: {
+      __ModuleLoader__: {
+        load(mod) { registeredModule = mod; }
+      }
+    },
+    fetch: (url, opts) => track(Promise.resolve().then(() => {
+      fetchCalls.push({ url, opts });
+      return fetchHandler(url, opts);
+    })),
+    encodeURIComponent,
+    JSON,
+    Map,
+    Set,
+    Array,
+    Object,
+    Promise,
+    Number,
+    String,
+    Symbol,
+    Error
+  });
+  runInContext(source, sandbox);
+  assert.equal(registeredModule.id, PKG.name);
+
+  let stateSlots = [];
+  let hookCursor = 0;
+  let pendingEffects = [];
+  const plugin = registeredModule.factory((dep) => {
+    assert.equal(dep, 'react');
+    return {
+      createElement(type, props, ...children) {
+        return { type, props: props ?? {}, children: children.flat(Infinity).filter((c) => c !== null && c !== undefined && c !== false) };
+      },
+      useState(initial) {
+        const idx = hookCursor++;
+        if (!(idx in stateSlots)) stateSlots[idx] = typeof initial === 'function' ? initial() : initial;
+        return [stateSlots[idx], (updater) => {
+          stateSlots[idx] = typeof updater === 'function' ? updater(stateSlots[idx]) : updater;
+        }];
+      },
+      useEffect(effect, deps) {
+        pendingEffects.push({ idx: hookCursor++, effect, deps });
+      }
+    };
+  });
+  plugin.apply({
+    slots: {
+      inject(slot, factory) {
+        assert.equal(slot, 'settings.section');
+        injectedFactory = factory;
+      },
+      register(meta, component) {
+        slotsSection.push({ meta, component });
+        return meta;
+      }
+    }
+  });
+  injectedFactory();
+  const Component = slotsSection[0].component;
+  const sectionMeta = slotsSection[0].meta;
+
+  function mountInstance() {
+    const instanceSlots = [];
+    const effectRecords = [];
+    stateSlots = instanceSlots;
+
+    const depsChanged = (prev, next) => {
+      if (prev === undefined || next === undefined) return true;
+      if (prev.length !== next.length) return true;
+      return next.some((v, i) => !Object.is(v, prev[i]));
     };
 
-    const sandbox = createContext({
-      window: {
-        __ModuleLoader__: {
-          load(mod) { registeredModule = mod; }
-        }
-      },
-      fetch: (url, opts) => track(Promise.resolve().then(() => {
-        fetchCalls.push({ url, opts });
-        return fetchHandler(url, opts);
-      })),
-      encodeURIComponent,
-      JSON,
-      Map,
-      Set,
-      Array,
-      Object,
-      Promise,
-      Number,
-      String,
-      Symbol,
-      Error
-    });
-    runInContext(source, sandbox);
-    assert.equal(registeredModule.id, PKG.name);
-
-    let stateSlots = [];
-    let hookCursor = 0;
-    let pendingEffects = [];
-    const plugin = registeredModule.factory((dep) => {
-      assert.equal(dep, 'react');
-      return {
-        createElement(type, props, ...children) {
-          return { type, props: props ?? {}, children: children.flat(Infinity).filter((c) => c !== null && c !== undefined && c !== false) };
-        },
-        useState(initial) {
-          const idx = hookCursor++;
-          if (!(idx in stateSlots)) stateSlots[idx] = typeof initial === 'function' ? initial() : initial;
-          return [stateSlots[idx], (updater) => {
-            stateSlots[idx] = typeof updater === 'function' ? updater(stateSlots[idx]) : updater;
-          }];
-        },
-        useEffect(effect, deps) {
-          pendingEffects.push({ idx: hookCursor++, effect, deps });
-        }
-      };
-    });
-    plugin.apply({
-      slots: {
-        inject(slot, factory) {
-          assert.equal(slot, 'settings.section');
-          injectedFactory = factory;
-        },
-        register(meta, component) {
-          slotsSection.push({ meta, component });
-          return meta;
+    const renderCycle = () => {
+      stateSlots = instanceSlots;
+      hookCursor = 0;
+      pendingEffects = [];
+      const tree = Component();
+      for (const item of pendingEffects) {
+        const prev = effectRecords[item.idx];
+        if (!prev || depsChanged(prev.deps, item.deps)) {
+          if (typeof prev?.cleanup === 'function') prev.cleanup();
+          const cleanup = item.effect();
+          effectRecords[item.idx] = { deps: item.deps, cleanup };
         }
       }
-    });
-    injectedFactory();
-    const Component = slotsSection[0].component;
-    const sectionMeta = slotsSection[0].meta;
+      return tree;
+    };
 
-    function mountInstance() {
-      const instanceSlots = [];
-      const effectRecords = [];
-      stateSlots = instanceSlots;
-
-      const depsChanged = (prev, next) => {
-        if (prev === undefined || next === undefined) return true;
-        if (prev.length !== next.length) return true;
-        return next.some((v, i) => !Object.is(v, prev[i]));
-      };
-
-      const renderCycle = () => {
-        stateSlots = instanceSlots;
-        hookCursor = 0;
-        pendingEffects = [];
-        const tree = Component();
-        for (const item of pendingEffects) {
-          const prev = effectRecords[item.idx];
-          if (!prev || depsChanged(prev.deps, item.deps)) {
-            if (typeof prev?.cleanup === 'function') prev.cleanup();
-            const cleanup = item.effect();
-            effectRecords[item.idx] = { deps: item.deps, cleanup };
-          }
+    const settle = async (waitForInflight = true) => {
+      let tree = renderCycle();
+      for (let step = 0; step < 12; step++) {
+        if (waitForInflight && inflight.size > 0) {
+          await Promise.all([...inflight]);
         }
-        return tree;
-      };
-
-      const settle = async (waitForInflight = true) => {
-        let tree = renderCycle();
-        for (let step = 0; step < 12; step++) {
-          if (waitForInflight && inflight.size > 0) {
-            await Promise.all([...inflight]);
-          }
+        await new Promise((r) => setTimeout(r, 0));
+        const hadInflight = waitForInflight && inflight.size > 0;
+        tree = renderCycle();
+        if (!hadInflight && (!waitForInflight || inflight.size === 0) && step > 0) {
           await new Promise((r) => setTimeout(r, 0));
-          const hadInflight = waitForInflight && inflight.size > 0;
-          tree = renderCycle();
-          if (!hadInflight && (!waitForInflight || inflight.size === 0) && step > 0) {
-            await new Promise((r) => setTimeout(r, 0));
-            if (!waitForInflight || inflight.size === 0) break;
-          }
+          if (!waitForInflight || inflight.size === 0) break;
         }
-        return renderCycle();
-      };
+      }
+      return renderCycle();
+    };
 
-      const unmount = () => {
-        for (const rec of effectRecords) {
-          if (typeof rec?.cleanup === 'function') rec.cleanup();
-        }
-      };
+    const unmount = () => {
+      for (const rec of effectRecords) {
+        if (typeof rec?.cleanup === 'function') rec.cleanup();
+      }
+    };
 
-      return { renderCycle, settle, unmount, meta: sectionMeta };
-    }
-
-    return { mountInstance, fetchCalls };
+    return { renderCycle, settle, unmount, meta: sectionMeta };
   }
 
-  const collectText = (node, acc = []) => {
-    if (typeof node === 'string') acc.push(node);
-    else if (node && typeof node === 'object') {
-      for (const child of node.children ?? []) collectText(child, acc);
-    }
-    return acc;
-  };
-  const findNodes = (node, pred, acc = []) => {
-    if (node && typeof node === 'object') {
-      if (pred(node)) acc.push(node);
-      for (const child of node.children ?? []) findNodes(child, pred, acc);
-    }
-    return acc;
-  };
+  return { mountInstance, fetchCalls };
+}
 
+const collectText = (node, acc = []) => {
+  if (typeof node === 'string') acc.push(node);
+  else if (node && typeof node === 'object') {
+    for (const child of node.children ?? []) collectText(child, acc);
+  }
+  return acc;
+};
+const findNodes = (node, pred, acc = []) => {
+  if (node && typeof node === 'object') {
+    if (pred(node)) acc.push(node);
+    for (const child of node.children ?? []) findNodes(child, pred, acc);
+  }
+  return acc;
+};
+
+await test('client.js: runtime module registration, phase grouping, save, 409, refresh failure retention, remount efforts, and catalog failure fallback', async () => {
   const mockRoles = [
     ...CRAFT_ROLES.map((id) => ({
       id,
@@ -1649,6 +2443,101 @@ await test('client.js: runtime module registration, phase grouping, save, 409, r
   tree5 = app5.renderCycle();
   assert.ok(collectText(tree5).some((t) => t.includes('No roles in this group yet.')), 'empty group must show an empty state with the next step');
   app5.unmount();
+});
+
+await test('client.js: unchanged notice, invalid-card warning banner and server-timing legend line render through the VM harness', async () => {
+  const baseRoles = [
+    { id: 'planner', name: 'planner', description: 'Plans', provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: null, disabled: false, mtimeMs: 1000 },
+    { id: 'alpha-custom', name: 'alpha-custom', description: 'Custom A', provider: null, model: 'inherit', reasoningEffort: null, disabled: false, mtimeMs: 1000 }
+  ];
+  const catalogReply = {
+    ok: true,
+    available: true,
+    degraded: false,
+    default: null,
+    groups: [{ provider: EXAMPLE_HUB, name: 'Example Hub', models: [{ id: 'flash-a', name: 'Flash A' }, { id: 'flash-b', name: 'Flash B' }] }]
+  };
+  let routeMode = 'unchanged';
+  const vm = mountVmClient(async (url, opts) => {
+    if (url.startsWith(`/api/${NS}.roles`)) {
+      return new Response(JSON.stringify({ ok: true, roles: baseRoles, invalid: [{ id: 'broken-card', error: 'bad yaml' }] }), {
+        status: 200,
+        headers: { 'server-timing': 'reads;dur=12.3' }
+      });
+    }
+    if (url.startsWith(`/api/${NS}.catalog`)) {
+      return new Response(JSON.stringify(catalogReply), { status: 200, headers: { 'server-timing': 'catalog;dur=45.6' } });
+    }
+    if (url.startsWith(`/api/${NS}.efforts`)) {
+      return new Response(JSON.stringify({ ok: true, defaultEffort: 'medium', efforts: [{ id: 'high', name: 'High' }] }), { status: 200 });
+    }
+    if (url === `/api/${NS}.route`) {
+      const payload = JSON.parse(opts.body);
+      const base = baseRoles.find((r) => r.id === payload.id);
+      if (routeMode === 'unchanged') {
+        return new Response(JSON.stringify({ ok: true, unchanged: true, role: { ...base, disabled: payload.disabled ?? base.disabled } }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ ok: true, role: { ...base, disabled: payload.disabled ?? base.disabled, mtimeMs: base.mtimeMs + 10 } }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  });
+  const app = vm.mountInstance();
+  let tree = await app.settle();
+
+  const bannerTexts = collectText(tree).filter((t) => t.includes('invalid frontmatter'));
+  assert.ok(bannerTexts.length > 0, 'the invalid-card warning banner must render');
+  assert.ok(bannerTexts.some((t) => t.includes('broken-card')), 'the banner must name the invalid card');
+  const legendTexts = collectText(tree).filter((t) => t.includes('Server timing'));
+  assert.ok(legendTexts.length > 0, 'the server-timing legend line must render');
+  assert.ok(legendTexts.some((t) => t.includes('12.3') && t.includes('45.6')), 'the legend must show the captured reads and catalog durations');
+
+  findNodes(tree, (n) => n.type === 'input' && n.props['aria-label'] === 'Disable alpha-custom')[0].props.onChange({ target: { checked: true } });
+  tree = app.renderCycle();
+  const alphaSave = findNodes(tree, (n) => n.type === 'button' && n.props['aria-label'] === 'Save alpha-custom settings')[0];
+  assert.equal(alphaSave.props.disabled, false);
+  await alphaSave.props.onClick();
+  tree = app.renderCycle();
+  const unchangedPost = vm.fetchCalls.filter((c) => c.url === `/api/${NS}.route`).at(-1);
+  assert.deepEqual(JSON.parse(unchangedPost.opts.body), { id: 'alpha-custom', expectedMtimeMs: 1000, disabled: true }, 'the unchanged save must still carry expectedMtimeMs');
+  assert.ok(collectText(tree).some((t) => t.includes('Already up to date — nothing was written.')), 'the unchanged notice must render');
+  assert.equal(findNodes(tree, (n) => n.type === 'input' && n.props['aria-label'] === 'Disable alpha-custom')[0].props.checked, true, 'the returned role must be applied to the row');
+  assert.equal(findNodes(tree, (n) => n.type === 'button' && n.props['aria-label'] === 'Save alpha-custom settings')[0].props.disabled, true, 'the applied role must leave the draft clean');
+
+  routeMode = 'ok';
+  findNodes(tree, (n) => n.type === 'input' && n.props['aria-label'] === 'Disable planner')[0].props.onChange({ target: { checked: true } });
+  tree = app.renderCycle();
+  await findNodes(tree, (n) => n.type === 'button' && n.props['aria-label'] === 'Save planner settings')[0].props.onClick();
+  tree = app.renderCycle();
+  assert.ok(collectText(tree).some((t) => t.includes('Saved — applies on the next turn / next subagent_role.')), 'a normal save must still render SAVE_NOTICE');
+  app.unmount();
+});
+
+await test('client.js: untrusted catalog and card strings render as text, never as HTML', async () => {
+  const markup = '<img src=x onerror=alert(1)>"\'&';
+  const vm = mountVmClient(async (url) => {
+    if (url.startsWith(`/api/${NS}.roles`)) {
+      return new Response(JSON.stringify({
+        ok: true,
+        roles: [{ id: 'markup-role', name: markup, description: markup, provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: null, disabled: false, mtimeMs: 1000 }],
+        invalid: [{ id: markup, error: markup }]
+      }), { status: 200 });
+    }
+    if (url.startsWith(`/api/${NS}.catalog`)) {
+      return new Response(JSON.stringify({ ok: true, available: true, degraded: false, default: null, groups: [{ provider: EXAMPLE_HUB, name: markup, models: [{ id: 'flash-a', name: markup }] }] }), { status: 200 });
+    }
+    if (url.startsWith(`/api/${NS}.efforts`)) {
+      return new Response(JSON.stringify({ ok: true, defaultEffort: null, efforts: [{ id: 'high', name: markup, description: markup }] }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  });
+  const app = vm.mountInstance();
+  const tree = await app.settle();
+  const texts = collectText(tree);
+  assert.ok(texts.some((t) => t.includes('<img src=x onerror=alert(1)>')), 'markup in role/catalog strings must survive as literal text');
+  assert.ok(texts.some((t) => t.includes('invalid frontmatter') && t.includes('<img src=x onerror=alert(1)>')), 'the invalid banner must render the markup id as text');
+  const htmlProps = findNodes(tree, (n) => n.props && (n.props.dangerouslySetInnerHTML !== undefined || n.props.innerHTML !== undefined));
+  assert.equal(htmlProps.length, 0, 'no node may carry an HTML-injection prop');
+  app.unmount();
 });
 
 const codemapScript = path.join(packageDir, 'craft', 'skills', 'dev-flow', 'playbooks', 'codemap', 'scripts', 'codemap.mjs');

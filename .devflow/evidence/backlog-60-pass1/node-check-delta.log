@@ -1,0 +1,3 @@
+scripts/test.mjs exit 0
+index.js exit 0
+client.js exit 0

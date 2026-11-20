@@ -64,13 +64,19 @@ Papéis não configurados usam `model: inherit` — seguem o roteamento do chat.
 
 O painel organiza os papéis em uma grade responsiva de cartões. Um filtro segmentado no topo alterna entre All roles, as três fases Craft e Other (as setas do teclado navegam entre as abas). Uma legenda recolhível explica o que cada controle faz, cada cartão traz um selo de status (Routed, Inherits chat ou Disabled) e o cabeçalho resume as contagens salvas. Os rótulos dos controles são exibidos em inglês.
 
-O painel fala com quatro rotas: `GET /api/dsh-orchestrator-kit.roles`, `GET /api/dsh-orchestrator-kit.catalog`, `GET /api/dsh-orchestrator-kit.efforts` e `POST /api/dsh-orchestrator-kit.route`.
+Salvar configurações idênticas às que já estão no card é um no-op: o painel responde "Already up to date" e nada é escrito. Cards com frontmatter inválido são listados em um banner de aviso e não podem ser editados aqui até o frontmatter ser corrigido.
+
+O painel fala com quatro rotas: `GET /api/dsh-orchestrator-kit.roles`, `GET /api/dsh-orchestrator-kit.catalog`, `GET /api/dsh-orchestrator-kit.efforts` e `POST /api/dsh-orchestrator-kit.route`. Respostas bem-sucedidas trazem um cabeçalho `Server-Timing` (apenas durações) quando uma métrica de tempo foi medida — leituras de roles, leituras de catalog, validação de rota e escritas; um salvamento sem alteração que não executou validação de rota não traz nenhum. A legenda mostra os tempos do último carregamento.
 
 Cada salvamento é protegido de ponta a ponta:
 
 - **Validação fail-closed** — papel, modelo ou esforço desconhecido retorna `409`; catálogo indisponível retorna `503`. Nada é escrito às cegas.
 - **Escritas atômicas** — um file lock serializa os escritores, uma guarda TOCTOU com revalidação pós-escrita confirma o card, e o `mtimeMs` esperado é conferido para que um editor concorrente nunca seja sobrescrito em silêncio.
 - **Escritor único** — o painel é o único escritor dessas rotas, e uma rota salva vale a partir do próximo turno.
+- **Gate estrito de escrita do frontmatter** — anchors, aliases e tags YAML customizadas são recusados, e o frontmatter é limitado a 65536 bytes com um limite de aninhamento. Cards com anchors, tags ou aninhamento profundo continuam listados, mas somente leitura (toda escrita retorna `400`) até serem limpos; cards com aliases ou acima do limite de bytes falham até no parse tolerante da listagem e aparecem apenas no banner de aviso de cards inválidos, não na grade.
+- **Limites de requisição** — corpos de salvamento de rota são limitados a 65536 bytes (`413` acima disso, antes de qualquer leitura de disco) e apenas campos conhecidos são aceitos (campos desconhecidos retornam `400`).
+- **Orientação no lock ocupado** — quando outro escritor segura o lock do card, o salvamento retorna `503` com o nome do lock e orientação de nova tentativa; arquivos de lock nunca são removidos automaticamente.
+- **Ocultação de segredos** — formas conhecidas de segredos e caminhos do diretório pessoal do usuário em corpos de erro e logs são substituídos pelos marcadores `[redacted]` e `[home]`, mantendo códigos de erro e contexto intactos.
 
 ## Os 20 papéis
 
@@ -113,6 +119,12 @@ Cada salvamento é protegido de ponta a ponta:
 
 **Por que recebo 409 ao salvar um modelo?**
 O painel valida cada salvamento contra o catálogo do harness em execução. Um 409 significa que o papel, modelo ou esforço escolhido não existe lá — escolha uma entrada válida em vez de contornar a checagem.
+
+**Por que recebo um erro 503 "busy" ao salvar?**
+Outro escritor está com o lock do card. Tente novamente em instantes. Se o lock ficou órfão porque o processo dono falhou, um operador deve remover o arquivo `<card>.md.lock` ao lado do card — o plugin nunca remove locks automaticamente.
+
+**O que significa "Already up to date"?**
+O salvamento foi um no-op: as configurações são idênticas às do card, então nada foi escrito e nenhum lock foi adquirido. A validação ainda roda antes — um card alterado no disco continua retornando `409`. O catálogo só é consultado quando o salvamento define uma rota explícita: um salvamento idêntico de rota continua retornando `503` quando o catálogo está indisponível, enquanto salvamentos idênticos apenas de disabled ou de esforço de raciocínio (e resets para inherit) nunca consultam o catálogo.
 
 **Onde ficam os cards de papel?**
 Em `$DSH_AGENTS_HOME/agents/` quando a variável estiver definida, caso contrário em `~/.agents/agents/`. O painel é o único escritor do frontmatter de rotas.

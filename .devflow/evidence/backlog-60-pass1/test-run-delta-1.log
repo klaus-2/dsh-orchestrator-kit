@@ -1,0 +1,56 @@
+ok applyRouteToCard: set writes provider and model
+ok applyRouteToCard: reset restores model inherit and removes provider
+ok applyRouteToCard: half-written route throws
+ok applyRouteToCard: round-trip preserves comments and unknown keys
+ok applyRouteToCard: card without frontmatter throws a clear message
+ok applyRouteToCard: CRLF card keeps CRLF and a byte-identical body
+ok applyRouteToCard: LF card keeps LF
+ok applyRouteToCard: BOM card parses and the result has no BOM
+ok isEntryName: accepts plain ids and rejects traversal, uppercase, backslash, empty
+ok cardPathOf: id with .. is barred before touching the disk
+ok parseRoleCard: disabled coercion, reasoning_effort, alias, and conflict detection
+ok applyCardSettings: canonical reasoning_effort, reset cleanup, route-change cleanup, disabled, CRLF/BOM
+ok agentsRootOf: DSH_AGENTS_HOME wins, blank means unset, default is the home agents dir
+ok HTTP API: GET .roles handles ENOENT, omits invalid cards, sorts alphabetically, returns reasoningEffort and mtimeMs
+ok HTTP API: GET .catalog handles partial provider timeouts, degraded flag, failedProviders, llm:undefined default, and throwing currentSelection
+ok HTTP API: GET .efforts validates params, handles 502/503/409/504 and returns efforts
+ok HTTP API: POST .route decoupled disabled, validation, effort 400/409/503, expectedMtimeMs 409 and TOCTOU 409
+ok strict frontmatter: parseRoleCard strict mode rejects anchors, aliases, explicit tags, deep nesting and oversized blocks; lenient mode unchanged
+ok HTTP API: GET .roles surfaces parse-failed cards in invalid[] with redacted errors and keeps valid roles sorted
+ok HTTP API: POST .route refuses anchored, aliased, tagged, deep or oversized frontmatter with 400 before any write
+ok redactText: credential URLs, authorization headers, key assignments, key shapes and home paths become markers; codes and plain URLs survive
+ok HTTP API: catalog failures and unreadable-directory errors redact secrets and home paths in bodies and logs
+ok HTTP API: POST .route enforces the 65536-byte body cap and rejects unknown fields
+ok HTTP API: POST .route identical payload answers unchanged:true without a write; stale expectedMtimeMs still 409 first
+ok HTTP API: simultaneous POST .route on one role serializes to one 200 and one 409 with card integrity
+ok HTTP API: a held writer lock yields 503 lock-timeout with a relative lock name and is never auto-recovered
+ok HTTP API: Server-Timing on roles/catalog/route success carries durations only
+ok HTTP API: GET .roles with 40 cards returns every card sorted (bounded parallel reads)
+ok no-op save detects an external edit during the validation window
+ok redaction: adversarial secret shapes are fully redacted and linear
+ok request and frontmatter caps enforce UTF-8 bytes at the exact boundary
+ok no-op save honors CRLF cards and the depth cap boundary
+ok yaml-ok: cordis.patch.yml parses with the plugin row, preset row, portable customSkillDirs, and fixed subagent config
+ok preset rows: interrupt stays disabled and the Office row mirrors the shipped standard preset
+ok persona: the team API matches DSH 0.2.2-rc.2+ (no removed teammate tools)
+ok persona: interrupt_agent is described accurately (present in the host, not mounted here)
+ok persona: the shared task board is conditional on Team mode being enabled
+ok persona: an explicit child route is bounded by the session model-selection policy
+ok persona: the final-stage adversarial verification workflow is task-type branched and DSH-compatible
+ok persona: Craft 20 roles, .devflow/ state, grilling, and zero legacy role or path leaks
+ok client.js registers under the exact package name (web-boot row id)
+ok server and client agree on the /api/<name>.* route surface
+ok package.json: public npm contract (name, exports, files, dsh manifest, no private)
+ok client.js static contract: phase grouping, save flow markers, and no old-name leftovers
+ok node --check passes on the shipped files
+ok all shipped files exist with UTF-8 no BOM and pure LF
+ok client.js: runtime module registration, phase grouping, save, 409, refresh failure retention, remount efforts, and catalog failure fallback
+ok client.js: unchanged notice, invalid-card warning banner and server-timing legend line render through the VM harness
+ok codemap.mjs: CLI/API init, changes, update, removed files, gitignore, legacy migration, symlink rejection, error propagation, and ReDoS guard
+ok craft-repo: 20 Craft role cards ship clean frontmatter, model: inherit on line 4, zero provider routing
+ok craft-repo: craft/agents and craft/skills/dev-flow/agents mirror bodies byte-identically (20 roles)
+ok craft-repo: dev-flow SKILL.md frontmatter and the exact 9 playbooks, zero leaks
+ok craft-validators: fixture pass and negative drift/legacy/provider detection
+ok repo hygiene: no backup artifacts and zero machine tokens in any repo file
+ok rename completeness: no removed local plugin identity anywhere in the repo
+ALL TESTS PASSED

@@ -3,4 +3,3 @@ node_modules/
 *.bak-*
 npm-debug.log*
 .DS_Store
-.devflow/

@@ -2,7 +2,7 @@ import { lstat, readFile, readdir, realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write';
-import { parseDocument } from 'yaml';
+import { parseDocument, visit } from 'yaml';
 
 const name = 'dsh-orchestrator-kit';
 const inject = ['connection'];
@@ -10,6 +10,12 @@ const inject = ['connection'];
 const CATALOG_TIMEOUT_MS = 10000;
 const ENTRY_PATH = /^[a-z][a-z0-9_-]*(?:\/[a-z][a-z0-9_-]*)*$/;
 const FRONTMATTER = /^(?:\uFEFF)?---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
+const FRONTMATTER_MAX_BYTES = 65536;
+const FRONTMATTER_MAX_PATH = 24;
+const MAX_ROUTE_BODY_BYTES = 65536;
+const CARD_READ_CONCURRENCY = 8;
+const ROUTE_BODY_FIELDS = new Set(['id', 'provider', 'model', 'disabled', 'reasoningEffort', 'expectedMtimeMs']);
+const LOCK_TIMEOUT_PREFIX = 'atomic-write: timed out waiting for the writer lock';
 
 function agentsRootOf(env = process.env) {
   const configured = env.DSH_AGENTS_HOME;
@@ -105,22 +111,65 @@ function optionalScalar(meta, key, basename) {
   return value.trim();
 }
 
-function parseFrontmatterDocument(text, basename = 'role card') {
+const SECRET_ASSIGN_PREFIX = String.raw`\b((?:api[-_]?key|apikey|access[-_]?token|auth[-_]?token|refresh[-_]?token|token|secret|password|passwd|client[-_]?secret)["']?\s*[:=]\s*`;
+
+const AUTH_PREFIX = String.raw`\b(authorization["']?\s*[:=]\s*)(?:bearer\s+|basic\s+)?`;
+
+const SECRET_REDACTIONS = [
+  [/\b([a-z][a-z0-9+.-]{0,31}:\/\/)[^\s/'"]*@/gi, '$1[redacted]@'],
+  [new RegExp(String.raw`${AUTH_PREFIX}"(?:[^"\\]|\\.)*"`, 'gi'), '$1"[redacted]"'],
+  [new RegExp(String.raw`${AUTH_PREFIX}'(?:[^'\\]|\\.)*'`, 'gi'), '$1\'[redacted]\''],
+  [new RegExp(String.raw`${AUTH_PREFIX}(?![A-Za-z]:)[A-Za-z0-9._~+=-]+(?:[ \t]+(?![A-Za-z]:)[A-Za-z0-9._~+=-]+)*`, 'gi'), '$1[redacted]'],
+  [/\b(bearer\s+)[A-Za-z0-9._~+/=-]{8,}/gi, '$1[redacted]'],
+  [new RegExp(String.raw`${SECRET_ASSIGN_PREFIX})"(?:[^"\\]|\\.)*"`, 'gi'), '$1"[redacted]"'],
+  [new RegExp(String.raw`${SECRET_ASSIGN_PREFIX})'(?:[^'\\]|\\.)*'`, 'gi'), '$1\'[redacted]\''],
+  [new RegExp(String.raw`${SECRET_ASSIGN_PREFIX}["']?)[^\s"',;]+`, 'gi'), '$1[redacted]'],
+  [/\b(?:sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|AIza[A-Za-z0-9_-]{20,})/g, '[redacted]'],
+  [/(?<=^|[\s'"(=,;/])[A-Za-z]:[\\/](?:Users|Documents and Settings)[\\/][^\\/'"\s:;,)]+/gi, '[home]'],
+  [/(?<=^|[\s'"(=,;])\/(?:home|Users)\/[^/'"\s:;,)]+/gi, '[home]']
+];
+
+function redactText(text) {
+  let out = String(text);
+  const home = homedir();
+  if (home && home !== path.sep) out = out.split(home).join('[home]');
+  for (const [pattern, replacement] of SECRET_REDACTIONS) out = out.replace(pattern, replacement);
+  return out;
+}
+
+function safeErrorText(error) {
+  return redactText(String(error?.message ?? error));
+}
+
+function parseFrontmatterDocument(text, basename = 'role card', { strict = false } = {}) {
   if (typeof text !== 'string') throw new TypeError('card text must be a string');
   const body = text.startsWith('\uFEFF') ? text.slice(1) : text;
   const match = FRONTMATTER.exec(body);
   if (match === null) throw new Error(`${basename}: no frontmatter block; role cards start with a --- block`);
+  if (Buffer.byteLength(match[1], 'utf8') > FRONTMATTER_MAX_BYTES) {
+    throw new Error(`${basename}: frontmatter exceeds the ${FRONTMATTER_MAX_BYTES}-byte limit`);
+  }
   const doc = parseDocument(match[1]);
   if (doc.errors.length > 0) throw new Error(`${basename}: frontmatter is not valid YAML: ${doc.errors[0].message ?? String(doc.errors[0])}`);
-  const meta = doc.toJS();
+  if (strict) {
+    visit(doc, {
+      Alias() { throw new Error(`${basename}: frontmatter aliases are not allowed`); },
+      Node(key, node, path) {
+        if (node.anchor) throw new Error(`${basename}: frontmatter anchors are not allowed`);
+        if (node.tag) throw new Error(`${basename}: frontmatter custom tags are not allowed`);
+        if (path.length > FRONTMATTER_MAX_PATH) throw new Error(`${basename}: frontmatter nesting is too deep`);
+      }
+    });
+  }
+  const meta = doc.toJS({ maxAliasCount: 0 });
   if (doc.contents !== null && (meta === null || typeof meta !== 'object' || Array.isArray(meta))) {
     throw new Error(`${basename}: frontmatter must be a YAML object`);
   }
   return { body, match, doc, meta: meta ?? {} };
 }
 
-function parseRoleCard(text, basename = 'role card') {
-  const { meta } = parseFrontmatterDocument(text, basename);
+function parseRoleCard(text, basename = 'role card', options = {}) {
+  const { meta } = parseFrontmatterDocument(text, basename, options);
   const cardName = optionalScalar(meta, 'name', basename);
   const description = optionalScalar(meta, 'description', basename);
   const provider = optionalScalar(meta, 'provider', basename);
@@ -169,7 +218,7 @@ function applyCardSettings(text, patch) {
     throw new Error('cannot set reasoningEffort when resetting route to inherit');
   }
 
-  const { body, match, doc, meta } = parseFrontmatterDocument(text, 'role card');
+  const { body, match, doc, meta } = parseFrontmatterDocument(text, 'role card', { strict: true });
   const eol = dominantEolOf(body);
   const prevProvider = typeof meta.provider === 'string' && meta.provider.trim() !== '' ? meta.provider.trim() : undefined;
   const prevModel = typeof meta.model === 'string' && meta.model.trim() !== '' ? meta.model.trim() : undefined;
@@ -263,16 +312,16 @@ async function resolveModelEfforts(llm, provider, model, timeoutMs) {
     lookup.catch(() => {});
     const resolved = await Promise.race([lookup, deadline]);
     if (resolved === null || typeof resolved !== 'object' || Array.isArray(resolved)) {
-      console.warn(`${name}: resolveModelInfo returned non-object for ${provider}/${model}`);
+      console.warn(redactText(`${name}: resolveModelInfo returned non-object for ${provider}/${model}`));
       return { ok: false, kind: 'adapter-fault', error: new Error(`invalid model info for ${provider}/${model}`) };
     }
     if (resolved.reasoning !== undefined && (resolved.reasoning === null || typeof resolved.reasoning !== 'object' || Array.isArray(resolved.reasoning))) {
-      console.warn(`${name}: resolveModelInfo returned invalid reasoning metadata for ${provider}/${model}`);
+      console.warn(redactText(`${name}: resolveModelInfo returned invalid reasoning metadata for ${provider}/${model}`));
       return { ok: false, kind: 'adapter-fault', error: new Error(`invalid reasoning metadata for ${provider}/${model}`) };
     }
     const rawEfforts = resolved.reasoning?.efforts;
     if (rawEfforts !== undefined && !Array.isArray(rawEfforts)) {
-      console.warn(`${name}: resolveModelInfo returned non-array reasoning.efforts for ${provider}/${model}`);
+      console.warn(redactText(`${name}: resolveModelInfo returned non-array reasoning.efforts for ${provider}/${model}`));
       return { ok: false, kind: 'adapter-fault', error: new Error(`invalid reasoning efforts for ${provider}/${model}`) };
     }
     const efforts = Array.isArray(rawEfforts)
@@ -289,7 +338,7 @@ async function resolveModelEfforts(llm, provider, model, timeoutMs) {
       : null;
     return { ok: true, defaultEffort, efforts };
   } catch (error) {
-    console.warn(`${name}: resolveModelEfforts failed for ${provider}/${model}:`, error);
+    console.warn(redactText(`${name}: resolveModelEfforts failed for ${provider}/${model}:`), safeErrorText(error));
     const kind = timedOut || error?.code === 'TIMEOUT' || error?.code === 'ABORTED'
       ? 'timeout'
       : ADAPTER_FAULT_LLM_CODES.has(error?.code)
@@ -306,7 +355,7 @@ async function resolveModelEfforts(llm, provider, model, timeoutMs) {
 async function modelCatalog(ctx, timeoutMs = CATALOG_TIMEOUT_MS) {
   const get = (service) => {
     try { return ctx.get(service); } catch (error) {
-      console.warn(`${name}: service lookup for ${service} failed:`, error);
+      console.warn(redactText(`${name}: service lookup for ${service} failed:`), safeErrorText(error));
       return undefined;
     }
   };
@@ -314,7 +363,7 @@ async function modelCatalog(ctx, timeoutMs = CATALOG_TIMEOUT_MS) {
   try {
     fallback = get('agentDefaultModel')?.currentSelection?.();
   } catch (error) {
-    console.warn(`${name}: reading agentDefaultModel.currentSelection() failed:`, error);
+    console.warn(redactText(`${name}: reading agentDefaultModel.currentSelection() failed:`), safeErrorText(error));
   }
   const failedProviders = new Set();
   const catalog = { available: false, degraded: false, failedProviders, default: null, groups: [] };
@@ -330,12 +379,12 @@ async function modelCatalog(ctx, timeoutMs = CATALOG_TIMEOUT_MS) {
   try {
     providers = llm.listProviders();
   } catch (error) {
-    console.warn(`${name}: llm.listProviders() failed:`, error);
+    console.warn(redactText(`${name}: llm.listProviders() failed:`), safeErrorText(error));
     catalog.degraded = true;
     return catalog;
   }
   if (!Array.isArray(providers)) {
-    console.warn(`${name}: llm.listProviders() returned a non-array value`);
+    console.warn(redactText(`${name}: llm.listProviders() returned a non-array value`));
     catalog.degraded = true;
     return catalog;
   }
@@ -345,7 +394,7 @@ async function modelCatalog(ctx, timeoutMs = CATALOG_TIMEOUT_MS) {
     try {
       const models = await withinDeadline(Promise.resolve(llm.listModels(provider.id)), timeoutMs, `model listing for ${provider.id}`);
       if (!Array.isArray(models)) {
-        console.warn(`${name}: llm.listModels(${provider.id}) returned a non-array value`);
+        console.warn(redactText(`${name}: llm.listModels(${provider.id}) returned a non-array value`));
         failedProviders.add(provider.id);
         return null;
       }
@@ -354,7 +403,7 @@ async function modelCatalog(ctx, timeoutMs = CATALOG_TIMEOUT_MS) {
         .map((model) => ({ id: model.id, name: typeof model.name === 'string' && model.name !== '' ? model.name : model.id }));
       return entries.length === 0 ? null : { provider: provider.id, name: typeof provider.name === 'string' && provider.name !== '' ? provider.name : provider.id, models: entries };
     } catch (error) {
-      console.warn(`${name}: listing models for ${provider.id} failed:`, error);
+      console.warn(redactText(`${name}: listing models for ${provider.id} failed:`), safeErrorText(error));
       failedProviders.add(provider.id);
       return null;
     }
@@ -378,14 +427,21 @@ function toRoleSummary(id, card, mtimeMs) {
 }
 
 async function apply(ctx, config = {}) {
-  const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
+  const json = (value, status = 200, timing = []) => new Response(JSON.stringify(value), {
+    status,
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+      ...(timing.length > 0 ? { 'server-timing': timing.map(([metric, ms]) => `${metric};dur=${ms.toFixed(1)}`).join(', ') } : {})
+    }
+  });
   const cardsDir = () => path.join(agentsRootOf(), 'agents');
   const timeoutMs = typeof config?.catalogTimeoutMs === 'number' && Number.isFinite(config.catalogTimeoutMs) && config.catalogTimeoutMs > 0
     ? config.catalogTimeoutMs
     : CATALOG_TIMEOUT_MS;
   const getService = (service) => {
     try { return ctx.get(service); } catch (error) {
-      console.warn(`${name}: service lookup for ${service} failed:`, error);
+      console.warn(redactText(`${name}: service lookup for ${service} failed:`), safeErrorText(error));
       return undefined;
     }
   };
@@ -395,41 +451,52 @@ async function apply(ctx, config = {}) {
     methods: ['GET'],
     requestBody: 'buffered',
     fetch: async () => {
+      const started = performance.now();
       let entries;
       try {
         entries = await readdir(cardsDir(), { withFileTypes: true });
       } catch (error) {
-        if (error?.code === 'ENOENT') return json({ ok: true, roles: [] });
-        console.warn(`${name}: the roles directory is unreadable:`, error);
-        return json({ ok: false, error: `the roles directory is unreadable: ${String(error?.message ?? error)}` }, 500);
+        if (error?.code === 'ENOENT') return json({ ok: true, roles: [], invalid: [] }, 200, [['reads', performance.now() - started]]);
+        console.warn(redactText(`${name}: the roles directory is unreadable:`), safeErrorText(error));
+        return json({ ok: false, error: `the roles directory is unreadable: ${safeErrorText(error)}` }, 500);
       }
+      const candidates = entries.filter((entry) => entry.isFile() && entry.name.endsWith('.md'));
       const roles = [];
-      for (const entry of entries) {
-        if (!entry.isFile() || !entry.name.endsWith('.md')) continue;
-        const id = entry.name.slice(0, -3);
-        let file;
-        try { file = cardPathOf(cardsDir(), id); } catch (error) {
-          console.warn(`${name}: role card ${entry.name} is skipped:`, error);
-          continue;
+      const invalid = [];
+      let cursor = 0;
+      const worker = async () => {
+        for (;;) {
+          const index = cursor++;
+          if (index >= candidates.length) return;
+          const entry = candidates[index];
+          const id = entry.name.slice(0, -3);
+          let file;
+          try { file = cardPathOf(cardsDir(), id); } catch (error) {
+            console.warn(redactText(`${name}: role card ${entry.name} is skipped:`), safeErrorText(error));
+            continue;
+          }
+          let info;
+          let text;
+          try {
+            info = await stat(file);
+            text = await readFile(file, 'utf8');
+          } catch (error) {
+            console.warn(redactText(`${name}: role card ${id} is unreadable:`), safeErrorText(error));
+            continue;
+          }
+          try {
+            const card = parseRoleCard(text, entry.name);
+            roles.push(toRoleSummary(id, card, info.mtimeMs));
+          } catch (error) {
+            console.warn(redactText(`${name}: role card ${id} is omitted from the list:`), safeErrorText(error));
+            invalid.push({ id, error: safeErrorText(error) });
+          }
         }
-        let info;
-        let text;
-        try {
-          info = await stat(file);
-          text = await readFile(file, 'utf8');
-        } catch (error) {
-          console.warn(`${name}: role card ${id} is unreadable:`, error);
-          continue;
-        }
-        try {
-          const card = parseRoleCard(text, entry.name);
-          roles.push(toRoleSummary(id, card, info.mtimeMs));
-        } catch (error) {
-          console.warn(`${name}: role card ${id} is omitted from the list:`, error);
-        }
-      }
+      };
+      await Promise.all(Array.from({ length: Math.min(CARD_READ_CONCURRENCY, candidates.length) }, () => worker()));
       roles.sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
-      return json({ ok: true, roles });
+      invalid.sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
+      return json({ ok: true, roles, invalid }, 200, [['reads', performance.now() - started]]);
     }
   });
 
@@ -438,6 +505,7 @@ async function apply(ctx, config = {}) {
     methods: ['GET'],
     requestBody: 'buffered',
     fetch: async () => {
+      const started = performance.now();
       const catalog = await modelCatalog(ctx, timeoutMs);
       return json({
         ok: true,
@@ -446,7 +514,7 @@ async function apply(ctx, config = {}) {
         failedProviders: [...catalog.failedProviders],
         default: catalog.default,
         groups: catalog.groups
-      });
+      }, 200, [['catalog', performance.now() - started]]);
     }
   });
 
@@ -468,15 +536,15 @@ async function apply(ctx, config = {}) {
       const result = await resolveModelEfforts(llm, provider, model, timeoutMs);
       if (!result.ok) {
         if (result.kind === 'timeout') {
-          return json({ ok: false, error: String(result.error?.message ?? result.error) }, 504);
+          return json({ ok: false, error: safeErrorText(result.error) }, 504);
         }
         if (result.kind === 'adapter-fault') {
-          return json({ ok: false, error: `invalid model metadata for ${provider}/${model}: ${String(result.error?.message ?? result.error)}` }, 502);
+          return json({ ok: false, error: `invalid model metadata for ${provider}/${model}: ${safeErrorText(result.error)}` }, 502);
         }
         if (result.kind === 'unknown-route') {
-          return json({ ok: false, error: `unknown or unresolvable route ${provider}/${model}: ${String(result.error?.message ?? result.error)}` }, 409);
+          return json({ ok: false, error: `unknown or unresolvable route ${provider}/${model}: ${safeErrorText(result.error)}` }, 409);
         }
-        return json({ ok: false, error: `model info lookup failed for ${provider}/${model}: ${String(result.error?.message ?? result.error)}` }, 503);
+        return json({ ok: false, error: `model info lookup failed for ${provider}/${model}: ${safeErrorText(result.error)}` }, 503);
       }
       return json({ ok: true, provider, model, defaultEffort: result.defaultEffort, efforts: result.efforts });
     }
@@ -487,9 +555,20 @@ async function apply(ctx, config = {}) {
     methods: ['POST'],
     requestBody: 'buffered',
     fetch: async (request) => {
+      const contentLength = Number(request.headers.get('content-length'));
+      if (Number.isFinite(contentLength) && contentLength > MAX_ROUTE_BODY_BYTES) {
+        return json({ ok: false, error: `the request body exceeds the ${MAX_ROUTE_BODY_BYTES}-byte limit` }, 413);
+      }
+      let raw;
+      try { raw = await request.text(); } catch { return json({ ok: false, error: 'the body is not valid JSON' }, 400); }
+      if (Buffer.byteLength(raw, 'utf8') > MAX_ROUTE_BODY_BYTES) {
+        return json({ ok: false, error: `the request body exceeds the ${MAX_ROUTE_BODY_BYTES}-byte limit` }, 413);
+      }
       let body;
-      try { body = await request.json(); } catch { return json({ ok: false, error: 'the body is not valid JSON' }, 400); }
+      try { body = JSON.parse(raw); } catch { return json({ ok: false, error: 'the body is not valid JSON' }, 400); }
       if (body === null || typeof body !== 'object' || Array.isArray(body)) return json({ ok: false, error: 'the body must be a JSON object' }, 400);
+      const unknown = Object.keys(body).find((key) => !ROUTE_BODY_FIELDS.has(key));
+      if (unknown !== undefined) return json({ ok: false, error: `the request contains an unknown field: ${redactText(String(unknown))}` }, 400);
       if (!isEntryName(body.id)) return json({ ok: false, error: 'the role id is not a valid entry name' }, 400);
 
       const { id, provider, model, disabled, reasoningEffort, expectedMtimeMs } = body;
@@ -537,9 +616,9 @@ async function apply(ctx, config = {}) {
         file = cardPathOf(cardsDir(), id);
         await assertContainedRealCardPath(cardsDir(), file);
       } catch (error) {
-        if (error?.statusCode === 400) return json({ ok: false, error: String(error.message) }, 400);
-        console.warn(`${name}: validating role card path for ${id} failed:`, error);
-        return json({ ok: false, error: `validating the role card path failed: ${String(error?.message ?? error)}` }, 500);
+        if (error?.statusCode === 400) return json({ ok: false, error: safeErrorText(error) }, 400);
+        console.warn(redactText(`${name}: validating role card path for ${id} failed:`), safeErrorText(error));
+        return json({ ok: false, error: `validating the role card path failed: ${safeErrorText(error)}` }, 500);
       }
 
       let info;
@@ -549,9 +628,9 @@ async function apply(ctx, config = {}) {
         text = await readFile(file, 'utf8');
       } catch (error) {
         if (error?.code === 'ENOENT') return json({ ok: false, error: `no role card named ${id}` }, 404);
-        if (error?.statusCode === 400) return json({ ok: false, error: String(error.message) }, 400);
-        console.warn(`${name}: role card ${id} is unreadable:`, error);
-        return json({ ok: false, error: `the role card is unreadable: ${String(error?.message ?? error)}` }, 500);
+        if (error?.statusCode === 400) return json({ ok: false, error: safeErrorText(error) }, 400);
+        console.warn(redactText(`${name}: role card ${id} is unreadable:`), safeErrorText(error));
+        return json({ ok: false, error: `the role card is unreadable: ${safeErrorText(error)}` }, 500);
       }
 
       if (hasExpectedMtimeMs && info.mtimeMs !== expectedMtimeMs) {
@@ -560,12 +639,12 @@ async function apply(ctx, config = {}) {
 
       let existingMeta;
       try {
-        existingMeta = parseFrontmatterDocument(text, `${id}.md`).meta;
+        existingMeta = parseFrontmatterDocument(text, `${id}.md`, { strict: true }).meta;
         if (!resetRoute && !hasReasoningEffort) {
-          parseRoleCard(text, `${id}.md`);
+          parseRoleCard(text, `${id}.md`, { strict: true });
         }
       } catch (error) {
-        return json({ ok: false, error: String(error?.message ?? error) }, 400);
+        return json({ ok: false, error: safeErrorText(error) }, 400);
       }
 
       const existingProvider = typeof existingMeta.provider === 'string' && existingMeta.provider.trim() !== '' ? existingMeta.provider.trim() : undefined;
@@ -573,8 +652,11 @@ async function apply(ctx, config = {}) {
       const effectiveProvider = resetRoute ? undefined : hasRoute ? provider.trim() : existingProvider;
       const effectiveModel = resetRoute ? 'inherit' : hasRoute ? model.trim() : existingModel;
 
+      let catalogMs = null;
       if (hasRoute && !resetRoute) {
+        const catalogStarted = performance.now();
         const catalog = await modelCatalog(ctx, timeoutMs);
+        catalogMs = performance.now() - catalogStarted;
         if (catalog.available !== true || catalog.failedProviders.has(effectiveProvider) || catalog.groups.length === 0) {
           return json({ ok: false, error: 'the model catalog is unavailable; the route was not written' }, 503);
         }
@@ -594,9 +676,9 @@ async function apply(ctx, config = {}) {
         const resolvedEfforts = await resolveModelEfforts(llm, effectiveProvider, effectiveModel, timeoutMs);
         if (!resolvedEfforts.ok) {
           if (resolvedEfforts.kind === 'unknown-route') {
-            return json({ ok: false, error: `cannot validate reasoningEffort for ${effectiveProvider}/${effectiveModel}: ${String(resolvedEfforts.error?.message ?? resolvedEfforts.error)}` }, 409);
+            return json({ ok: false, error: `cannot validate reasoningEffort for ${effectiveProvider}/${effectiveModel}: ${safeErrorText(resolvedEfforts.error)}` }, 409);
           }
-          return json({ ok: false, error: String(resolvedEfforts.error?.message ?? resolvedEfforts.error) }, 503);
+          return json({ ok: false, error: safeErrorText(resolvedEfforts.error) }, 503);
         }
         const trimmedEffort = reasoningEffort.trim();
         if (!resolvedEfforts.efforts.some((entry) => entry.id === trimmedEffort)) {
@@ -611,24 +693,41 @@ async function apply(ctx, config = {}) {
       };
 
       let next;
+      let nextCard;
       try {
         next = applyCardSettings(text, patch);
-        parseRoleCard(next, `${id}.md`);
+        nextCard = parseRoleCard(next, `${id}.md`, { strict: true });
       } catch (error) {
-        return json({ ok: false, error: String(error?.message ?? error) }, 400);
+        return json({ ok: false, error: safeErrorText(error) }, 400);
+      }
+      if (next === text) {
+        let freshInfo;
+        try {
+          freshInfo = await lstatNoSymlink(file);
+        } catch (error) {
+          if (error?.code === 'ENOENT') return json({ ok: false, error: `no role card named ${id}` }, 404);
+          if (error?.statusCode === 400) return json({ ok: false, error: safeErrorText(error) }, 400);
+          console.warn(redactText(`${name}: role card ${id} became unreadable:`), safeErrorText(error));
+          return json({ ok: false, error: `the role card is unreadable: ${safeErrorText(error)}` }, 500);
+        }
+        if (freshInfo.mtimeMs !== info.mtimeMs) {
+          return json({ ok: false, error: 'role card changed on disk; refresh before saving' }, 409);
+        }
+        return json({ ok: true, unchanged: true, role: toRoleSummary(id, nextCard, info.mtimeMs) }, 200, catalogMs === null ? [] : [['catalog', catalogMs]]);
       }
 
       try {
         await assertContainedRealCardPath(cardsDir(), file);
       } catch (error) {
-        if (error?.statusCode === 400) return json({ ok: false, error: String(error.message) }, 400);
-        console.warn(`${name}: pre-lock path check for ${id} failed:`, error);
-        return json({ ok: false, error: `validating the role card path failed: ${String(error?.message ?? error)}` }, 500);
+        if (error?.statusCode === 400) return json({ ok: false, error: safeErrorText(error) }, 400);
+        console.warn(redactText(`${name}: pre-lock path check for ${id} failed:`), safeErrorText(error));
+        return json({ ok: false, error: `validating the role card path failed: ${safeErrorText(error)}` }, 500);
       }
 
       const baselineMtimeMs = hasExpectedMtimeMs ? expectedMtimeMs : info.mtimeMs;
       let freshMtimeMs;
       let writtenText;
+      const writeStarted = performance.now();
       try {
         const writeOutcome = await withFileLock(file, async () => {
           await assertContainedRealCardPath(cardsDir(), file);
@@ -637,9 +736,9 @@ async function apply(ctx, config = {}) {
             latestInfo = await lstatNoSymlink(file);
           } catch (error) {
             if (error?.code === 'ENOENT') return { status: 404, error: `no role card named ${id}` };
-            if (error?.statusCode === 400) return { status: 400, error: String(error.message) };
-            console.warn(`${name}: role card ${id} became unreadable:`, error);
-            return { status: 500, error: `the role card is unreadable: ${String(error?.message ?? error)}` };
+            if (error?.statusCode === 400) return { status: 400, error: safeErrorText(error) };
+            console.warn(redactText(`${name}: role card ${id} became unreadable:`), safeErrorText(error));
+            return { status: 500, error: `the role card is unreadable: ${safeErrorText(error)}` };
           }
           if (latestInfo.mtimeMs !== baselineMtimeMs) {
             return { status: 409, error: 'role card changed on disk while validating; refresh before saving' };
@@ -647,17 +746,17 @@ async function apply(ctx, config = {}) {
           try {
             await writeFileAtomic(file, next, { mode: 0o644, dirMode: 0o700 });
           } catch (error) {
-            console.warn(`${name}: writing role card ${id} failed:`, error);
-            return { status: 500, error: `writing the role card failed: ${String(error?.message ?? error)}` };
+            console.warn(redactText(`${name}: writing role card ${id} failed:`), safeErrorText(error));
+            return { status: 500, error: `writing the role card failed: ${safeErrorText(error)}` };
           }
           try {
             const afterStat = await lstatNoSymlink(file);
             const afterText = await readFile(file, 'utf8');
             return { status: 200, mtimeMs: afterStat.mtimeMs, text: afterText };
           } catch (error) {
-            if (error?.statusCode === 400) return { status: 400, error: String(error.message) };
-            console.warn(`${name}: reading back role card ${id} after write failed:`, error);
-            return { status: 500, error: `reading back the rewritten role card failed: ${String(error?.message ?? error)}` };
+            if (error?.statusCode === 400) return { status: 400, error: safeErrorText(error) };
+            console.warn(redactText(`${name}: reading back role card ${id} after write failed:`), safeErrorText(error));
+            return { status: 500, error: `reading back the rewritten role card failed: ${safeErrorText(error)}` };
           }
         });
         if (writeOutcome.status !== 200) {
@@ -666,22 +765,32 @@ async function apply(ctx, config = {}) {
         freshMtimeMs = writeOutcome.mtimeMs;
         writtenText = writeOutcome.text;
       } catch (error) {
-        if (error?.statusCode === 400) return json({ ok: false, error: String(error.message) }, 400);
-        console.warn(`${name}: locking or writing role card ${id} failed:`, error);
-        return json({ ok: false, error: `writing the role card failed: ${String(error?.message ?? error)}` }, 500);
+        if (error?.statusCode === 400) return json({ ok: false, error: safeErrorText(error) }, 400);
+        if (typeof error?.message === 'string' && error.message.startsWith(LOCK_TIMEOUT_PREFIX)) {
+          console.warn(redactText(`${name}: locking role card ${id} timed out:`), safeErrorText(error));
+          const lockName = `${path.relative(agentsRootOf(), file).split(path.sep).join('/')}.lock`;
+          return json({
+            ok: false,
+            code: 'lock-timeout',
+            error: redactText(`the role card is busy: another writer holds ${lockName}. Retry in a moment; if the lock is orphaned (owner crashed), an operator must remove that lock file manually.`)
+          }, 503);
+        }
+        console.warn(redactText(`${name}: locking or writing role card ${id} failed:`), safeErrorText(error));
+        return json({ ok: false, error: `writing the role card failed: ${safeErrorText(error)}` }, 500);
       }
+      const writeMs = performance.now() - writeStarted;
 
       let role;
       try {
-        const card = parseRoleCard(writtenText, `${id}.md`);
+        const card = parseRoleCard(writtenText, `${id}.md`, { strict: true });
         role = toRoleSummary(id, card, freshMtimeMs);
       } catch (error) {
-        console.warn(`${name}: the rewritten role card ${id} failed post-write validation:`, error);
-        return json({ ok: false, error: `rewritten role card failed validation: ${String(error?.message ?? error)}` }, 500);
+        console.warn(redactText(`${name}: the rewritten role card ${id} failed post-write validation:`), safeErrorText(error));
+        return json({ ok: false, error: `rewritten role card failed validation: ${safeErrorText(error)}` }, 500);
       }
-      return json({ ok: true, role });
+      return json({ ok: true, role }, 200, [...(catalogMs === null ? [] : [['catalog', catalogMs]]), ['write', writeMs]]);
     }
   });
 }
 
-export { name, inject, apply, agentsRootOf, isEntryName, cardPathOf, parseRoleCard, applyRouteToCard, applyCardSettings };
+export { name, inject, apply, agentsRootOf, isEntryName, cardPathOf, parseRoleCard, applyRouteToCard, applyCardSettings, redactText };

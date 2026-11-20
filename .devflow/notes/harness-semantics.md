@@ -1,0 +1,84 @@
+# Harness semantics research (docs-scout)
+
+Scope: DSH installation v0.2.2-rc.5 (Desktop profile, npm layout inside the app archive; version from `dsh/desktop-runtime.json`). Citations are checkout-relative (`dsh/...`) or repo-relative (`node_modules/yaml/...`). Read-only research; no implementation.
+
+## Q1 — Plugin fetch routes (`ctx.connection.fetch.register`)
+
+Registration chain:
+- `ctx.connection.fetch.register(route)` → `HostConnectionService.fetch` getter → `registerFetchRoute` — `dsh/node_modules/@deepseek-ai/dsh-client-connection/src/rpc-host.ts:115-120, 234-251`.
+- Route validation: path must be `/api/<endpoint>` with segments matching `[A-Za-z0-9_$.-]+` (no empty/`.`/`..`); methods non-empty, unique; duplicate path throws — `rpc-host.ts:361-370, 401-412, 245-247`.
+- The `/api` prefix route is mounted by the connection plugin: admit → waterfall `connection/request` → `bridge(...)` — `dsh/node_modules/@deepseek-ai/dsh-client-connection/src/index.ts:146-160`.
+- Dispatch: exact pathname+method match on registered routes; exact routes require `peer.principal.kind === 'owner'` (else 403); unmatched → RPC interceptor or 404 — `rpc-host.ts:207-232`.
+- First-party example of the same API: `dsh/node_modules/@deepseek-ai/dsh-plugin-manager/src/index.ts:396-400`.
+
+(a) Auth: NOT open. Every `/api` request passes `admit()` — `rpc-host.ts:129-137`: trust fence failure → 403; disposed service → 401; valid browser cookie (v1) → shared owner `browserPeer`; valid API cookie (v2) with a live published peer → that peer; otherwise 401. Cookies are HMAC-SHA256-signed, authority-bound, `HttpOnly; SameSite=Strict` (+`Secure` on TLS), 30-day default lifetime — `dsh/node_modules/@deepseek-ai/dsh-client-connection/src/browser-auth.ts:131-140, 356-383`; minted via launch-token exchange at `/` (303) or `/connect` (302) — `browser-auth.ts:263-348`.
+
+(b) Origin/CSRF: `isTrustedApiRequest` — `dsh/node_modules/@deepseek-ai/dsh-client-connection/src/api-request-trust.ts:121-151`:
+- Host fence on EVERY request (DNS-rebinding defense): Host must be loopback, the listener's bind IP, or a configured `trustedHosts` authority (134-140).
+- `Sec-Fetch-Site: cross-site` → refused (143).
+- `Origin`, when present, must equal the request authority (normalized); opaque `null` refused; absent Origin allowed because the Host fence already bound the request (148-150, 160-176).
+- No CSRF token mechanism; defense = SameSite=Strict cookie + Host/Origin/Fetch-Metadata fences.
+
+(c) `requestBody: 'buffered'`: the bridge buffers the whole body in memory and enforces `maxRequestBodyBytes` twice (Content-Length pre-check and running byte count); over cap → 413 + `connection: close` + request destroyed — `dsh/node_modules/@deepseek-ai/dsh-client-connection/src/http-bridge.ts:59-87`. Cap is the connection plugin config `maxRequestBodyBytes`, default 300 MiB (`http-bridge.ts:15`, `src/index.ts:108-116`); no per-route override. Unknown paths default to buffered mode (`rpc-host.ts:211-214`). `'streaming'` mode passes a web stream instead (`http-bridge.ts:88-96`).
+
+(d) Response headers: passed through verbatim — `Object.fromEntries(response.headers.entries())` then `res.writeHead(status, headers)` (`http-bridge.ts:99-100`). Nothing strips ETag, Server-Timing, or Cache-Control. Caveats:
+- `Headers.entries()` joins multiple `Set-Cookie` values into one header line (the webserver's resource path uses `getSetCookie()` separately, `dsh/node_modules/@deepseek-ai/dsh-host-webserver/src/index.ts:294-300`, but the fetch bridge does not). Avoid multiple Set-Cookie on fetch routes.
+- The shipped Web composition enables gzip: `compression: gzip`, level 1, threshold 1024 — `dsh/node_modules/@deepseek-ai/dsh-web-app/cordis.patch.yml:183-192`. The `compression` middleware (`dsh/node_modules/compression/index.js`): skips responses already carrying Content-Encoding ≠ identity (196-202); skips `Cache-Control: no-transform` (315-322); when it compresses it sets Content-Encoding, REMOVES Content-Length, adds `Vary: Accept-Encoding` (188, 246-247); leaves ETag/Server-Timing/Cache-Control otherwise untouched. The webserver wrapper additionally skips `content-range` and `text/event-stream`, and negotiates only gzip/identity (`dsh-host-webserver/src/index.ts:239-266`). Unknown-length streamed bodies are gzip-eligible.
+- Consequence: a strong ETag becomes byte-inaccurate under gzip (use weak ETags or `no-transform`); the harness does NOT handle `If-None-Match`/304 for plugin fetch routes — the plugin must implement conditional responses itself.
+
+(e) Bind: `host` is a required concrete IPv4/IPv6 literal; wildcard binds rejected at config load — `dsh-host-webserver/src/index.ts:96-107, 358-366`. Web composition default `127.0.0.1:3080` (`dsh-web-app/cordis.patch.yml:187-188`); Desktop launches `--host 127.0.0.1 --port 0` — `dsh/node_modules/@deepseek-ai/dsh-desktop-host/lib/index.js:364-370`. Loopback by default; a non-loopback literal is configurable and serves that network (trust fence still applies via `trustedHosts`).
+
+## Q2 — Client module loader (`window.__ModuleLoader__`)
+
+- Facade injected into `<head>` as a pending queue, switched to live registration at boot — `dsh/node_modules/@deepseek-ai/dsh-client-modules/src/index.ts:606-620`; `src/client/system.ts:153-163`.
+- A plugin's `client.js` is fetched as a CLASSIC script (combo URL `/plugins/??...&rev=` or one-resource `/plugins/<id>/client.js?rev=`), not an ES module — `system.ts:16-29`; README `dsh/node_modules/@deepseek-ai/dsh-client-modules/README.md:43, 77, 91`. Execution only registers a factory; module body side effects run at materialization (`system.ts:300-324`). `require('react')` etc. resolve against the frozen platform seed table (`system.ts:328-339`).
+- Code-splitting IS supported, via the chunk protocol — NOT native `import()`:
+  - `require.async('./client.<name>.js')` loads a package-local chunk — `system.ts:341-349, 354-381`; filename must match `/^client\.[A-Za-z0-9][A-Za-z0-9._-]*\.js$/` (`system.ts:39`).
+  - Host serves `/plugins/<pkg>/client.<name>.js?rev=<current rev>` by reading the file NEXT TO the resolved `client.js` entry (`join(dirname(clientPath), fileName)` + `existsSync`) — exports map is NOT consulted for chunks; `client.node.js`/`client.node.*` are excluded — `src/index.ts:1161-1212` (esp. 1177, 1189-1190).
+  - The chunk file must itself call `window.__ModuleLoader__.load({ id: <pkg>, chunk: 'client.<name>.js', factory })` — registration shape `src/client/manifest.ts:362-366`; `system.ts:166-180`; combo serving is plain concatenation of file bytes (`src/index.ts:451-455`).
+  - Chunks must be self-contained: no synchronous relative requires between entry/chunk outputs (README:77). Non-relative `require.async(spec)` resolves only boot-graph rows (`system.ts:383-400`).
+- Feasibility verdict: lazy-loading extra panel code is feasible via `require.async` chunks shipped as `client.*.js` siblings (include them in package `files`); arbitrary `import()` of package files (e.g. locale JSON via import) is not a loader mechanism. Assets are a separate route (`./assets/*` exports, README:39).
+
+## Q3 — Panel i18n
+
+- `locale/*.json` is consumed HOST-side for display metadata only: `readPluginMeta` reads `locale/en.json` through package exports, then every sibling `*.json` (filename must be a language id), extracting ONLY `meta.title`/`meta.description` — `dsh/node_modules/@deepseek-ai/dsh-app-boot/src/package-meta.ts:124-145, 175-200`; used by `listBundles` without activating plugins (`dsh-plugin-manager/src/index.ts:572`). `meta.detail` documents: `readBundleDetail` (`dsh-plugin-manager/src/index.ts:403-418`, `src/bundle-detail.ts`).
+- Runtime panel strings are NOT auto-loaded from those JSON files. The client registers dictionaries explicitly: `ctx.locale.register(ns, locale, dict)` (untyped) or `register(ns, { en, zh, ... })` (typed) — `dsh/node_modules/@deepseek-ai/dsh-client-locale/src/client/index.ts:390-441`. First-party pattern: `dsh/node_modules/@deepseek-ai/dsh-client-ui-settings-plugins/src/client/index.ts:36-37` (bind + register compiled dictionaries).
+- Reading the CURRENT UI language in a React component:
+  - `ctx.locale.getLocale()` / `getSnapshot()` → `{ active, locales, revision }` — `client-locale/src/client/index.ts:205-230`; `subscribe(fn)` (239-242); event `'locale/change'` (84-98). Inject `'locale'` to read `ctx.locale` directly.
+  - Slot registration option `locale: NS` synthesizes a `t` prop: `kit['t'] = localeSeat(face, entry.locale)` — `dsh/node_modules/@deepseek-ai/dsh-client-ui-renderer/src/client/scoped-slots.tsx:604-613`; `t` identity is minted per locale revision so memoized components re-render (297-321); every outlet subscribes to the locale revision via `useSyncExternalStore` (349-363). Missing face with declared locale = loud assembly error (608-611). Missing dictionary key falls back through the locale chain, then `common`, then the key itself (`client-locale/src/client/index.ts:470-487`).
+- Language switching (harness-wide): Host user-settings namespace `locale`, field `preference` — `dsh/node_modules/@deepseek-ai/dsh-client-locale/src/locale-settings.ts:6-9`. Browser write path: `ctx.configForms.get('locale')` scope, `.set('preference', id)` inside `setLocale` (`client/index.ts:256-262`); the Language row lives in `settings.general.item` (622-629). Absent preference → browser detection over `navigator.languages` then `navigator.language`, exact tag then primary subtag, fallback `en` (`client/index.ts:110, 523-555`). Built-ins `zh`/`en`; runtime adds `ja/es/fr/de/ru/pt` (583-585). A `pt-BR` browser tag matches registered `pt` by primary subtag. New languages (e.g. an explicit `pt-BR`) can be added with `locale.addLanguage({ id, label, fallback })` (276-298); fallback chains must terminate at `en`.
+- Repo state note: `client.js` declares `locale: NS` but registers no dictionaries and injects only `['slots']` (repo `client.js:536-544`); panel strings are hardcoded English. Design must add dictionary registration (and `inject: ['slots', 'locale']` if reading the service directly). A manual per-panel override can layer on top, but the harness language source of truth is `ctx.locale`.
+
+## Q4 — localStorage / origin
+
+- The settings panel renders inside the same SPA document served by the webserver fallback (`dsh/node_modules/@deepseek-ai/dsh-host-frontend-static/src/index.ts:1-16, 133-150`), same origin as `/api` and `/plugins`. No CSP header or sandbox attribute is set by frontend-static, web-app, web-frontend, or desktop-host (bounded literal searches for `ecurity-policy`/`sandbox` returned 0 relevant hits; desktop `sandboxPolicy` is the filesystem sandbox, `dsh-desktop-host/lib/index.js:123`). Index requires the auth cookie; non-index assets carry `cache-control: no-cache` + weak ETag (`frontend-static/src/index.ts:110-116`).
+- CRITICAL: Desktop launches the web app with `--port 0` (`dsh-desktop-host/lib/index.js:364-370`) → OS-assigned port per launch → the origin `http://127.0.0.1:<port>` CHANGES across Desktop restarts, so localStorage does NOT persist across Desktop sessions. The Web profile default port 3080 is fixed (`dsh-web-app/cordis.patch.yml:188`) and stable there. Durable user prefs must go through host settings/configForms or plugin config, not localStorage (visibility rule: valid for all users). localStorage is only a same-session cache on Desktop.
+
+## Q5 — Strict YAML frontmatter (repo `node_modules/yaml`, v2.9.1)
+
+Version: `node_modules/yaml/package.json:3`.
+
+- `parseDocument(source, options)` returns a Document with `.errors`/`.warnings` arrays; it does not throw on parse errors (`parse()` throws the first error) — `node_modules/yaml/dist/public-api.js:40-59, 60-79`. Multiple documents → `MULTIPLE_DOCS` error (50).
+- Anchors/aliases exposure: anchors become `node.anchor` on Scalar/Collection nodes (`dist/compose/compose-node.js:27-28, 35-36`); aliases are `Alias` nodes (`dist/nodes/Alias.js`, `isAlias` in `dist/nodes/identity.js:10`); `hasAnchor(node)` helper (`identity.js:36`). There is NO parse option to disable anchors/aliases. `doc.anchors` is not a parse-time registry — `dist/doc/anchors.js` helpers serve `toJS`/stringify.
+- Recommended rejection: AST walk with `visit(doc, { Alias: reject, Node/Value: n => hasAnchor(n) && reject })` — visitor keys in `dist/visit.d.ts:10-17`; or a CST token scan (`new Parser().parse(src)` tokens of type `'anchor' | 'alias' | 'tag'` — `dist/parse/cst.js:84-88`) before composing. Both are supported public APIs (`dist/index.js:28-49`).
+- Custom tags: explicit tags set `scalar.tag`/`coll.tag` (`dist/compose/compose-scalar.js:39-40`, `compose-collection.js:24-25, 84`). Unknown tags produce `TAG_RESOLVE_FAILED` WARNINGS (not errors) and fall back to string/plain collection — `compose-scalar.js:69` (only `!!str` mismatch is an error), `compose-collection.js:70-75`. The non-specific `!` tag forces string (`compose-scalar.js:48-49`). Therefore a strict parser must check `doc.warnings` too, or reject any node carrying `.tag` / any CST `tag` token.
+- Schema options: `'failsafe'` = only map/seq/string tags (`dist/schema/tags.js:20-26`) — every scalar stays a string, but anchors/aliases/tags are STILL parsed; failsafe alone does not reject them. `customTags` replaces/extends the tag set (`tags.js:55-96`); `stringKeys: true` forces string keys (`compose-node.js:55-62`). For "plain scalars on known keys": `schema: 'failsafe'` + `stringKeys: true` + explicit anchor/alias/tag rejection + own key whitelist.
+- Built-in limits: NO input size cap and NO explicit depth cap; pathological nesting surfaces as `RESOURCE_EXHAUSTION` when composition overflows the stack (`compose-node.js:38-42`). Alias-expansion protection `maxAliasCount` (default 100) is a `toJS` option, not a parse option: `0` disallows all alias resolution, `-1` disables the check (`dist/options.d.ts:172-185`; enforcement `dist/nodes/Alias.js:24-25, 61-68`; default applied `dist/doc/Document.js:293-300`). Enforce the byte cap yourself BEFORE parsing.
+
+## Q6 — Settings slot lifecycle
+
+- Contract: `'settings.section'` is a root-scoped LIST slot; owner props are exactly `{ close: () => void }` — `dsh/node_modules/@deepseek-ai/dsh-client-ui-settings/src/client/contract/slots.ts:46-57, 127-137`.
+- Shell = ui-settings-general. Panel mounts ONLY while open `{open && <SettingsPanel/>}` — `dsh/node_modules/@deepseek-ai/dsh-client-ui-settings-general/src/client/SettingsRoot.tsx:258-266`; inside it, ONLY the active section renders: `renderSlot('settings.section', { close }, { only: active })` (109). Tab switch unmounts the previous section component and mounts the newly selected one; closing settings unmounts everything. Active id falls back to the first row if the requested id disappeared (60).
+- Nav rows project registration options `id`/`order`/`label` (label may be a function; re-resolved on every locale revision) — `dsh-client-ui-settings-general/src/client/index.ts:161-186`; registrants re-register with fresh localized text on locale change (contract comment, slots.ts:46-56).
+- Props delivered to the component: standard kit (`t` when `locale` declared; `useStore`/`actions` when `store` declared; `renderSlot` when `children` declared) + the registration's inject faces + owner props `{ close }` — `dsh-client-ui-renderer/src/client/scoped-slots.tsx:591-642, 644-659`. No other harness props; data flows through the plugin's own inject faces/stores.
+- Registration is a fiber-scoped declaration effect (`ctx.slots.inject(...)` → `ctx.slots.register(...)`); entry identity keys remount error boundaries on winner change/HMR re-registration (`scoped-slots.tsx:365-379`).
+
+## Unverified / open questions
+
+1. Desktop port across restarts: `--port 0` is hardcoded per launch (evidence above); a fresh OS-assigned port per launch is the direct reading, but cross-restart behavior was not empirically observed. Treat localStorage as non-durable on Desktop regardless.
+2. Multiple `Set-Cookie` joining on fetch-route responses is inferred from `Headers.entries()` semantics + bridge code; not runtime-tested.
+3. Exact gzip eligibility per Content-Type relies on the `compressible` mime database used by the compression middleware (standard behavior; JSON/text are compressible).
+4. `@deepseek-ai/dsh-client-ui-slots` is not present as a standalone package directory in this installation (type-level dependency); the runtime machinery was verified in `dsh-client-ui-renderer` sources instead.
+5. Whether a future DSH release changes the chunk-serving or locale contracts: findings are pinned to v0.2.2-rc.5.
+
+Helper used for ASAR-aware lookups: `.devflow/notes/asar-lookup.mjs` (paths passed as arguments; file contains no machine tokens).

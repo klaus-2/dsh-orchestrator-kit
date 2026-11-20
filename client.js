@@ -26,10 +26,12 @@ window.__ModuleLoader__.load({
     let rolesCache = null;
     let catalogCache = null;
     let effortsCache = new Map();
+    let lastServerTiming = null;
 
     const INHERIT_LABEL = 'Chat default (inherit)';
     const EFFORT_AUTO_LABEL = 'Auto (model default)';
     const SAVE_NOTICE = 'Saved — applies on the next turn / next subagent_role.';
+    const UNCHANGED_NOTICE = 'Already up to date — nothing was written.';
     const SURFACE_TINT = 'rgba(127,127,127,0.08)';
     const controlStyle = { background: 'var(--dsw-alias-bg-base)', color: 'var(--dsw-alias-label-primary)', border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 8, padding: 8, fontSize: 13, width: '100%', minWidth: 0 };
     const buttonStyle = { background: 'none', border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 8, padding: '8px 12px', color: 'var(--dsw-alias-label-primary)', fontSize: 12, fontWeight: 500, cursor: 'pointer' };
@@ -83,6 +85,14 @@ window.__ModuleLoader__.load({
 
     async function fetchJson(url) {
       const response = await fetch(url, { cache: 'no-store' });
+      const timing = response.headers.get('server-timing');
+      if (typeof timing === 'string') {
+        for (const [, metric, dur] of timing.matchAll(/([A-Za-z0-9_-]+);dur=([0-9]+(?:\.[0-9]+)?)/g)) {
+          if (metric === 'reads' || metric === 'catalog') {
+            lastServerTiming = { ...(lastServerTiming ?? {}), [metric]: Number(dur) };
+          }
+        }
+      }
       return parseApiResponse(response, false);
     }
 
@@ -93,7 +103,7 @@ window.__ModuleLoader__.load({
         body: JSON.stringify(payload)
       });
       const data = await parseApiResponse(response, true);
-      return data.role;
+      return { role: data.role, unchanged: data.unchanged === true };
     }
 
     const normalizeDraft = (role) => ({
@@ -166,6 +176,7 @@ window.__ModuleLoader__.load({
               if (rolesOutcome.status === 'fulfilled' && Array.isArray(rolesOutcome.value?.roles)) {
                 if (tracker.saves === startSaves) {
                   const list = rolesOutcome.value.roles;
+                  const invalidCards = Array.isArray(rolesOutcome.value.invalid) ? rolesOutcome.value.invalid : [];
                   if (loadTick > 0) {
                     effortsCache = new Map();
                   }
@@ -175,6 +186,11 @@ window.__ModuleLoader__.load({
                   setMessages((current) => {
                     const next = { ...current };
                     delete next.__load;
+                    if (invalidCards.length > 0) {
+                      next.__invalid = { kind: 'warning', text: `Some role cards have invalid frontmatter and cannot be edited here: ${invalidCards.map((card) => card.id).join(', ')}.` };
+                    } else {
+                      delete next.__invalid;
+                    }
                     return next;
                   });
                 }
@@ -311,13 +327,13 @@ window.__ModuleLoader__.load({
           setSavingId(role.id);
           setMessages((current) => ({ ...current, [role.id]: undefined }));
           try {
-            const saved = await postSettings(payload);
+            const { role: saved, unchanged } = await postSettings(payload);
             tracker.saves += 1;
             const nextRoles = (rolesCache ?? roles ?? []).map((entry) => (entry.id === role.id ? saved : entry));
             rolesCache = nextRoles;
             setRoles(nextRoles);
             setDrafts((current) => ({ ...current, [role.id]: normalizeDraft(saved) }));
-            setMessages((current) => ({ ...current, [role.id]: { kind: 'ok', text: SAVE_NOTICE } }));
+            setMessages((current) => ({ ...current, [role.id]: { kind: 'ok', text: unchanged ? UNCHANGED_NOTICE : SAVE_NOTICE } }));
           } catch (error) {
             const detail = String(error?.message ?? error);
             const text = error?.status === 409
@@ -487,6 +503,7 @@ window.__ModuleLoader__.load({
             }, refreshing ? 'Refreshing…' : 'Refresh')),
           messages.__load ? h('div', { style: bannerStyle('error') }, messages.__load.text) : null,
           messages.__catalog ? h('div', { style: bannerStyle('error') }, messages.__catalog.text) : null,
+          messages.__invalid ? h('div', { style: bannerStyle('warning') }, messages.__invalid.text) : null,
           catalogPartialWarning
             ? h('div', { style: bannerStyle('warning') },
                 catalog.failedProviders?.length > 0
@@ -503,7 +520,8 @@ window.__ModuleLoader__.load({
               h('div', {}, h('span', { style: legendTermStyle }, 'Disabled'), ' — skip the role when dispatching work.'),
               h('div', {}, h('span', { style: legendTermStyle }, 'Chat default (inherit)'), ' — remove the route and follow the Lead.'),
               h('div', {}, 'Members created with plain subagent always inherit the Lead.'),
-              h('div', {}, 'Changes apply on the next turn / next subagent_role.'))),
+              h('div', {}, 'Changes apply on the next turn / next subagent_role.'),
+              lastServerTiming ? h('div', {}, `Server timing — roles: ${lastServerTiming.reads ?? '—'} ms · catalog: ${lastServerTiming.catalog ?? '—'} ms`) : null)),
           h('div', { role: 'tablist', 'aria-label': 'Filter roles by phase', style: tabRowStyle, onKeyDown: onTabListKeyDown },
             tabs.map((tab, index) => h('button', {
               key: tab.id,
