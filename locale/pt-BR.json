@@ -126,6 +126,14 @@
     "diagnostics.craftMissing": "As origens em craft/ estão indisponíveis; a checagem de divergência foi ignorada.",
     "diagnostics.loadError": "Falha ao carregar o diagnóstico: {error}",
     "readonly.title": "Modo somente leitura",
-    "readonly.notice": "O salvamento está desativado pela configuração do servidor (modo somente leitura). Os controles aparecem apenas como referência."
+    "readonly.notice": "O salvamento está desativado pela configuração do servidor (modo somente leitura). Os controles aparecem apenas como referência.",
+    "support.star": "⭐",
+    "support.spark": "✦",
+    "support.title": "Gostando do Orchestrator Kit?",
+    "support.message": "Uma estrela no GitHub ajuda outras pessoas a descobrirem o plugin — leva dez segundos.",
+    "support.cta": "Dar estrela no GitHub",
+    "support.thanks": "Obrigado! Cada estrela ajuda o plugin a chegar em mais pessoas.",
+    "support.close": "✕",
+    "support.dismiss": "Dispensar"
   }
 }

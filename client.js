@@ -5,6 +5,7 @@ window.__ModuleLoader__.load({
     const h = React.createElement;
 
     const NS = 'dsh-orchestrator-kit';
+    const REPO_URL = 'https://github.com/klaus-2/dsh-orchestrator-kit';
     const ROLES_ROUTE = '/api/dsh-orchestrator-kit.roles';
     const CATALOG_ROUTE = '/api/dsh-orchestrator-kit.catalog';
     const EFFORTS_ROUTE = '/api/dsh-orchestrator-kit.efforts';
@@ -148,7 +149,15 @@ window.__ModuleLoader__.load({
         'diagnostics.craftMissing': 'craft/ sources are unavailable; drift checking was skipped.',
         'diagnostics.loadError': 'Failed to load diagnostics: {error}',
         'readonly.title': 'Read-only mode',
-        'readonly.notice': 'Saving is disabled by the server configuration (read-only mode). Controls are shown for reference.'
+        'readonly.notice': 'Saving is disabled by the server configuration (read-only mode). Controls are shown for reference.',
+        'support.star': '⭐',
+        'support.spark': '✦',
+        'support.title': 'Enjoying Orchestrator Kit?',
+        'support.message': 'A star on GitHub helps other people discover the plugin — it takes ten seconds.',
+        'support.cta': 'Star on GitHub',
+        'support.thanks': 'Thank you! Every star helps the plugin reach more people.',
+        'support.close': '✕',
+        'support.dismiss': 'Dismiss'
       },
       'pt-br': {
         'nav.label': 'Orchestrator',
@@ -272,7 +281,15 @@ window.__ModuleLoader__.load({
         'diagnostics.craftMissing': 'As origens em craft/ estão indisponíveis; a checagem de divergência foi ignorada.',
         'diagnostics.loadError': 'Falha ao carregar o diagnóstico: {error}',
         'readonly.title': 'Modo somente leitura',
-        'readonly.notice': 'O salvamento está desativado pela configuração do servidor (modo somente leitura). Os controles aparecem apenas como referência.'
+        'readonly.notice': 'O salvamento está desativado pela configuração do servidor (modo somente leitura). Os controles aparecem apenas como referência.',
+        'support.star': '⭐',
+        'support.spark': '✦',
+        'support.title': 'Gostando do Orchestrator Kit?',
+        'support.message': 'Uma estrela no GitHub ajuda outras pessoas a descobrirem o plugin — leva dez segundos.',
+        'support.cta': 'Dar estrela no GitHub',
+        'support.thanks': 'Obrigado! Cada estrela ajuda o plugin a chegar em mais pessoas.',
+        'support.close': '✕',
+        'support.dismiss': 'Dispensar'
       },
       zh: {
         'nav.label': 'Orchestrator',
@@ -396,7 +413,15 @@ window.__ModuleLoader__.load({
         'diagnostics.craftMissing': 'craft/ 源不可用；已跳过偏差检查。',
         'diagnostics.loadError': '加载诊断失败：{error}',
         'readonly.title': '只读模式',
-        'readonly.notice': '保存已被服务器配置禁用（只读模式）。控件仅作参考。'
+        'readonly.notice': '保存已被服务器配置禁用（只读模式）。控件仅作参考。',
+        'support.star': '⭐',
+        'support.spark': '✦',
+        'support.title': '喜欢 Orchestrator Kit 吗？',
+        'support.message': '在 GitHub 上加一颗 Star，能让更多人发现这个插件——只要十秒。',
+        'support.cta': '去 GitHub 点 Star',
+        'support.thanks': '感谢支持！每一颗 Star 都能让插件帮到更多人。',
+        'support.close': '✕',
+        'support.dismiss': '关闭'
       }
     };
     PANEL_DICTS.pt = PANEL_DICTS['pt-br'];
@@ -455,6 +480,7 @@ window.__ModuleLoader__.load({
         if (TAB_IDS.includes(parsed.tab)) prefs.tab = parsed.tab;
         if (typeof parsed.legend === 'boolean') prefs.legend = parsed.legend;
         if (DENSITY_OPTIONS.includes(parsed.density)) prefs.density = parsed.density;
+        if (parsed.support === 'dismissed' || parsed.support === 'thanked') prefs.support = parsed.support;
         return prefs;
       } catch {
         return {};
@@ -471,6 +497,8 @@ window.__ModuleLoader__.load({
     }
 
     let storedPrefs = readStoredPrefs();
+
+    const SUPPORT_STYLES = '.dsh-ok-support { position: relative; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 40px 12px 14px; border: 1px solid color-mix(in srgb, var(--dsw-alias-brand-primary, #4f8cff) 38%, var(--dsw-alias-border-l1, #2a2f3a)); border-radius: 14px; background: linear-gradient(120deg, color-mix(in srgb, var(--dsw-alias-brand-primary, #4f8cff) 9%, var(--dsw-alias-bg-layer-1, #16181d)) 0%, var(--dsw-alias-bg-layer-1, #16181d) 62%); overflow: hidden; animation: dsh-ok-support-in 420ms cubic-bezier(0.22,1,0.36,1) both; }\n.dsh-ok-support-star { display: inline-flex; flex: none; font-size: 24px; line-height: 1; animation: dsh-ok-star-twinkle 2.6s ease-in-out infinite; }\n.dsh-ok-support-spark { position: absolute; font-size: 10px; line-height: 1; color: var(--dsw-alias-brand-primary, #4f8cff); pointer-events: none; animation: dsh-ok-support-spark 2.6s ease-in-out infinite; }\n.dsh-ok-support-body { min-width: 180px; flex: 1; }\n.dsh-ok-support-title { font-size: 13px; font-weight: 600; color: var(--dsw-alias-label-primary, #eee); }\n.dsh-ok-support-text { font-size: 12px; line-height: 17px; margin-top: 2px; color: var(--dsw-alias-label-secondary, #bbb); }\n.dsh-ok-support-cta { display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; font-size: 12.5px; font-weight: 600; white-space: nowrap; color: var(--dsw-alias-label-primary, #eee); background: linear-gradient(135deg, rgba(245,158,11,0.18), rgba(245,158,11,0.06)); border: 1px solid rgba(245,158,11,0.45); border-radius: 10px; cursor: pointer; text-decoration: none; transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease; }\n.dsh-ok-support-cta:hover { transform: translateY(-1px); border-color: rgba(245,158,11,0.75); box-shadow: 0 3px 14px rgba(245,158,11,0.24); }\n.dsh-ok-support-cta:active { transform: translateY(0) scale(0.98); box-shadow: none; }\n.dsh-ok-support-cta:focus-visible, .dsh-ok-support-close:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, #4f8cff); outline-offset: 1px; }\n.dsh-ok-support-close { position: absolute; top: 6px; right: 8px; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; font: inherit; font-size: 11px; line-height: 1; color: var(--dsw-alias-label-tertiary, #888); background: transparent; border: none; border-radius: 6px; cursor: pointer; transition: color 120ms ease, background 120ms ease; }\n.dsh-ok-support-close:hover { color: var(--dsw-alias-label-primary, #eee); background: var(--dsw-alias-bg-layer-2, #1d2026); }\n.dsh-ok-support-thanks { padding-top: 10px; padding-bottom: 10px; }\n.dsh-ok-support-thanks .dsh-ok-support-star { animation: dsh-ok-star-pop 700ms cubic-bezier(0.34,1.56,0.64,1) both; }\n@keyframes dsh-ok-support-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }\n@keyframes dsh-ok-star-twinkle { 0%, 100% { transform: scale(1) rotate(0deg); filter: drop-shadow(0 0 1px transparent); } 50% { transform: scale(1.18) rotate(-9deg); filter: drop-shadow(0 0 7px rgba(245,158,11,0.65)); } }\n@keyframes dsh-ok-support-spark { 0%, 100% { opacity: 0; transform: scale(0.5) rotate(0deg); } 50% { opacity: 0.85; transform: scale(1) rotate(45deg); } }\n@keyframes dsh-ok-star-pop { 0% { transform: scale(0.4) rotate(-30deg); } 62% { transform: scale(1.4) rotate(10deg); } 100% { transform: scale(1) rotate(0deg); } }\n@media (prefers-reduced-motion: reduce) { .dsh-ok-support, .dsh-ok-support-star, .dsh-ok-support-spark, .dsh-ok-support-cta, .dsh-ok-support-close { animation: none; transition: none; } }';
 
     const SURFACE_TINT = 'rgba(127,127,127,0.08)';
     const controlStyle = { background: 'var(--dsw-alias-bg-base)', color: 'var(--dsw-alias-label-primary)', border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 8, padding: 8, fontSize: 13, width: '100%', minWidth: 0 };
@@ -752,6 +780,44 @@ window.__ModuleLoader__.load({
           writeStoredLocale(localeOverride);
           setLocaleTick((n) => n + 1);
         };
+        const [supportPopped, setSupportPopped] = React.useState(false);
+        React.useEffect(() => {
+          if (supportPopped !== true) return undefined;
+          const timerId = window.setTimeout(() => setSupportPopped(false), 6000);
+          return () => window.clearTimeout(timerId);
+        }, [supportPopped]);
+        const thankStar = () => {
+          storedPrefs = { ...storedPrefs, support: 'thanked' };
+          writeStoredPrefs(storedPrefs);
+          setSupportPopped(true);
+        };
+        const dismissSupport = () => {
+          storedPrefs = { ...storedPrefs, support: 'dismissed' };
+          writeStoredPrefs(storedPrefs);
+          setSupportPopped(false);
+        };
+        const supportAnswered = storedPrefs.support === 'dismissed' || storedPrefs.support === 'thanked';
+        const supportBanner = supportAnswered === true && supportPopped !== true ? null
+          : supportPopped === true ? h('div', { className: 'dsh-ok-support dsh-ok-support-thanks', role: 'status' },
+            h('span', { className: 'dsh-ok-support-star', 'aria-hidden': 'true' }, t('support.star')),
+            h('span', { className: 'dsh-ok-support-text' }, t('support.thanks')))
+          : h('div', { className: 'dsh-ok-support' },
+            h('span', { className: 'dsh-ok-support-star', 'aria-hidden': 'true' }, t('support.star')),
+            h('span', { className: 'dsh-ok-support-spark', style: { top: 8, left: 44 }, 'aria-hidden': 'true' }, t('support.spark')),
+            h('span', { className: 'dsh-ok-support-spark', style: { bottom: 10, left: 26, animationDelay: '1.3s' }, 'aria-hidden': 'true' }, t('support.spark')),
+            h('div', { className: 'dsh-ok-support-body' },
+              h('div', { className: 'dsh-ok-support-title' }, t('support.title')),
+              h('div', { className: 'dsh-ok-support-text' }, t('support.message'))),
+            h('a', { className: 'dsh-ok-support-cta', href: REPO_URL, target: '_blank', rel: 'noreferrer', 'aria-label': t('support.cta'), title: t('support.cta'), onClick: thankStar },
+              h('span', { 'aria-hidden': 'true' }, t('support.star')), t('support.cta')),
+            h('button', {
+              type: 'button',
+              className: 'dsh-ok-support-close',
+              'aria-label': t('support.dismiss'),
+              title: t('support.dismiss'),
+              onMouseDown: (event) => event.preventDefault(),
+              onClick: dismissSupport
+            }, t('support.close')));
         const setActiveTab = (id) => {
           setActiveTabState(id);
           storedPrefs = { ...storedPrefs, tab: id };
@@ -1550,6 +1616,7 @@ window.__ModuleLoader__.load({
         };
 
         return h('div', { 'data-dsh-orchestrator-kit-settings': '', style: { display: 'flex', flexDirection: 'column', gap: 16 }, onKeyDown: onPanelKeyDown },
+          h('style', null, SUPPORT_STYLES),
           h('div', { style: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 } },
             h('div', { style: { minWidth: 0 } },
               h('div', { style: { fontSize: 14, fontWeight: 600, color: 'var(--dsw-alias-label-primary)' } }, t('header.title')),
@@ -1573,6 +1640,7 @@ window.__ModuleLoader__.load({
               style: { ...buttonStyle, flex: 'none', opacity: refreshing || savingId !== null ? 0.5 : 1 },
               'aria-label': t('refresh.aria')
             }, refreshing ? t('refresh.busy') : t('refresh'))),
+          supportBanner,
           messages.__load ? h('div', { style: bannerStyle('error') }, messageText(messages.__load)) : null,
           readonlyMode ? h('div', { style: bannerStyle('warning') },
             h('div', { style: { fontWeight: 600 } }, t('readonly.title')),

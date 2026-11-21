@@ -126,6 +126,14 @@
     "diagnostics.craftMissing": "craft/ 源不可用；已跳过偏差检查。",
     "diagnostics.loadError": "加载诊断失败：{error}",
     "readonly.title": "只读模式",
-    "readonly.notice": "保存已被服务器配置禁用（只读模式）。控件仅作参考。"
+    "readonly.notice": "保存已被服务器配置禁用（只读模式）。控件仅作参考。",
+    "support.star": "⭐",
+    "support.spark": "✦",
+    "support.title": "喜欢 Orchestrator Kit 吗？",
+    "support.message": "在 GitHub 上加一颗 Star，能让更多人发现这个插件——只要十秒。",
+    "support.cta": "去 GitHub 点 Star",
+    "support.thanks": "感谢支持！每一颗 Star 都能让插件帮到更多人。",
+    "support.close": "✕",
+    "support.dismiss": "关闭"
   }
 }

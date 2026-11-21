@@ -35,7 +35,7 @@ const PKG = JSON.parse(readFileSync(path.join(packageDir, 'package.json'), 'utf8
 
 const COVERAGE_STATEMENT_FLOOR = 0.70;
 const COVERAGE_FUNCTION_FLOOR = 0.60;
-const CLIENT_BYTE_CEILING = 102400;
+const CLIENT_BYTE_CEILING = 112640;
 const coverageDirArg = process.argv.find((arg) => arg.startsWith('--coverage-dir='));
 const isCoverageReport = process.argv.includes('--coverage-report');
 const coverageRoot = coverageDirArg ? coverageDirArg.slice('--coverage-dir='.length) : null;
@@ -2143,7 +2143,9 @@ function mountVmClient(fetchHandler, options = {}) {
       removeEventListener(type, handler) {
         const index = windowListeners.findIndex((entry) => entry.type === type && entry.handler === handler);
         if (index >= 0) windowListeners.splice(index, 1);
-      }
+      },
+      setTimeout,
+      clearTimeout
     },
     fetch: (url, opts) => track(Promise.resolve().then(() => {
       fetchCalls.push({ url, opts });
@@ -2863,7 +2865,15 @@ const PANEL_KEYS = [
   'diagnostics.craftMissing',
   'diagnostics.loadError',
   'readonly.title',
-  'readonly.notice'
+  'readonly.notice',
+  'support.star',
+  'support.spark',
+  'support.title',
+  'support.message',
+  'support.cta',
+  'support.thanks',
+  'support.close',
+  'support.dismiss'
 ];
 
 const FROZEN_PACK_FILES = [
@@ -3075,6 +3085,7 @@ await test('i18n structural gate: every panel string renders through t (sentinel
       return;
     }
     if (node && typeof node === 'object') {
+      if (node.type === 'style') return;
       for (const prop of ['aria-label', 'title', 'placeholder']) {
         const value = node.props?.[prop];
         if (typeof value === 'string') checkValue(value);
@@ -3121,6 +3132,14 @@ await test('i18n structural gate: every panel string renders through t (sentinel
   checkValue(app1.meta.label());
   let tree1 = await app1.settle();
   scanTree(tree1);
+  const supportCta = findNodes(tree1, (n) => n.type === 'a' && n.props.className === 'dsh-ok-support-cta')[0];
+  assert.ok(supportCta, 'the support banner must render the star call to action');
+  assert.equal(supportCta.props.href, 'https://github.com/klaus-2/dsh-orchestrator-kit', 'the star call to action must open the repository');
+  supportCta.props.onClick();
+  tree1 = app1.renderCycle();
+  scanTree(tree1);
+  assert.ok(collectText(tree1).join('').includes('⟦support.thanks⟧'), 'a starred banner must render support.thanks through t');
+  assert.equal(JSON.parse(vm1.storage.get('dsh-orchestrator-kit.prefs')).support, 'thanked', 'the starred answer must persist in the panel prefs');
 
   checkboxOf(cardOf(tree1, 'zeta-custom')).props.onChange({ target: { checked: true } });
   tree1 = app1.renderCycle();
@@ -5363,12 +5382,12 @@ await test('coverage gate fails closed: empty directory, missing coverage root a
   }
 });
 
-await test('client.js byte budget: measured size stays under the versioned 102400-byte ceiling with no self-adjustment', () => {
+await test('client.js byte budget: measured size stays under the versioned 112640-byte ceiling with no self-adjustment', () => {
   const size = statSync(path.join(packageDir, 'client.js')).size;
-  assert.equal(size, 100055, 'client.js must stay byte-identical at the measured 100055 bytes');
-  assert.equal(CLIENT_BYTE_CEILING, 102400, 'the versioned ceiling must stay 102400 bytes (100 KiB)');
-  assert.equal(CLIENT_BYTE_CEILING - size, 2345, 'the headroom must stay 2345 bytes');
-  assert.ok(size <= CLIENT_BYTE_CEILING, `client.js is ${size} bytes; ceiling is ${CLIENT_BYTE_CEILING} (100 KiB) — bump the versioned ceiling by explicit commit or split a chunk (C17)`);
+  assert.equal(size, 107774, 'client.js must stay byte-identical at the measured 107774 bytes');
+  assert.equal(CLIENT_BYTE_CEILING, 112640, 'the versioned ceiling must stay 112640 bytes (110 KiB)');
+  assert.equal(CLIENT_BYTE_CEILING - size, 4866, 'the headroom must stay 4866 bytes');
+  assert.ok(size <= CLIENT_BYTE_CEILING, `client.js is ${size} bytes; ceiling is ${CLIENT_BYTE_CEILING} (110 KiB) — bump the versioned ceiling by explicit commit or split a chunk (C17)`);
 });
 
 await test('docs-parity.mjs: three READMEs share headings, table rows and fenced blocks; importing has no side effects', async () => {
@@ -5490,7 +5509,7 @@ await test('pass-5 docs and static markers: six reference docs carry their secti
   assert.deepEqual(workflowBlock('publish.yml'), expectedBlock, 'publish.yml must carry the byte-identical coverage block');
 
   const testerText = readFileSync(path.join(packageDir, 'scripts', 'test.mjs'), 'utf8');
-  assert.ok(testerText.includes('102400'), 'the versioned byte budget constant must be present');
+  assert.ok(testerText.includes('112640'), 'the versioned byte budget constant must be present');
 });
 
 await test('repo hygiene: no backup artifacts and zero machine tokens in any repo file', () => {

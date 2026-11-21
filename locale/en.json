@@ -126,6 +126,14 @@
     "diagnostics.craftMissing": "craft/ sources are unavailable; drift checking was skipped.",
     "diagnostics.loadError": "Failed to load diagnostics: {error}",
     "readonly.title": "Read-only mode",
-    "readonly.notice": "Saving is disabled by the server configuration (read-only mode). Controls are shown for reference."
+    "readonly.notice": "Saving is disabled by the server configuration (read-only mode). Controls are shown for reference.",
+    "support.star": "⭐",
+    "support.spark": "✦",
+    "support.title": "Enjoying Orchestrator Kit?",
+    "support.message": "A star on GitHub helps other people discover the plugin — it takes ten seconds.",
+    "support.cta": "Star on GitHub",
+    "support.thanks": "Thank you! Every star helps the plugin reach more people.",
+    "support.close": "✕",
+    "support.dismiss": "Dismiss"
   }
 }
