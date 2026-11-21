@@ -27,6 +27,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Accessible save feedback: a shared polite live region announces the last save or undo outcome, the header counts act as a polite live region, and a saved card keeps a green border until the next change (cleared by interaction, not timers).
 - Effective-route hint on inherit cards (shows the chat-default provider / model when the harness catalog exposes one) and `content-visibility` space reservation on comfortable grid cards.
 - Same-session panel prefs: tab choice, legend state and density persist through best-effort `localStorage` with the same semantics as the language override; search and sort are transient.
+- Per-phase batch apply: on a phase tab, each section header carries an "Apply to phase" button that copies the source card's draft route/effort to every other card in the section as its own validated save (per-card expected `mtimeMs`). Per-card results: `409` conflicts continue and are reported, a non-409 failure stops the run, and a Cancel button stops after the in-flight card — never atomic.
+- Routing profiles: "Export profile" writes the saved routes of all roles to a versioned JSON (`version: 1`, generator, roles keyed by id, no mtimes); "Import profile" validates every entry before writing anything (unsupported version, half-written routes or malformed ids reject the whole file), skips ids unknown locally, refreshes the card list for fresh mtimes, then applies each entry as a normal save.
+- Append-only change log: every successful save appends one JSONL record (time, role id, previous/next route, origin — no secrets, no absolute paths) to `.orchestrator-audit.jsonl` beside the cards, written inside the existing write lock. Best-effort: an audit-write failure never fails or rolls back the save. A new `GET /api/dsh-orchestrator-kit.events` route returns the last 50 records (malformed lines counted as skipped, empty list when the file does not exist), and the panel's Recent changes section shows them on demand.
+- Installed-card diagnostics: a new read-only `GET /api/dsh-orchestrator-kit.diagnostics` route reports roles missing versus the `craft/` sources, cards with invalid frontmatter, routes outside the live catalog, and cards whose body differs from the craft source. Computed on demand, never cached, and it degrades gracefully when `craft/` is absent (`craftAvailable: false`, still `200`); the outside-catalog list requires a live catalog and is omitted when it is unavailable. The panel shows the report in a legend section.
+- Craft install script: `node scripts/install-craft.js [--dry-run]` copies the 20 role cards into the agents root and the dev-flow skill tree into `<agents home>/skills/dev-flow/`. It always skips existing files (no overwrite mode, no backups), verifies path containment, prints relative paths only, and turns a held writer lock into actionable retry/operator guidance with exit code 1.
+- Read-only mode: `DSH_ORCHESTRATOR_READONLY=1` (or `true`) makes the server answer every save with `403` (`code: 'readonly'`) before reading the body or touching disk, and the roles bootstrap carries the flag; the panel disables every mutating control and shows a read-only notice, keeping export available.
 
 ### Changed
 
@@ -38,10 +44,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Panel strings (labels, badges, notices, banners, legend, empty states) resolve through the locale system and re-translate live on language switch; role, catalog and effort names and counts remain untranslated data. Phase tabs and sections are keyed by stable ids (`discovery` / `planning` / `verification` / `other`); rendered English text is unchanged.
 - The English-only test policy is replaced by trilingual parity: locale key parity, registered-dictionary sync and the structural t-usage gate (user decision).
 - Remounting the settings panel skips the catalog refetch while a cached catalog exists (roles always refetch; an explicit refresh always refetches both).
+- The panel now disables every mutating control when the server is in read-only mode (`DSH_ORCHESTRATOR_READONLY`), mirroring the flag from the roles bootstrap; the server `403` remains the authoritative gate.
+- The panel now talks to six routes: the four original ones plus the new `GET /api/dsh-orchestrator-kit.events` and `GET /api/dsh-orchestrator-kit.diagnostics` read-only routes.
 
 ### Security
 
 - Secrets and user-home paths are redacted to `[redacted]` and `[home]` markers in server logs and HTTP error bodies; error codes and context are preserved. Data fields in successful responses are never redacted; error text inside a success envelope (`invalid[].error`) is redacted like any error.
+- The change log stores role ids and route values only — never secrets, never absolute paths, never card contents — and both new routes redact error text like every other error path. The readonly gate answers `403` before reading the request body or touching the filesystem, so a read-only server performs no work for save attempts. The install script verifies path containment before any write, prints only agent-root-relative paths, and never creates backups.
 
 ## [0.1.0] - 2026-11-18
 

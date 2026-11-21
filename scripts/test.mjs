@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import {
+  appendFileSync,
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -1894,10 +1896,10 @@ await test('client.js registers under the exact package name (web-boot row id)',
 });
 
 await test('server and client agree on the /api/<name>.* route surface', () => {
-  const routeRe = /\/api\/dsh-orchestrator-kit\.(roles|catalog|efforts|route)/g;
+  const routeRe = /\/api\/dsh-orchestrator-kit\.(roles|catalog|efforts|route|events|diagnostics)/g;
   const serverRoutes = [...readFileSync(path.join(packageDir, 'index.js'), 'utf8').matchAll(routeRe)].map((m) => m[0]).sort();
   const clientRoutes = [...readFileSync(path.join(packageDir, 'client.js'), 'utf8').matchAll(routeRe)].map((m) => m[0]).sort();
-  assert.equal(serverRoutes.length, 4, 'index.js must register exactly the 4 namespaced routes');
+  assert.equal(serverRoutes.length, 6, 'index.js must register exactly the 6 namespaced routes');
   assert.deepEqual(serverRoutes, clientRoutes, 'client.js must call exactly the routes index.js registers');
 });
 
@@ -1950,6 +1952,8 @@ await test('client.js static contract: phase grouping, save flow markers, and no
   assert.ok(clientText.includes("inject: ['slots', 'locale']"));
   assert.ok(clientText.includes('expectedMtimeMs'), 'client.js must send expectedMtimeMs');
   assert.ok(clientText.includes(`/api/${NS}.efforts`), 'client.js must query .efforts');
+  assert.ok(clientText.includes('shouldCancel'), 'client.js must carry the batch cancel hook');
+  assert.ok(readFileSync(path.join(packageDir, 'index.js'), 'utf8').includes('DSH_ORCHESTRATOR_READONLY'), 'index.js must read the readonly env flag');
   assert.ok(clientText.includes('data-dsh-orchestrator-kit-settings'), 'client.js must keep its settings mount marker');
   assert.doesNotMatch(clientText, /spawn_teammate\b/, 'client.js must not name the removed spawn_teammate tool');
   assert.ok(!clientText.includes(OLD_PLUGIN_NAME), 'client.js must not keep the old local plugin identity');
@@ -1959,14 +1963,14 @@ await test('client.js static contract: phase grouping, save flow markers, and no
 });
 
 await test('node --check passes on the shipped files', () => {
-  for (const relative of ['index.js', 'client.js', 'scripts/test.mjs']) {
+  for (const relative of ['index.js', 'client.js', 'scripts/test.mjs', 'scripts/install-craft.js']) {
     const result = spawnSync(process.execPath, ['--check', path.join(packageDir, relative)], { encoding: 'utf8' });
     assert.equal(result.status, 0, `${relative} failed node --check: ${result.stderr}`);
   }
 });
 
 await test('all shipped files exist with UTF-8 no BOM and pure LF', () => {
-  for (const file of ['package.json', 'cordis.patch.yml', 'index.js', 'client.js', 'scripts/test.mjs', 'locale/en.json', 'locale/pt-BR.json', 'locale/zh.json']) {
+  for (const file of ['package.json', 'cordis.patch.yml', 'index.js', 'client.js', 'scripts/test.mjs', 'scripts/install-craft.js', 'locale/en.json', 'locale/pt-BR.json', 'locale/zh.json']) {
     const bytes = readFileSync(path.join(packageDir, file));
     assert.ok(!bytes.subarray(0, 3).equals(Buffer.from([0xEF, 0xBB, 0xBF])), `${file} must not carry a BOM`);
     assert.ok(!bytes.toString('utf8').includes('\r\n'), `${file} must use pure LF`);
@@ -2742,7 +2746,34 @@ const PANEL_KEYS = [
   'notice.undo',
   'error.action.reget',
   'error.action.regetAria',
-  'error.hint.effort'
+  'error.hint.effort',
+  'batch.apply',
+  'batch.applyAria',
+  'batch.busy',
+  'batch.cancel',
+  'batch.summary',
+  'batch.cancelled',
+  'batch.empty',
+  'profile.summary',
+  'profile.export',
+  'profile.import',
+  'profile.invalid',
+  'profile.rejected',
+  'profile.applied',
+  'events.summary',
+  'events.empty',
+  'events.loadError',
+  'events.entry',
+  'diagnostics.summary',
+  'diagnostics.ok',
+  'diagnostics.missing',
+  'diagnostics.invalid',
+  'diagnostics.outsideCatalog',
+  'diagnostics.drift',
+  'diagnostics.craftMissing',
+  'diagnostics.loadError',
+  'readonly.title',
+  'readonly.notice'
 ];
 
 const FROZEN_PACK_FILES = [
@@ -2814,18 +2845,19 @@ const FROZEN_PACK_FILES = [
   'README.md',
   'README.pt-BR.md',
   'README.zh-CN.md',
+  'scripts/install-craft.js',
   'scripts/test.mjs'
 ];
 
 const localePanelOf = (lang) => JSON.parse(readFileSync(path.join(packageDir, 'locale', `${lang}.json`), 'utf8')).panel;
 
-await test('locale parity: en/pt-BR/zh panel key sets identical, values non-empty, frozen 72-key schema, meta preserved', () => {
+await test('locale parity: en/pt-BR/zh panel key sets identical, values non-empty, frozen dictionary schema, meta preserved', () => {
   const langs = ['en', 'pt-BR', 'zh'];
   const docs = langs.map((lang) => JSON.parse(readFileSync(path.join(packageDir, 'locale', `${lang}.json`), 'utf8')));
   for (const [index, doc] of docs.entries()) {
     const lang = langs[index];
     assert.ok(doc.panel && typeof doc.panel === 'object' && !Array.isArray(doc.panel), `locale/${lang}.json must carry a panel object`);
-    assert.deepEqual(Object.keys(doc.panel).sort(), [...PANEL_KEYS].sort(), `locale/${lang}.json panel keys must match the frozen 72-key schema`);
+    assert.deepEqual(Object.keys(doc.panel).sort(), [...PANEL_KEYS].sort(), `locale/${lang}.json panel keys must match the frozen dictionary schema`);
     for (const key of PANEL_KEYS) {
       assert.equal(typeof doc.panel[key], 'string', `locale/${lang}.json panel.${key} must be a string`);
       assert.ok(doc.panel[key].trim().length > 0, `locale/${lang}.json panel.${key} must be non-empty`);
@@ -2897,7 +2929,7 @@ await test('locale registration: embedded dictionaries sync with locale JSON pan
   appDegraded.unmount();
 });
 
-await test('i18n structural gate: every panel string renders through t (sentinel bind) and all 72 keys are covered across driven states', async () => {
+await test('i18n structural gate: every panel string renders through t (sentinel bind) and every frozen dictionary key is covered across driven states', async () => {
   const enDoc = JSON.parse(readFileSync(path.join(packageDir, 'locale', 'en.json'), 'utf8'));
   assert.ok(enDoc.panel && typeof enDoc.panel === 'object' && !Array.isArray(enDoc.panel), 'locale/en.json must carry a panel object for the key-coverage gate');
   const requiredKeys = Object.keys(enDoc.panel);
@@ -2926,7 +2958,9 @@ await test('i18n structural gate: every panel string renders through t (sentinel
     gateBreakdownText([gateRoles[0], gateRoles[0], gateRoles[2]]),
     gateBreakdownText([gateRoles[0], gateRoles[2]]),
     gateBreakdownText([gateRoles[0], gateRoles[1], { ...gateRoles[2], disabled: true }]),
-    gateBreakdownText([{ ...gateRoles[1], disabled: true }, { ...gateRoles[2], disabled: true }])
+    gateBreakdownText([{ ...gateRoles[1], disabled: true }, { ...gateRoles[2], disabled: true }]),
+    gateBreakdownText([gateRoles[0], gateRoles[0], { ...gateRoles[1], disabled: true }]),
+    gateBreakdownText([gateRoles[0], { ...gateRoles[1], disabled: true }])
   ]);
   const observedKeys = new Set();
   const sentinelRe = /^⟦([A-Za-z][A-Za-z0-9.]*)⟧$/;
@@ -3203,6 +3237,197 @@ await test('i18n structural gate: every panel string renders through t (sentinel
     appBanner.unmount();
   }
 
+  let holdBatchRoute = null;
+  const vmBatchGate = mountVmClient(async (url, opts) => {
+    if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles: gateRoles }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify(gateCatalog), { status: 200 });
+    if (url.startsWith(`/api/${NS}.efforts`)) return new Response(JSON.stringify(gateEfforts), { status: 200 });
+    if (url === `/api/${NS}.route`) {
+      const payload = JSON.parse(opts.body);
+      const base = gateRoles.find((role) => role.id === payload.id);
+      if (holdBatchRoute) {
+        return new Promise((resolve) => {
+          holdBatchRoute = () => resolve(new Response(JSON.stringify({ ok: true, role: { ...base, provider: payload.provider ?? base.provider, model: payload.model === undefined ? base.model : (payload.model === null ? 'inherit' : payload.model), reasoningEffort: payload.reasoningEffort === undefined ? base.reasoningEffort : payload.reasoningEffort, disabled: payload.disabled ?? base.disabled, mtimeMs: base.mtimeMs + 10 } }), { status: 200 }));
+        });
+      }
+      return new Response(JSON.stringify({ ok: true, role: { ...base, provider: payload.provider ?? base.provider, model: payload.model === undefined ? base.model : (payload.model === null ? 'inherit' : payload.model), reasoningEffort: payload.reasoningEffort === undefined ? base.reasoningEffort : payload.reasoningEffort, disabled: payload.disabled ?? base.disabled, mtimeMs: base.mtimeMs + 10 } }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  }, { sentinelBind: true });
+  const appBatchGate = vmBatchGate.mountInstance();
+  let treeBatchGate = await appBatchGate.settle();
+  const batchButtonOfGate = (node) => findNodes(node, (n) => n.type === 'button' && n.props['aria-label'] === '⟦batch.applyAria⟧')[0];
+  clickTab(treeBatchGate, appBatchGate, '⟦phase.other⟧');
+  treeBatchGate = appBatchGate.renderCycle();
+  const batchBtnGate = batchButtonOfGate(treeBatchGate);
+  assert.ok(batchBtnGate, 'the phase tab must render the batch control with the batch.applyAria label through t');
+  assert.equal(batchBtnGate.props.disabled, true, 'the batch control must start disabled without a dirty source card');
+  assert.equal(batchBtnGate.children[0], '⟦batch.apply⟧', 'the idle batch control must read batch.apply through t');
+  Promise.resolve(batchBtnGate.props.onClick()).catch(() => {});
+  treeBatchGate = await appBatchGate.settle();
+  scanTree(treeBatchGate);
+  assert.ok(collectText(treeBatchGate).join('').includes('⟦batch.empty⟧'), 'an empty batch drive must render batch.empty through t');
+  assert.equal(routePostsOf(vmBatchGate).length, 0, 'the empty batch drive must issue zero route POSTs');
+  const providerSelectOfSentinelCard = (card) => findNodes(card, (n) => n.type === 'select' && String(n.props['aria-label']).includes('⟦'))[0];
+  const modelSelectOfSentinelCard = (card) => findNodes(card, (n) => n.type === 'select' && String(n.props['aria-label']).includes('⟦'))[1];
+  providerSelectOfSentinelCard(cardOf(treeBatchGate, 'zeta-custom')).props.onChange({ target: { value: EXAMPLE_HUB } });
+  treeBatchGate = appBatchGate.renderCycle();
+  modelSelectOfSentinelCard(cardOf(treeBatchGate, 'zeta-custom')).props.onChange({ target: { value: 'flash-b' } });
+  treeBatchGate = appBatchGate.renderCycle();
+  const batchReadyGate = batchButtonOfGate(treeBatchGate);
+  assert.ok(batchReadyGate, 'a dirty source card must keep the batch control rendered');
+  assert.equal(batchReadyGate.props.disabled, false, 'a dirty source card must enable the batch control');
+  batchReadyGate.props.onClick();
+  treeBatchGate = await appBatchGate.settle();
+  scanTree(treeBatchGate);
+  assert.ok(collectText(treeBatchGate).join('').includes('⟦batch.summary⟧'), 'a finished batch must render batch.summary through t');
+  assert.ok(routePostsOf(vmBatchGate).length >= 1, 'the batch drive must issue route POSTs for the phase cards');
+  holdBatchRoute = true;
+  providerSelectOfSentinelCard(cardOf(appBatchGate.renderCycle(), 'zeta-custom')).props.onChange({ target: { value: EXAMPLE_HUB } });
+  treeBatchGate = appBatchGate.renderCycle();
+  modelSelectOfSentinelCard(cardOf(treeBatchGate, 'zeta-custom')).props.onChange({ target: { value: 'flash-a' } });
+  treeBatchGate = appBatchGate.renderCycle();
+  batchButtonOfGate(treeBatchGate).props.onClick();
+  treeBatchGate = await appBatchGate.settle(false);
+  scanTree(treeBatchGate);
+  assert.ok(collectText(treeBatchGate).join('').includes('⟦batch.busy⟧'), 'an in-flight batch must render batch.busy through t');
+  const batchCancelGate = findNodes(treeBatchGate, (n) => n.type === 'button' && n.children[0] === '⟦batch.cancel⟧')[0];
+  assert.ok(batchCancelGate, 'an in-flight batch must render the cancel control through t');
+  batchCancelGate.props.onClick();
+  holdBatchRoute();
+  holdBatchRoute = null;
+  treeBatchGate = await appBatchGate.settle();
+  scanTree(treeBatchGate);
+  assert.ok(collectText(treeBatchGate).join('').includes('⟦batch.cancelled⟧'), 'a cancelled batch must render batch.cancelled through t');
+  appBatchGate.unmount();
+
+  const vmImportGate = mountVmClient(async (url, opts) => {
+    if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles: gateRoles }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify(gateCatalog), { status: 200 });
+    if (url.startsWith(`/api/${NS}.efforts`)) return new Response(JSON.stringify(gateEfforts), { status: 200 });
+    if (url === `/api/${NS}.route`) {
+      const payload = JSON.parse(opts.body);
+      const base = gateRoles.find((role) => role.id === payload.id);
+      return new Response(JSON.stringify({ ok: true, role: { ...base, provider: payload.provider ?? base.provider, model: payload.model === undefined ? base.model : (payload.model === null ? 'inherit' : payload.model), reasoningEffort: payload.reasoningEffort === undefined ? base.reasoningEffort : payload.reasoningEffort, disabled: payload.disabled ?? base.disabled, mtimeMs: base.mtimeMs + 10 } }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  }, { sentinelBind: true });
+  const appImportGate = vmImportGate.mountInstance();
+  let treeImportGate = await appImportGate.settle();
+  scanTree(treeImportGate);
+  const fileInputOfGate = (node) => findNodes(node, (n) => n.type === 'input' && n.props.type === 'file')[0];
+  const importInputGate = fileInputOfGate(treeImportGate);
+  assert.ok(importInputGate, 'the profile import must render a file input inside the legend');
+  const profileExportGate = findNodes(treeImportGate, (n) => n.type === 'button' && n.children[0] === '⟦profile.export⟧')[0];
+  assert.ok(profileExportGate, 'the profile export control must render through t');
+  assert.ok(findNodes(treeImportGate, (n) => n.type === 'button' && n.children[0] === '⟦profile.import⟧')[0], 'the profile import control must render through t');
+  profileExportGate.props.onClick();
+  treeImportGate = appImportGate.renderCycle();
+  scanTree(treeImportGate);
+  const exportAreaGate = findNodes(treeImportGate, (n) => n.type === 'textarea')[0];
+  assert.ok(exportAreaGate, 'the export fallback must render the profile JSON in a textarea');
+  const exportedGate = JSON.parse(exportAreaGate.props.value);
+  assert.equal(exportedGate.version, 1, 'the exported profile must carry version 1');
+  assert.ok(!JSON.stringify(exportedGate).includes('mtimeMs'), 'the exported profile must never carry mtimes');
+  importInputGate.props.onChange({ target: { files: [{ text: async () => JSON.stringify({ version: 2, roles: { planner: { provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: null, disabled: false } } }) }] } });
+  treeImportGate = await appImportGate.settle();
+  scanTree(treeImportGate);
+  assert.ok(collectText(treeImportGate).join('').includes('⟦profile.invalid⟧'), 'an unsupported profile version must render profile.invalid through t');
+  importInputGate.props.onChange({ target: { files: [{ text: async () => JSON.stringify({ version: 1, roles: { 'ghost-role': { provider: null, model: null, reasoningEffort: null, disabled: false } } }) }] } });
+  treeImportGate = await appImportGate.settle();
+  scanTree(treeImportGate);
+  assert.ok(collectText(treeImportGate).join('').includes('⟦profile.rejected⟧'), 'an unknown-only profile must render profile.rejected through t');
+  assert.equal(routePostsOf(vmImportGate).length, 0, 'rejected profile drives must issue zero route POSTs');
+  importInputGate.props.onChange({ target: { files: [{ text: async () => JSON.stringify({ version: 1, roles: { planner: { provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: 'high', disabled: false } } }) }] } });
+  treeImportGate = await appImportGate.settle();
+  scanTree(treeImportGate);
+  assert.ok(collectText(treeImportGate).join('').includes('⟦profile.applied⟧'), 'a valid profile must render profile.applied through t');
+  assert.ok(routePostsOf(vmImportGate).length >= 1, 'a valid profile must issue the refresh-then-apply POSTs');
+  appImportGate.unmount();
+
+  const eventsGateModes = [
+    { reply: () => new Response(JSON.stringify({ ok: true, events: [{ at: '2026-01-01T00:00:00.000Z', id: 'planner', previous: null, next: null, origin: 'panel' }], skipped: 0 }), { status: 200 }), keys: ['events.entry'] },
+    { reply: () => new Response(JSON.stringify({ ok: true, events: [], skipped: 0 }), { status: 200 }), keys: ['events.empty'] },
+    { reply: () => new Response(JSON.stringify({ ok: false, error: 'events boom' }), { status: 500 }), keys: ['events.loadError'] }
+  ];
+  for (const eventsMode of eventsGateModes) {
+    const vmEventsGate = mountVmClient(async (url) => {
+      if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles: gateRoles }), { status: 200 });
+      if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify(gateCatalog), { status: 200 });
+      if (url.startsWith(`/api/${NS}.efforts`)) return new Response(JSON.stringify(gateEfforts), { status: 200 });
+      if (url.startsWith(`/api/${NS}.events`)) return eventsMode.reply();
+      return new Response(JSON.stringify({ ok: false }), { status: 404 });
+    }, { sentinelBind: true });
+    const appEventsGate = vmEventsGate.mountInstance();
+    const treeEventsGate = await appEventsGate.settle();
+    const eventsDetailsGate = findNodes(treeEventsGate, (n) => n.type === 'details' && (n.children ?? []).some((child) => child.type === 'summary' && collectText(child).join('').includes('⟦events.summary⟧')))[0];
+    assert.ok(eventsDetailsGate, 'the events section must render its summary through t');
+    eventsDetailsGate.props.onToggle({ target: { open: true } });
+    const treeEventsLoaded = await appEventsGate.settle();
+    scanTree(treeEventsLoaded);
+    for (const key of eventsMode.keys) {
+      assert.ok(collectText(treeEventsLoaded).join('').includes(`⟦${key}⟧`), `${key} must render through t in the events drive`);
+    }
+    appEventsGate.unmount();
+  }
+
+  const diagnosticsGateModes = [
+    { reply: () => new Response(JSON.stringify({ ok: true, missing: ['ghost-role'], invalid: [{ id: 'alpha-custom', error: 'bad yaml' }], outsideCatalog: ['zeta-custom'], drift: ['planner'], craftAvailable: true }), { status: 200 }), keys: ['diagnostics.missing', 'diagnostics.invalid', 'diagnostics.outsideCatalog', 'diagnostics.drift'] },
+    { reply: () => new Response(JSON.stringify({ ok: true, missing: [], invalid: [], outsideCatalog: [], drift: [], craftAvailable: false }), { status: 200 }), keys: ['diagnostics.ok', 'diagnostics.craftMissing'] },
+    { reply: () => new Response(JSON.stringify({ ok: false, error: 'diagnostics boom' }), { status: 500 }), keys: ['diagnostics.loadError'] }
+  ];
+  for (const diagnosticsMode of diagnosticsGateModes) {
+    const vmDiagGate = mountVmClient(async (url) => {
+      if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles: gateRoles }), { status: 200 });
+      if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify(gateCatalog), { status: 200 });
+      if (url.startsWith(`/api/${NS}.efforts`)) return new Response(JSON.stringify(gateEfforts), { status: 200 });
+      if (url.startsWith(`/api/${NS}.diagnostics`)) return diagnosticsMode.reply();
+      return new Response(JSON.stringify({ ok: false }), { status: 404 });
+    }, { sentinelBind: true });
+    const appDiagGate = vmDiagGate.mountInstance();
+    const treeDiagGate = await appDiagGate.settle();
+    const diagDetailsGate = findNodes(treeDiagGate, (n) => n.type === 'details' && (n.children ?? []).some((child) => child.type === 'summary' && collectText(child).join('').includes('⟦diagnostics.summary⟧')))[0];
+    assert.ok(diagDetailsGate, 'the diagnostics section must render its summary through t');
+    diagDetailsGate.props.onToggle({ target: { open: true } });
+    const treeDiagLoaded = await appDiagGate.settle();
+    scanTree(treeDiagLoaded);
+    for (const key of diagnosticsMode.keys) {
+      assert.ok(collectText(treeDiagLoaded).join('').includes(`⟦${key}⟧`), `${key} must render through t in the diagnostics drive`);
+    }
+    appDiagGate.unmount();
+  }
+
+  const vmReadonlyGate = mountVmClient(async (url) => {
+    if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles: gateRoles, readOnly: true }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify(gateCatalog), { status: 200 });
+    if (url.startsWith(`/api/${NS}.efforts`)) return new Response(JSON.stringify(gateEfforts), { status: 200 });
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  }, { sentinelBind: true });
+  const appReadonlyGate = vmReadonlyGate.mountInstance();
+  let treeReadonlyGate = await appReadonlyGate.settle();
+  scanTree(treeReadonlyGate);
+  const readonlyTextGate = collectText(treeReadonlyGate).join('');
+  assert.ok(readonlyTextGate.includes('⟦readonly.title⟧'), 'the readonly banner title must render through t');
+  assert.ok(readonlyTextGate.includes('⟦readonly.notice⟧'), 'the readonly banner notice must render through t');
+  for (const aria of ['⟦field.providerAria⟧', '⟦field.modelAria⟧', '⟦field.effortAria⟧']) {
+    assert.equal(findNodes(treeReadonlyGate, (n) => n.type === 'select' && n.props['aria-label'] === aria)[0].props.disabled, true, `the ${aria} select must be disabled in readonly mode`);
+  }
+  assert.equal(checkboxOf(cardOf(treeReadonlyGate, 'zeta-custom')).props.disabled, true, 'the disabled checkbox must be disabled in readonly mode');
+  assert.equal(findNodes(treeReadonlyGate, (n) => n.type === 'button' && n.props['aria-label'] === '⟦save.aria⟧')[0].props.disabled, true, 'save must be disabled in readonly mode');
+  assert.equal(fileInputOfGate(treeReadonlyGate).props.disabled, true, 'profile import must be disabled in readonly mode');
+  assert.equal(findNodes(treeReadonlyGate, (n) => n.type === 'button' && n.children[0] === '⟦profile.export⟧')[0].props.disabled, false, 'profile export must stay enabled in readonly mode');
+  clickTab(treeReadonlyGate, appReadonlyGate, '⟦phase.other⟧');
+  treeReadonlyGate = appReadonlyGate.renderCycle();
+  const batchReadonlyGate = batchButtonOfGate(treeReadonlyGate);
+  assert.ok(batchReadonlyGate, 'the readonly panel must still render the batch control');
+  assert.equal(batchReadonlyGate.props.disabled, true, 'the batch apply must be disabled in readonly mode');
+  const readonlyPostsBefore = routePostsOf(vmReadonlyGate).length;
+  cardOf(treeReadonlyGate, 'zeta-custom').props.onFocusCapture();
+  rootOf(treeReadonlyGate).props.onKeyDown({ key: 's', ctrlKey: true, preventDefault() {} });
+  treeReadonlyGate = await appReadonlyGate.settle();
+  assert.equal(routePostsOf(vmReadonlyGate).length, readonlyPostsBefore, 'Ctrl+S must be a no-op in readonly mode');
+  appReadonlyGate.unmount();
+
   const missingKeys = requiredKeys.filter((key) => !observedKeys.has(key));
   assert.deepEqual(missingKeys, [], 'every panel dictionary key must render through t in at least one driven state');
 });
@@ -3216,6 +3441,7 @@ const PANEL_RENDERABLE_KEYS = new Set([
   'field.provider', 'field.providerHelp', 'field.model', 'field.modelHelp', 'field.effort', 'field.effortHelp', 'disabled.label', 'save',
   'inherit.label', 'effort.auto',
   'locale.auto', 'locale.aria',
+  'profile.summary', 'profile.export', 'profile.import', 'events.summary',
   'legend.provider', 'legend.providerText', 'legend.model', 'legend.modelText', 'legend.effort', 'legend.effortText', 'legend.disabled', 'legend.disabledText', 'legend.inherit', 'legend.inheritText', 'legend.subagent', 'legend.apply', 'legend.summary',
   'search.aria', 'search.placeholder', 'filter.status.aria', 'filter.status.all', 'sort.aria', 'sort.name', 'sort.routedFirst', 'sort.inheritsFirst', 'density.aria', 'density.comfortable', 'density.compact', 'tab.breakdownTitle'
 ]);
@@ -4035,20 +4261,686 @@ await test('client.js pass-3 static markers: contentVisibility, undoSnapshots, p
   assert.ok(clientText.includes('aria-live'), 'client.js must declare aria-live regions');
 });
 
-await test('npm pack: dry-run file list matches the frozen 69-entry contract and packed content passes the forbidden-token scan', () => {
+const routePOSTsOf = (vm) => vm.fetchCalls.filter((call) => call.url === `/api/${NS}.route` && call.opts?.method === 'POST');
+
+const p4Card = (id, notes) => `---\nname: ${id}\ndescription: ${id} notes\nmodel: inherit\n---\n\n${id} body\n`;
+const p4LoadRoles = (mtime) => [
+  { id: 'planner', name: 'planner', description: 'Plans the work', provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: null, disabled: false, mtimeMs: mtime },
+  { id: 'debugger', name: 'debugger', description: 'Debugs the work', provider: null, model: 'inherit', reasoningEffort: null, disabled: false, mtimeMs: mtime + 1000 },
+  { id: 'zeta-custom', name: 'zeta-custom', description: 'Custom Z', provider: null, model: 'inherit', reasoningEffort: null, disabled: false, mtimeMs: mtime + 2000 }
+];
+const P4_ROLE_NOTES = { planner: 'Plans the work', debugger: 'Debugs the work', 'zeta-custom': 'Custom Z' };
+
+await test('batch apply: per-phase loop reuses runCardLoop with the cancel hook, per-card results, 409 continue-and-report and abort on first 503', async () => {
+  let routeMode = 'ok';
+  let holdP4Route = null;
+  const vm = mountVmClient(async (url, opts) => {
+    if (url.startsWith(`/api/${NS}.roles`)) {
+      return new Response(JSON.stringify({ ok: true, roles: p4LoadRoles(1000) }), { status: 200 });
+    }
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify({ ok: true, available: true, degraded: false, default: null, groups: [{ provider: EXAMPLE_HUB, name: 'Example Hub', models: [{ id: 'flash-a', name: 'Flash A' }, { id: 'flash-b', name: 'Flash B' }] }] }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.efforts`)) return new Response(JSON.stringify({ ok: true, defaultEffort: 'medium', efforts: [{ id: 'high', name: 'High' }] }), { status: 200 });
+    if (url === `/api/${NS}.route`) {
+      const payload = JSON.parse(opts.body);
+      const base = p4LoadRoles(1000).find((role) => role.id === payload.id);
+      if (holdP4Route) {
+        return new Promise((resolve) => {
+          holdP4Route = () => resolve(new Response(JSON.stringify({ ok: true, role: { ...base, provider: payload.provider ?? base.provider, model: payload.model === undefined ? base.model : (payload.model === null ? 'inherit' : payload.model), reasoningEffort: payload.reasoningEffort === undefined ? base.reasoningEffort : payload.reasoningEffort, disabled: payload.disabled ?? base.disabled, mtimeMs: base.mtimeMs + 10 } }), { status: 200 }));
+        });
+      }
+      if (routeMode === '409') return new Response(JSON.stringify({ ok: false, error: 'stale mtime' }), { status: 409 });
+      if (routeMode === '503') return new Response(JSON.stringify({ ok: false, error: 'atomic-write: timed out waiting for the writer lock' }), { status: 503 });
+      return new Response(JSON.stringify({ ok: true, role: { ...base, provider: payload.provider ?? base.provider, model: payload.model === undefined ? base.model : (payload.model === null ? 'inherit' : payload.model), reasoningEffort: payload.reasoningEffort === undefined ? base.reasoningEffort : payload.reasoningEffort, disabled: payload.disabled ?? base.disabled, mtimeMs: base.mtimeMs + 10 } }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  });
+  const app = vm.mountInstance();
+  let tree = await app.settle();
+  assert.equal(findNodes(tree, (n) => n.type === 'button' && n.props['aria-label'] === 'Apply the current route to every role in Planning & Execution').length, 0, 'the all tab must render no batch control');
+  const batchApplyAria = (phaseLabel) => `Apply the current route to every role in ${phaseLabel}`;
+  const busyButtonsOf = (node) => findNodes(node, (n) => n.type === 'button' && (n.children[0] === 'Applying…' || n.children[0] === 'Cancel'));
+
+  clickTab(tree, app, 'Other');
+  tree = app.renderCycle();
+  const emptyBatch = findNodes(tree, (n) => n.type === 'button' && n.props['aria-label'] === batchApplyAria('Other'))[0];
+  assert.ok(emptyBatch, 'the phase tab must render a batch control');
+  assert.equal(emptyBatch.props.disabled, true, 'a phase without a dirty draft route must keep the batch control disabled');
+  Promise.resolve(emptyBatch.props.onClick()).catch(() => {});
+  tree = await app.settle();
+  assert.ok(collectText(tree).join('').includes('Nothing to apply: no role in this phase has a draft route.'), 'the empty batch drive must render batch.empty');
+  assert.equal(routePOSTsOf(vm).length, 0, 'the empty batch drive must issue zero route POSTs');
+
+  clickTab(tree, app, 'Planning & Execution');
+  tree = app.renderCycle();
+  providerSelectOfCard(cardOf(tree, 'planner')).props.onChange({ target: { value: EXAMPLE_HUB } });
+  tree = app.renderCycle();
+  modelSelectOfCard(cardOf(tree, 'planner')).props.onChange({ target: { value: 'flash-b' } });
+  tree = app.renderCycle();
+  const readyBatch = findNodes(tree, (n) => n.type === 'button' && n.props['aria-label'] === batchApplyAria('Planning & Execution'))[0];
+  assert.ok(readyBatch, 'a dirty source card must enable the batch control');
+  assert.equal(readyBatch.props.disabled, false, 'a dirty source card must enable the batch control');
+  assert.ok(readyBatch.props['aria-label'] === batchApplyAria('Planning & Execution'), 'the batch control must name the phase through batch.applyAria');
+  readyBatch.props.onClick();
+  tree = await app.settle();
+  const appliedPosts = routePOSTsOf(vm);
+  assert.equal(appliedPosts.length, 2, 'the batch must POST exactly once per matching phase card (the source card included)');
+  assert.deepEqual(appliedPosts.map((call) => JSON.parse(call.opts.body).id), ['debugger', 'planner'], 'the loop must visit the phase cards in render order (name-sorted with the frozen sortRoles)');
+  assert.deepEqual(JSON.parse(appliedPosts[0].opts.body), { id: 'debugger', expectedMtimeMs: 2000, provider: EXAMPLE_HUB, model: 'flash-b' }, 'each target POST must carry the card mtime and the shared route payload');
+  assert.deepEqual(JSON.parse(appliedPosts[1].opts.body), { id: 'planner', expectedMtimeMs: 1000, provider: EXAMPLE_HUB, model: 'flash-b' }, 'the source-card POST must carry its mtime and the shared route payload');
+  assert.ok(collectText(tree).join('').includes('Batch finished: 2 applied · 0 conflicts · 0 failed'), 'the successful batch must render the summary with per-card counts');
+  assert.ok(!collectText(cardOf(tree, 'debugger')).join('').includes(' (unsaved)'), 'a batch-applied card must lose its dirty draft suffix');
+  assert.ok(!collectText(cardOf(tree, 'planner')).join('').includes(' (unsaved)'), 'the source card must lose its dirty draft suffix');
+
+  routeMode = '409';
+  providerSelectOfCard(cardOf(app.renderCycle(), 'debugger')).props.onChange({ target: { value: EXAMPLE_HUB } });
+  tree = app.renderCycle();
+  modelSelectOfCard(cardOf(tree, 'debugger')).props.onChange({ target: { value: 'flash-a' } });
+  tree = app.renderCycle();
+  await findNodes(tree, (n) => n.type === 'button' && n.props['aria-label'] === batchApplyAria('Planning & Execution'))[0].props.onClick();
+  tree = await app.settle();
+  assert.ok(collectText(tree).join('').includes('Batch finished: 0 applied · 2 conflicts · 0 failed'), 'a 409 batch must continue past every conflict and report each conflicted card');
+  assert.ok(collectText(cardOf(tree, 'debugger')).join('').includes(' (unsaved)'), 'a conflicted card must keep its draft');
+
+  routeMode = '503';
+  const abortPostsBefore = routePOSTsOf(vm).length;
+  await findNodes(tree, (n) => n.type === 'button' && n.props['aria-label'] === batchApplyAria('Planning & Execution'))[0].props.onClick();
+  tree = await app.settle();
+  const abortPosts = routePOSTsOf(vm).slice(abortPostsBefore);
+  assert.equal(abortPosts.length, 1, 'the 503 must abort the loop right after the first non-409 failure');
+  assert.equal(JSON.parse(abortPosts[0].opts.body).id, 'debugger', 'the abort must stop at the first card in render order and leave the remaining target untouched');
+  assert.ok(collectText(tree).join('').includes('Batch finished: 0 applied · 0 conflicts · 1 failed'), 'the aborted batch must render the failure summary');
+
+  routeMode = 'ok';
+  holdP4Route = true;
+  const cancelPostsBefore = routePOSTsOf(vm).length;
+  findNodes(tree, (n) => n.type === 'button' && n.props['aria-label'] === batchApplyAria('Planning & Execution'))[0].props.onClick();
+  tree = await app.settle(false);
+  const cancelControl = busyButtonsOf(tree)[0];
+  assert.ok(cancelControl && cancelControl.children[0] === 'Cancel', 'an in-flight batch must expose the cancel control');
+  cancelControl.props.onClick();
+  holdP4Route();
+  holdP4Route = null;
+  tree = await app.settle();
+  assert.equal(routePOSTsOf(vm).length - cancelPostsBefore, 1, 'the cancel drive must complete exactly the in-flight POST and skip the rest');
+  assert.ok(collectText(tree).join('').includes('Batch cancelled — 1 roles were already updated.'), 'a cancelled batch must render batch.cancelled with the applied count');
+  app.unmount();
+});
+
+await test('routing profiles: export carries version and no mtimes; import validates every entry before the first write, then refresh-then-applies', async () => {
+  let routeMode = 'ok';
+  let rolesMtime = 1000;
+  const reloadRoles = () => p4LoadRoles(rolesMtime);
+  const vm = mountVmClient(async (url, opts) => {
+    if (url.startsWith(`/api/${NS}.roles`)) {
+      if (routeMode === 'rolesdown') return new Response(JSON.stringify({ ok: false, error: 'roles down' }), { status: 500 });
+      return new Response(JSON.stringify({ ok: true, roles: reloadRoles() }), { status: 200 });
+    }
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify({ ok: true, available: true, degraded: false, default: null, groups: [{ provider: EXAMPLE_HUB, name: 'Example Hub', models: [{ id: 'flash-a', name: 'Flash A' }] }] }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.efforts`)) return new Response(JSON.stringify({ ok: true, defaultEffort: 'medium', efforts: [{ id: 'high', name: 'High' }] }), { status: 200 });
+    if (url === `/api/${NS}.route`) {
+      const payload = JSON.parse(opts.body);
+      if (routeMode === '409') return new Response(JSON.stringify({ ok: false, error: 'stale mtime' }), { status: 409 });
+      const base = reloadRoles().find((role) => role.id === payload.id);
+      return new Response(JSON.stringify({ ok: true, role: { ...base, provider: payload.provider ?? base.provider, model: payload.model === undefined ? base.model : (payload.model === null ? 'inherit' : payload.model), reasoningEffort: payload.reasoningEffort === undefined ? base.reasoningEffort : payload.reasoningEffort, disabled: payload.disabled ?? base.disabled, mtimeMs: base.mtimeMs + 10 } }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  }, { storageMap: new Map() });
+  const app = vm.mountInstance();
+  let tree = await app.settle();
+
+  const fileInput = findNodes(tree, (n) => n.type === 'input' && n.props.type === 'file')[0];
+  assert.ok(fileInput, 'the profile import must render a file input');
+  assert.equal(fileInput.props.accept, 'application/json', 'the profile file input must accept JSON profiles');
+  const exportButton = findNodes(tree, (n) => n.type === 'button' && n.children[0] === 'Export profile')[0];
+  assert.ok(exportButton, 'the profile export control must render');
+  exportButton.props.onClick();
+  tree = app.renderCycle();
+  const exportArea = findNodes(tree, (n) => n.type === 'textarea')[0];
+  assert.ok(exportArea && exportArea.props.readOnly === true, 'the export fallback must render a read-only textarea');
+  const exported = JSON.parse(exportArea.props.value);
+  assert.equal(exported.version, 1, 'the exported profile must carry version 1');
+  assert.equal(exported.generator, 'dsh-orchestrator-kit', 'the exported profile must carry the generator');
+  assert.deepEqual(Object.keys(exported.roles).sort(), ['debugger', 'planner', 'zeta-custom'], 'the exported profile must key roles by id');
+  assert.equal(exported.roles.planner.provider, EXAMPLE_HUB, 'a routed role must export its saved provider');
+  assert.equal(exported.roles.planner.model, 'flash-a', 'a routed role must export its saved model');
+  assert.equal(exported.roles.debugger.provider, null, 'an inherit role must export a null provider');
+  assert.equal(exported.roles.debugger.model, null, 'an inherit role must export a null model');
+  assert.ok(!JSON.stringify(exported).includes('mtimeMs'), 'the exported profile must never carry mtimes');
+
+  const importJson = async (payload) => {
+    fileInput.props.onChange({ target: { files: [{ text: async () => JSON.stringify(payload) }] } });
+  };
+
+  await importJson({ version: 2, roles: { planner: { provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: null, disabled: false } } });
+  tree = await app.settle();
+  assert.ok(collectText(tree).join('').includes('Invalid profile: unsupported version: 2'), 'an unsupported version must render profile.invalid');
+  assert.equal(routePOSTsOf(vm).length, 0, 'a validation failure must issue zero route POSTs');
+  await importJson({ version: 1, roles: { planner: { provider: EXAMPLE_HUB, model: null, reasoningEffort: null, disabled: false } } });
+  tree = await app.settle();
+  assert.ok(collectText(tree).join('').includes('Invalid profile:'), 'a half-written entry must render profile.invalid');
+  assert.equal(routePOSTsOf(vm).length, 0, 'a half-written entry must write nothing');
+  await importJson({ version: 1, roles: { 'ghost-role': { provider: null, model: null, reasoningEffort: null, disabled: false } } });
+  tree = await app.settle();
+  assert.ok(collectText(tree).join('').includes('Nothing was written: 1 entries failed.'), 'an unknown-only profile must render profile.rejected');
+  assert.equal(routePOSTsOf(vm).length, 0, 'an unknown-only profile must write nothing');
+
+  routeMode = 'rolesdown';
+  await importJson({ version: 1, roles: { planner: { provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: null, disabled: false } } });
+  tree = await app.settle();
+  assert.ok(collectText(tree).join('').includes('roles could not be refreshed'), 'a failed roles refresh must render the invalid-roles notice');
+  assert.equal(routePOSTsOf(vm).length, 0, 'a failed roles refresh must write nothing');
+
+  routeMode = 'ok';
+  const importRolesCallsBefore = vm.fetchCalls.filter((call) => call.url.startsWith(`/api/${NS}.roles`)).length;
+  await importJson({ version: 1, roles: { planner: { provider: EXAMPLE_HUB, model: 'flash-b', reasoningEffort: 'high', disabled: false }, debugger: { provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: null, disabled: false } } });
+  tree = await app.settle();
+  const importPosts = routePOSTsOf(vm).map((call) => JSON.parse(call.opts.body));
+  assert.equal(vm.fetchCalls.filter((call) => call.url.startsWith(`/api/${NS}.roles`)).length, importRolesCallsBefore + 1, 'the import must issue exactly one roles re-GET');
+  assert.ok(importPosts.length > 0, 'a valid import must POST each entry');
+  assert.deepEqual(importPosts.map((post) => post.id), ['planner', 'debugger'], 'the import loop must visit every known entry');
+  assert.deepEqual(importPosts.map((post) => post.expectedMtimeMs), [rolesMtime, rolesMtime + 1000], 'every import POST must carry the FRESH per-card mtime from the refresh');
+  assert.deepEqual(importPosts[0], { id: 'planner', provider: EXAMPLE_HUB, model: 'flash-b', reasoningEffort: 'high', disabled: false, expectedMtimeMs: rolesMtime }, 'the planner POST must carry the full route+effort+disabled set with its own refreshed mtime');
+  assert.ok(collectText(tree).join('').includes('Profile applied: 2 roles updated, 0 skipped.'), 'a valid import must render profile.applied with the counts');
+  fileInput.props.onChange({ target: { files: [{ text: async () => JSON.stringify({ version: 1, roles: { planner: { provider: null, model: null, reasoningEffort: null, disabled: false } } }) }] } });
+  tree = await app.settle();
+  assert.ok(collectText(tree).join('').includes('Profile applied: 1 roles updated, 0 skipped.'), 'a reset import must render the applied counts');
+  assert.ok(!collectText(cardOf(tree, 'planner')).join('').includes(' (unsaved)'), 'the applied import must leave no dirty drafts');
+
+  rolesMtime = 5000;
+  routeMode = '409';
+  const postsBefore409 = routePOSTsOf(vm).length;
+  await importJson({ version: 1, roles: { planner: { provider: EXAMPLE_HUB, model: 'flash-b', reasoningEffort: null, disabled: false } } });
+  tree = await app.settle();
+  assert.ok(collectText(tree).join('').includes('Nothing was written: 1 entries failed.'), 'a 409 import must render profile.rejected with the failure count');
+  assert.ok(collectText(cardOf(tree, 'planner')).join('').includes('Conflict/validation error (409)'), 'the 409 import must render the translated conflict on the card');
+  assert.equal(routePOSTsOf(vm).length - postsBefore409, 1, 'a 409 import must issue exactly one POST');
+
+  routeMode = 'ok';
+  const postsBeforeSecond = routePOSTsOf(vm).length;
+  await importJson({ version: 1, roles: { planner: { provider: EXAMPLE_HUB, model: 'flash-b', reasoningEffort: null, disabled: false }, debugger: { provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: null, disabled: false } } });
+  tree = await app.settle();
+  assert.ok(collectText(tree).join('').includes('Profile applied: 2 roles updated, 0 skipped.'), 'the mixed-profile import must render the applied counts');
+  assert.equal(routePOSTsOf(vm).length - postsBeforeSecond, 2, 'the import must POST once per known entry');
+  assert.equal(routePOSTsOf(vm).length, postsBeforeSecond + 2, 'the import loop must issue exactly one POST per entry');
+  assert.deepEqual(routePOSTsOf(vm).slice(postsBeforeSecond).map((call) => JSON.parse(call.opts.body).expectedMtimeMs), [5000, 6000], 'the fresh per-card mtimes from the refresh must back every import POST');
+  app.unmount();
+});
+
+await test('audit trail: append inside the write lock, relative-only records with no secrets, best-effort failure, and the bounded events route', async () => {
+  const tmpHome = mkdtempSync(path.join(tmpdir(), 'map-audit-trail-'));
+  try {
+    const dir = path.join(tmpHome, 'agents');
+    mkdirSync(dir, { recursive: true });
+    const cardFile = path.join(dir, 'planner.md');
+    writeFileSync(cardFile, p4Card('planner'), 'utf8');
+    const auditFile = path.join(dir, '.orchestrator-audit.jsonl');
+    const secretFixture = ['sk', '-live'].join('');
+
+    const prevWarn = console.warn;
+    const warns = [];
+    console.warn = (...args) => warns.push(args.join(' '));
+    try {
+      await withMockHost({ agentsHome: tmpHome, llm: flashCatalogLlm() }, async ({ call }) => {
+        const rolesFirst = await call(`/api/${NS}.roles`);
+        const cardMtime = rolesFirst.data.roles.find((role) => role.id === 'planner').mtimeMs;
+        const { status, data } = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'planner', expectedMtimeMs: cardMtime, provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: 'high' }) });
+        assert.equal(status, 200, 'the audited save must succeed');
+        assert.equal(data.unchanged, undefined, 'the audited save must be a real write');
+        const raw = readFileSync(auditFile, 'utf8');
+        const lines = raw.split('\n').filter((line) => line.trim() !== '');
+        assert.equal(lines.length, 1, 'the save must append exactly ONE audit record');
+        const record = JSON.parse(lines[0]);
+        assert.equal(typeof record.at, 'string' && record.at.length > 0 ? 'string' : 'not-string', 'the audit record must carry a timestamp');
+        assert.equal(record.id, 'planner', 'the audit record must carry the role id');
+        assert.deepEqual(record.previous, { provider: null, model: null, reasoningEffort: null, disabled: false }, 'the audit record must summarize the previous meta');
+        assert.deepEqual(record.next, { provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: 'high', disabled: false }, 'the audit record must summarize the next meta');
+        assert.equal(record.origin, 'panel', 'the audit record must carry the panel origin');
+        assert.equal(JSON.stringify(record).includes(secretFixture), false, 'the audit record must never carry a secret-shaped value');
+        assert.equal(JSON.stringify(record).includes(tmpHome), false, 'the audit record must never carry an absolute path');
+        assert.ok(!raw.includes(BAK_LITERAL), 'the audit record must never reference a backup suffix');
+        const warnText = warns.join('\n');
+        for (const token of [WIN_HOME_TOKEN, POSIX_HOME_TOKEN]) {
+          assert.ok(!warnText.toLowerCase().includes(token), 'the audit warn must not leak home tokens');
+        }
+
+        const rolesAfterFirst = await call(`/api/${NS}.roles`);
+        const currentMtime = rolesAfterFirst.data.roles.find((role) => role.id === 'planner').mtimeMs;
+        await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'planner', expectedMtimeMs: currentMtime, disabled: true }) });
+        const afterToggle = readFileSync(auditFile, 'utf8').split('\n').filter((line) => line.trim() !== '');
+        assert.equal(afterToggle.length, 2, 'the next audited save must append a second record');
+        assert.deepEqual(JSON.parse(afterToggle[1]).next, { provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: 'high', disabled: true }, 'the second record must summarize the disabled toggle');
+      });
+
+      chmodSync(dir, 0o555);
+      try {
+        await withMockHost({ agentsHome: tmpHome, llm: undefined }, async ({ call }) => {
+          warns.length = 0;
+          const rolesRetry = await call(`/api/${NS}.roles`);
+          const retryMtime = rolesRetry.data.roles.find((role) => role.id === 'planner').mtimeMs;
+          const { status } = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'planner', expectedMtimeMs: retryMtime, disabled: false }) });
+          if (status !== 200) {
+            assert.ok(status === 503 || status === 500, 'on a filesystem that cannot fail the append alone, the write must surface a lock/write error, never a silent success');
+            for (const token of [WIN_HOME_TOKEN, POSIX_HOME_TOKEN]) {
+              assert.ok(!warns.join('\n').toLowerCase().includes(token), 'any failure warn must not leak home tokens');
+            }
+          } else {
+            const postAppendCard = readFileSync(cardFile, 'utf8'); assert.ok(postAppendCard.includes('model:') && postAppendCard.includes('provider:'), 'the card write must survive regardless of the audit append outcome');
+            const lines = readFileSync(auditFile, 'utf8').split('\n').filter((line) => line.trim() !== '');
+            assert.ok(lines.length === 2 || lines.length === 3, 'the audit append must be best-effort: either a redacted warn (2 lines) or a valid third record (3 lines), never a partial record');
+            if (warns.join('\n').includes('appending the audit record')) assert.equal(lines.length, 2, 'a failed append must not write a partial record');
+            assert.ok(!warns.join('\n').includes(tmpHome), 'the audit warn must never carry the absolute tmp path');
+          }
+        });
+      } finally {
+        chmodSync(dir, 0o755);
+      }
+
+      await withMockHost({ agentsHome: tmpHome, llm: undefined }, async ({ call }) => {
+        const rolesStable = await call(`/api/${NS}.roles`);
+        const stableMtime = rolesStable.data.roles.find((role) => role.id === 'planner').mtimeMs;
+        const unchanged = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'planner', expectedMtimeMs: stableMtime, disabled: false }) });
+        assert.equal(unchanged.status, 200, 'the unchanged no-op save must answer 200');
+        assert.equal(unchanged.data.unchanged, true, 'the no-op must answer unchanged:true');
+        const lines = readFileSync(auditFile, 'utf8').split('\n').filter((line) => line.trim() !== '');
+        assert.ok(lines.length === 2 || lines.length === 3, 'the unchanged no-op must write NO audit record');
+        const lastRecord = JSON.parse(lines[lines.length - 1]);
+        assert.ok(lastRecord.next.disabled === true || lastRecord.next.disabled === false, 'the last audit record must describe a real write, never the no-op');
+      });
+    } finally {
+      console.warn = prevWarn;
+    }
+  } finally {
+    rmSync(tmpHome, { recursive: true, force: true });
+  }
+
+  const serverHome = mkdtempSync(path.join(tmpdir(), 'map-audit-events-'));
+  try {
+    const dir = path.join(serverHome, 'agents');
+    mkdirSync(dir, { recursive: true });
+    const auditFile = path.join(dir, '.orchestrator-audit.jsonl');
+    const many = [];
+    for (let i = 0; i < 55; i += 1) {
+      if (i === 53) many.push('not-json');
+      else many.push(JSON.stringify({ at: `t${i}`, id: `m${i}`, previous: null, next: { provider: 'p' }, origin: 'panel' }));
+    }
+    appendFileSync(auditFile, many.join('\n') + '\n', 'utf8');
+    await withMockHost({ agentsHome: serverHome, llm: undefined }, async ({ call }) => {
+      const { status, data } = await call(`/api/${NS}.events`);
+      assert.equal(status, 200, 'the events route must answer 200 for a readable audit file');
+      assert.equal(data.ok, true, 'the events route must carry ok:true');
+      assert.equal(data.events.length, 49, 'the events route must cap the last 50 lines then skip malformed ones');
+      assert.deepEqual(data.events.slice(0, 2).map((event) => event.id), ['m5', 'm6'], 'the cap must return the LAST 50 valid records in file order');
+      assert.deepEqual(data.events.at(-1).id, 'm54', 'the cap must end at the newest record');
+      assert.equal(data.skipped, 1, 'the events route must count malformed lines in skipped');
+      assert.equal(data.events[0].origin, 'panel', 'the events route must surface the origin');
+    });
+    rmSync(auditFile, { force: true });
+    mkdirSync(auditFile);
+    try {
+      await withMockHost({ agentsHome: serverHome, llm: undefined }, async ({ call }) => {
+        const failed = await call(`/api/${NS}.events`);
+        assert.equal(failed.status, 500, 'an unreadable audit path (EISDIR) must surface a redacted 500');
+        assert.ok(!JSON.stringify(failed.data).includes(serverHome), 'the events failure body must never carry the absolute home path');
+      });
+    } finally {
+      rmSync(auditFile, { recursive: true, force: true });
+    }
+  } finally {
+    rmSync(serverHome, { recursive: true, force: true });
+  }
+
+  const emptyHome = mkdtempSync(path.join(tmpdir(), 'map-audit-empty-'));
+  try {
+    await withMockHost({ agentsHome: emptyHome, llm: undefined }, async ({ call }) => {
+      const { status, data } = await call(`/api/${NS}.events`);
+      assert.equal(status, 200, 'the events route must answer 200 when the audit file is absent');
+      assert.deepEqual(data.events, [], 'the events route must answer an empty list for ENOENT');
+      assert.equal(data.skipped, 0, 'the ENOENT answer must carry zero skipped');
+    });
+  } finally {
+    rmSync(emptyHome, { recursive: true, force: true });
+  }
+});
+
+await test('diagnostics: missing, invalid, outside-catalog and body-drift detection degrade gracefully when craft/ is unavailable', async () => {
+  const tmpHome = mkdtempSync(path.join(tmpdir(), 'map-diagnostics-'));
+  try {
+    const dir = path.join(tmpHome, 'agents');
+    mkdirSync(dir, { recursive: true });
+    const sources = {
+      'alpha-valid': '---\nname: alpha-valid\ndescription: A\nmodel: inherit\n---\n\nA body\n',
+      'broken-card': '---\nname: [unterminated\n---\n\nBroken body\n',
+      'outside-card': `---\nname: outside-card\ndescription: O\nprovider: ${EXAMPLE_HUB}\nmodel: flash-a\n---\n\nO body\n`,
+      'drift-card': '---\nname: drift-card\ndescription: D\nmodel: inherit\n---\n\nD body original\n'
+    };
+    for (const [id, text] of Object.entries(sources)) {
+      writeFileSync(path.join(dir, `${id}.md`), text, 'utf8');
+    }
+    writeFileSync(path.join(tmpHome, 'agents', '.orchestrator-audit.jsonl'), '', 'utf8');
+    const prevWarn = console.warn;
+    const warns = [];
+    console.warn = (...args) => warns.push(args.join(' '));
+    try {
+      await withMockHost({ agentsHome: tmpHome, llm: undefined }, async ({ call }) => {
+        const roles = await call(`/api/${NS}.roles`);
+        assert.equal(roles.status, 200, 'the diagnostics home must serve roles');
+        assert.deepEqual(roles.data.roles.map((role) => role.id), ['alpha-valid', 'drift-card', 'outside-card'], 'the broken card must surface only through invalid[]');
+        assert.deepEqual(roles.data.invalid.map((entry) => entry.id), ['broken-card'], 'the broken card must be listed as invalid');
+        assert.ok(warns.join('\n').includes('broken-card'), 'the diagnostics home must keep the warn channel live for the invalid card');
+        const diag = await call(`/api/${NS}.diagnostics`);
+        assert.equal(diag.status, 200, 'the real diagnostics route must answer 200 with a degraded catalog');
+        const craftIds = CRAFT_ROLES.filter((id) => !['alpha-valid', 'drift-card', 'outside-card', 'broken-card'].includes(id) && !id.startsWith('alpha-valid') && !id.startsWith('drift-card') && !id.startsWith('outside-card'));
+        assert.deepEqual(diag.data.missing, craftIds.filter((id) => existsSync(path.join(packageDir, 'craft', 'agents', `${id}.md`))).sort(), 'the real diagnostics route must compute missing ids against craft/');
+        assert.deepEqual(diag.data.invalid.map((entry) => entry.id), ['broken-card'], 'the real diagnostics route must surface the invalid card');
+        assert.deepEqual(diag.data.drift, [], 'a card with no craft source cannot have body drift');
+        assert.deepEqual(diag.data.outsideCatalog, [], 'the real diagnostics route must omit outsideCatalog when the catalog is unavailable');
+        assert.equal(diag.data.craftAvailable, true, 'the real diagnostics route must find the shipped craft/ sources');
+      });
+    } finally {
+      console.warn = prevWarn;
+    }
+  } finally {
+    rmSync(tmpHome, { recursive: true, force: true });
+  }
+
+  let diagMode = 'ok';
+  const vmDiag = mountVmClient(async (url) => {
+    if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles: p4LoadRoles(1000) }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify({ ok: true, available: true, degraded: false, default: null, groups: [{ provider: EXAMPLE_HUB, name: 'Example Hub', models: [{ id: 'flash-a', name: 'Flash A' }] }] }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.efforts`)) return new Response(JSON.stringify({ ok: true, defaultEffort: 'medium', efforts: [{ id: 'high', name: 'High' }] }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.diagnostics`)) {
+      if (diagMode === '500') return new Response(JSON.stringify({ ok: false, error: 'diagnostics boom' }), { status: 500 });
+      return new Response(JSON.stringify({ ok: true, missing: ['ghost-role'], invalid: [{ id: 'alpha-custom', error: 'bad yaml' }], outsideCatalog: ['zeta-custom'], drift: ['planner'], craftAvailable: false }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  });
+  const appDiag = vmDiag.mountInstance();
+  let treeDiag = await appDiag.settle();
+  const summaryTextOf = (node) => collectText((findNodes(node, (child) => child.type === 'summary')[0] ?? { children: [] })).join('');
+  const diagDetails = findNodes(treeDiag, (n) => n.type === 'details' && summaryTextOf(n).includes('Installed-card diagnostics'))[0];
+  assert.ok(diagDetails, 'the diagnostics section must render inside the legend');
+  diagDetails.props.onToggle({ target: { open: true } });
+  treeDiag = await appDiag.settle();
+  const diagText = collectText(treeDiag).join('');
+  assert.ok(diagText.includes('Missing roles: ghost-role'), 'the diagnostics missing list must render');
+  assert.ok(diagText.includes('Cards with invalid frontmatter: alpha-custom'), 'the diagnostics invalid list must render');
+  assert.ok(diagText.includes('Routes outside the live catalog: zeta-custom'), 'the diagnostics outside-catalog list must render');
+  assert.ok(diagText.includes('Body differs from the craft source: planner'), 'the diagnostics drift list must render');
+  assert.ok(diagText.includes('craft/ sources are unavailable'), 'the diagnostics craftMissing line must render');
+  assert.ok(!diagText.includes('No problems found.'), 'a non-empty diagnostics report must not render the ok line');
+  const diagHtmlNodes = findNodes(treeDiag, (n) => n.props && (n.props.dangerouslySetInnerHTML !== undefined || n.props.innerHTML !== undefined));
+  assert.equal(diagHtmlNodes.length, 0, 'the diagnostics section must never carry an HTML-injection prop');
+  diagMode = '500';
+  diagDetails.props.onToggle({ target: { open: true } });
+  treeDiag = await appDiag.settle();
+  assert.ok(collectText(treeDiag).join('').includes('diagnostics boom'), 'a diagnostics load failure must render the loadError line with the detail');
+  appDiag.unmount();
+});
+
+await test('readonly mode: the env flag returns 403 before any disk read, the roles envelope carries readOnly and the panel disables every mutating control', async () => {
+  const tmpHome = mkdtempSync(path.join(tmpdir(), 'map-readonly-gate-'));
+  try {
+    const dir = path.join(tmpHome, 'agents');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, 'planner.md'), p4Card('planner'), 'utf8');
+    process.env.DSH_ORCHESTRATOR_READONLY = '1';
+    let success = null;
+    try {
+      await withMockHost({ agentsHome: tmpHome, llm: undefined }, async ({ call }) => {
+        const valid = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'planner', disabled: true, expectedMtimeMs: 0 }) });
+        assert.equal(valid.status, 403, 'a valid payload must still 403 in readonly mode');
+        assert.equal(valid.data.code, 'readonly', 'the readonly 403 must carry the readonly code');
+        const invalid = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ unknownField: true }) });
+        assert.equal(invalid.status, 403, 'an invalid payload must 403 BEFORE validation');
+        assert.equal(invalid.data.code, 'readonly', 'the invalid-payload 403 must carry the readonly code');
+        const badId = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'missing-role', disabled: true }) });
+        assert.equal(badId.status, 403, 'a valid-shape payload for an absent role must 403 before any disk read');
+        assert.equal(badId.data.code, 'readonly', 'the absent-role 403 must carry the readonly code');
+        assert.ok(!existsSync(path.join(dir, 'missing-role.md.lock')), 'the readonly 403 must never touch the disk');
+        const roles = await call(`/api/${NS}.roles`);
+        assert.equal(roles.status, 200, 'GET .roles must stay reachable in readonly mode');
+        assert.equal(roles.data.readOnly, true, 'the roles envelope must carry readOnly:true');
+      });
+    } finally {
+      delete process.env.DSH_ORCHESTRATOR_READONLY;
+    }
+    for (const spelling of ['TRUE', 'True', ' true ', '1']) {
+      process.env.DSH_ORCHESTRATOR_READONLY = spelling;
+      try {
+        await withMockHost({ agentsHome: tmpHome, llm: undefined }, async ({ call }) => {
+          const probe = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'planner', disabled: true, expectedMtimeMs: 0 }) });
+          assert.equal(probe.status, 403, `the readonly spelling ${JSON.stringify(spelling)} must arm the 403 gate`);
+        });
+      } finally {
+        delete process.env.DSH_ORCHESTRATOR_READONLY;
+      }
+    }
+    await withMockHost({ agentsHome: tmpHome, llm: undefined }, async ({ call }) => {
+      const roles = await call(`/api/${NS}.roles`);
+      assert.equal(roles.data.readOnly, false, 'the roles envelope must carry readOnly:false when the flag is off');
+      const savedMtime = roles.data.roles.find((role) => role.id === 'planner').mtimeMs;
+      success = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'planner', disabled: true, expectedMtimeMs: savedMtime }) });
+      assert.equal(success.status, 200, 'with the flag off the save must succeed again');
+    });
+  } finally {
+    delete process.env.DSH_ORCHESTRATOR_READONLY;
+    rmSync(tmpHome, { recursive: true, force: true });
+  }
+
+  const vmReadonly = mountVmClient(async (url) => {
+    if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles: p4LoadRoles(1000), readOnly: true }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify({ ok: true, available: true, degraded: false, default: null, groups: [{ provider: EXAMPLE_HUB, name: 'Example Hub', models: [{ id: 'flash-a', name: 'Flash A' }] }] }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.efforts`)) return new Response(JSON.stringify({ ok: true, defaultEffort: 'medium', efforts: [{ id: 'high', name: 'High' }] }), { status: 200 });
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  });
+  const app = vmReadonly.mountInstance();
+  let tree = await app.settle();
+  const readonlyText = collectText(tree).join('');
+  assert.ok(readonlyText.includes('Read-only mode'), 'the readonly banner title must render');
+  assert.ok(readonlyText.includes('Saving is disabled by the server configuration'), 'the readonly banner notice must render');
+  assert.equal(providerSelectOfCard(cardOf(tree, 'planner')).props.disabled, true, 'the provider select must be disabled in readonly mode');
+  assert.equal(modelSelectOfCard(cardOf(tree, 'planner')).props.disabled, true, 'the model select must be disabled in readonly mode');
+  assert.equal(effortSelectOfCard(cardOf(tree, 'planner')).props.disabled, true, 'the effort select must be disabled in readonly mode');
+  assert.equal(checkboxOfCard(cardOf(tree, 'planner')).props.disabled, true, 'the disabled checkbox must be disabled in readonly mode');
+  assert.equal(saveOfCard(cardOf(tree, 'planner')).props.disabled, true, 'save must be disabled in readonly mode');
+  assert.equal(undoButtonsOf(cardOf(tree, 'planner')).length, 0, 'undo must not render without a snapshot');
+  const importInputReadonly = findNodes(tree, (n) => n.type === 'input' && n.props.type === 'file')[0];
+  assert.ok(importInputReadonly, 'the profile import input must render in readonly mode');
+  assert.equal(importInputReadonly.props.disabled, true, 'profile import must be disabled in readonly mode');
+  assert.equal(findNodes(tree, (n) => n.type === 'button' && n.children[0] === 'Export profile')[0].props.disabled, false, 'profile export must stay enabled in readonly mode');
+  const postsBefore = routePOSTsOf(vmReadonly).length;
+  cardOf(tree, 'planner').props.onFocusCapture();
+  rootOf(tree).props.onKeyDown({ key: 's', ctrlKey: true, preventDefault() {} });
+  tree = await app.settle();
+  assert.equal(routePOSTsOf(vmReadonly).length, postsBefore, 'Ctrl+S must be a no-op in readonly mode');
+  app.unmount();
+
+  const vmNormal = mountVmClient(async (url) => {
+    if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles: p4LoadRoles(1000) }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify({ ok: true, available: true, degraded: false, default: null, groups: [{ provider: EXAMPLE_HUB, name: 'Example Hub', models: [{ id: 'flash-a', name: 'Flash A' }] }] }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.efforts`)) return new Response(JSON.stringify({ ok: true, defaultEffort: 'medium', efforts: [{ id: 'high', name: 'High' }] }), { status: 200 });
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  });
+  const appNormal = vmNormal.mountInstance();
+  let treeNormal = await appNormal.settle();
+  assert.ok(!collectText(treeNormal).join('').includes('Read-only mode'), 'the non-readonly panel must not render the readonly banner');
+  findNodes(treeNormal, (n) => n.type === 'input' && n.props['aria-label'] === 'Disable planner')[0].props.onChange({ target: { checked: true } });
+  treeNormal = appNormal.renderCycle();
+  assert.equal(saveOfCard(cardOf(treeNormal, 'planner')).props.disabled, false, 'with the flag off a dirty draft must keep the save control enabled');
+  appNormal.unmount();
+});
+
+await test('craft installer: tmp-home copy, skip-existing always, lock-timeout guidance, and path containment', async () => {
+  const installerPath = path.join(packageDir, 'scripts', 'install-craft.js');
+  assert.ok(existsSync(installerPath), 'scripts/install-craft.js must exist before the installer contract can run');
+  const firstHome = mkdtempSync(path.join(tmpdir(), 'map-installer-first-'));
+  try {
+    const first = spawnSync(process.execPath, [installerPath], { cwd: packageDir, encoding: 'utf8', env: { ...process.env, DSH_AGENTS_HOME: firstHome } });
+    assert.equal(first.status, 0, `the first installer run must succeed: ${first.stderr}`);
+    assert.match(first.stdout, /created 51, skipped 0, failed 0/, 'the first run must create the full craft tree (20 role cards + 31 skill files) and report the summary');
+    assert.ok(!first.stdout.toLowerCase().includes(BAK_LITERAL), 'the installer stdout must never reference backup artifacts');
+    assert.ok(!first.stdout.includes(firstHome), 'the installer stdout must never print absolute paths');
+    assert.ok(!first.stdout.includes(WIN_HOME_TOKEN) && !first.stdout.toLowerCase().includes(POSIX_HOME_TOKEN), 'the installer stdout must never carry home tokens');
+    const agentsDir = path.join(firstHome, 'agents');
+    for (const role of CRAFT_ROLES) {
+      assert.ok(existsSync(path.join(agentsDir, `${role}.md`)), `the first run must install the ${role} role card`);
+    }
+    assert.ok(existsSync(path.join(firstHome, 'skills', 'dev-flow', 'SKILL.md')), 'the first run must install the dev-flow SKILL.md');
+    for (const playbook of CRAFT_PLAYBOOKS) {
+      assert.ok(existsSync(path.join(firstHome, 'skills', 'dev-flow', 'playbooks', playbook)), `the first run must install the ${playbook} playbook`);
+    }
+    const installedBefore = readFileSync(path.join(agentsDir, 'planner.md'));
+
+    const userEdit = Buffer.from('---\nname: planner\ndescription: USER CUSTOMIZATION — must survive reinstall\nmodel: inherit\n---\n\nmy body\n', 'utf8');
+    writeFileSync(path.join(agentsDir, 'planner.md'), userEdit);
+    const second = spawnSync(process.execPath, [installerPath], { cwd: packageDir, encoding: 'utf8', env: { ...process.env, DSH_AGENTS_HOME: firstHome } });
+    assert.equal(second.status, 0, `the second installer run must succeed: ${second.stderr}`);
+    assert.match(second.stdout, /created 0, skipped 51, failed 0/, 'the second run must skip every existing target');
+    assert.deepEqual(readFileSync(path.join(agentsDir, 'planner.md')), userEdit, 'skip-existing must never overwrite a user-edited installed card');
+    writeFileSync(path.join(agentsDir, 'planner.md'), installedBefore);
+
+    const dryRun = spawnSync(process.execPath, [installerPath, '--dry-run'], { cwd: packageDir, encoding: 'utf8', env: { ...process.env, DSH_AGENTS_HOME: firstHome } });
+    assert.equal(dryRun.status, 0, `the dry run must succeed: ${dryRun.stderr}`);
+    assert.match(dryRun.stdout, /created 0, skipped 51, failed 0/, 'the dry run must report the same skip summary without writing');
+    assert.deepEqual(readFileSync(path.join(agentsDir, 'planner.md')), installedBefore, 'the dry run must never write');
+
+    const plannerTarget = path.join(agentsDir, 'planner.md');
+    const lockFile = `${plannerTarget}.lock`;
+    const heldHome = mkdtempSync(path.join(tmpdir(), 'map-installer-lock-'));
+    try {
+      mkdirSync(path.join(heldHome, 'agents'), { recursive: true });
+      writeFileSync(`${path.join(heldHome, 'agents', 'planner.md')}.lock`, '0\n', 'utf8');
+      const locked = spawnSync(process.execPath, [installerPath], { cwd: packageDir, encoding: 'utf8', env: { ...process.env, DSH_AGENTS_HOME: heldHome } });
+      assert.equal(locked.status, 1, 'a held lock must fail the installer run with exit code 1');
+      assert.match(locked.stdout + locked.stderr, /retry in a moment; if the owner crashed/, 'the lock failure must print the retry/operator guidance');
+      assert.match(locked.stdout + locked.stderr, /agents\/planner\.md\.lock/, 'the lock guidance must name the relative lock path');
+      assert.ok(!(locked.stdout + locked.stderr).includes(heldHome), 'the lock guidance must never print an absolute path');
+      assert.ok(existsSync(`${path.join(heldHome, 'agents', 'planner.md')}.lock`), 'the installer must never remove a lock it did not create');
+      assert.ok(existsSync(path.join(heldHome, 'agents', 'docs-scout.md')), 'the other files must still be created around the held lock');
+      const treeList = readdirSync(path.join(heldHome, 'agents'));
+      assert.ok(!treeList.some((name) => BAK_SUFFIX_RE.test(name)), 'the installer must never create backup artifacts');
+    } finally {
+      rmSync(heldHome, { recursive: true, force: true });
+    }
+    rmSync(lockFile, { force: true });
+  } finally {
+    rmSync(firstHome, { recursive: true, force: true });
+  }
+
+  const wrapper = mkdtempSync(path.join(tmpdir(), 'map-installer-contain-wrap-'));
+  const containHome = mkdtempSync(path.join(wrapper, 'map-installer-contain-'));
+  try {
+    const installerSource = readFileSync(installerPath, 'utf8');
+    assert.ok(installerSource.includes('path.relative'), 'the installer must verify target containment with a path.relative check');
+    assert.ok(installerSource.includes('isEntryName'), 'the installer must filter craft source ids through isEntryName');
+    const parentBefore = new Set(readdirSync(wrapper));
+    const contained = spawnSync(process.execPath, [installerPath], { cwd: packageDir, encoding: 'utf8', env: { ...process.env, DSH_AGENTS_HOME: containHome } });
+    assert.equal(contained.status, 0, `the containment run must succeed: ${contained.stderr}`);
+    assert.match(contained.stdout, /created 51, skipped 0, failed 0/, 'the containment run must install the full tree');
+    const parentAfter = readdirSync(wrapper);
+    const created = parentAfter.filter((name) => !parentBefore.has(name));
+    assert.deepEqual(created, [], 'the installer must never write outside the configured agents root');
+  } finally {
+    rmSync(wrapper, { recursive: true, force: true });
+  }
+});
+
+await test('new surfaces render untrusted markup as text: batch summary, event entries and diagnostics lists', async () => {
+  const fixture = '<img src=x onerror=alert(1)>"\'&';
+  const fixtureEvents = [{ at: fixture, id: fixture, previous: null, next: { provider: fixture }, origin: 'panel' }];
+  let diagMode = 'ok';
+  const vm = mountVmClient(async (url, opts) => {
+    if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles: p4LoadRoles(1000) }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify({ ok: true, available: true, degraded: false, default: null, groups: [{ provider: EXAMPLE_HUB, name: 'Example Hub', models: [{ id: 'flash-a', name: 'Flash A' }] }] }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.efforts`)) return new Response(JSON.stringify({ ok: true, defaultEffort: 'medium', efforts: [{ id: 'high', name: 'High' }] }), { status: 200 });
+    if (url === `/api/${NS}.route`) {
+      const payload = JSON.parse(opts.body);
+      const base = p4LoadRoles(1000).find((role) => role.id === payload.id);
+      return new Response(JSON.stringify({ ok: true, role: { ...base, provider: payload.provider ?? base.provider, model: payload.model === undefined ? base.model : (payload.model === null ? 'inherit' : payload.model), reasoningEffort: payload.reasoningEffort === undefined ? base.reasoningEffort : payload.reasoningEffort, disabled: payload.disabled ?? base.disabled, mtimeMs: base.mtimeMs + 10 } }), { status: 200 });
+    }
+    if (url.startsWith(`/api/${NS}.events`)) {
+      if (eventsMode === '500') return new Response(JSON.stringify({ ok: false, error: `events boom ${fixture}` }), { status: 500 });
+      return new Response(JSON.stringify({ ok: true, events: fixtureEvents, skipped: 0 }), { status: 200 });
+    }
+    if (url.startsWith(`/api/${NS}.diagnostics`)) {
+      if (diagMode === '500') return new Response(JSON.stringify({ ok: false, error: `diagnostics boom ${fixture}` }), { status: 500 });
+      return new Response(JSON.stringify({ ok: true, missing: [fixture], invalid: [{ id: fixture, error: 'bad yaml' }], outsideCatalog: [fixture], drift: [fixture], craftAvailable: false }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  });
+  let eventsMode = 'ok';
+  const app = vm.mountInstance();
+  let tree = await app.settle();
+
+  clickTab(tree, app, 'Planning & Execution');
+  tree = app.renderCycle();
+  providerSelectOfCard(cardOf(tree, 'planner')).props.onChange({ target: { value: fixture } });
+  tree = app.renderCycle();
+  await findNodes(tree, (n) => n.type === 'button' && n.props['aria-label'] === 'Apply the current route to every role in Planning & Execution')[0].props.onClick();
+  tree = await app.settle();
+  assert.ok(collectText(tree).some((text) => text.includes(fixture)), 'the batch summary route detail must render the fixture as literal text');
+  clickTab(tree, app, 'All roles');
+  tree = app.renderCycle();
+
+  const eventsDetails = findNodes(tree, (n) => n.type === 'details' && collectText(findNodes(n, (child) => child.type === 'summary')[0] ?? { children: [] }).join('').includes('Recent changes'))[0];
+  assert.ok(eventsDetails, 'the events section must render');
+  eventsDetails.props.onToggle({ target: { open: true } });
+  tree = await app.settle();
+  assert.ok(collectText(tree).some((text) => text.includes(fixture)), 'the event entry fields must render the fixture as literal text');
+
+  const diagDetailsXss = findNodes(tree, (n) => n.type === 'details' && collectText(findNodes(n, (child) => child.type === 'summary')[0] ?? { children: [] }).join('').includes('Installed-card diagnostics'))[0];
+  assert.ok(diagDetailsXss, 'the diagnostics section must render');
+  diagDetailsXss.props.onToggle({ target: { open: true } });
+  tree = await app.settle();
+  assert.ok(collectText(tree).some((text) => text.includes(fixture)), 'the diagnostics lists must render the fixture as literal text');
+  const drivenHtmlNodes = findNodes(tree, (n) => n.props && (n.props.dangerouslySetInnerHTML !== undefined || n.props.innerHTML !== undefined));
+  assert.equal(drivenHtmlNodes.length, 0, 'no driven node may carry an HTML-injection prop');
+
+  const eventsGetBefore = vm.fetchCalls.filter((call) => call.url === `/api/${NS}.events`).length;
+  const currentEventsDetails = () => findNodes(tree, (n) => n.type === 'details' && collectText(findNodes(n, (child) => child.type === 'summary')[0] ?? { children: [] }).join('').includes('Recent changes'))[0];
+  currentEventsDetails().props.onToggle({ target: { open: false } });
+  tree = app.renderCycle();
+  currentEventsDetails().props.onToggle({ target: { open: true } });
+  tree = await app.settle();
+  assert.equal(vm.fetchCalls.filter((call) => call.url === `/api/${NS}.events`).length, eventsGetBefore + 1, 're-expanding Recent changes must re-fetch events');
+  eventsMode = '500';
+  const currentDiagDetails = () => findNodes(tree, (n) => n.type === 'details' && collectText(findNodes(n, (child) => child.type === 'summary')[0] ?? { children: [] }).join('').includes('Installed-card diagnostics'))[0];
+  currentEventsDetails().props.onToggle({ target: { open: false } });
+  tree = app.renderCycle();
+  currentEventsDetails().props.onToggle({ target: { open: true } });
+  tree = await app.settle();
+  assert.ok(collectText(tree).some((text) => text.includes('events boom')), 'a re-expanded events section must render the current loadError');
+  eventsDetails.props.onToggle({ target: { open: true } });
+  tree = await app.settle();
+  assert.ok(collectText(tree).some((text) => text.includes(fixture)), 'the events loadError must render the fixture as literal text');
+  diagMode = '500';
+  currentDiagDetails().props.onToggle({ target: { open: false } });
+  tree = app.renderCycle();
+  currentDiagDetails().props.onToggle({ target: { open: true } });
+  tree = await app.settle();
+  assert.ok(collectText(tree).some((text) => text.includes('diagnostics boom')), 'a re-expanded diagnostics section must render the current loadError');
+  diagDetailsXss.props.onToggle({ target: { open: true } });
+  tree = await app.settle();
+  assert.ok(collectText(tree).some((text) => text.includes(fixture)), 'the diagnostics loadError must render the fixture as literal text');
+  const sourceNodes = findNodes(tree, (n) => n.props && (n.props.dangerouslySetInnerHTML !== undefined || n.props.innerHTML !== undefined));
+  assert.equal(sourceNodes.length, 0, 'no loadError node may carry an HTML-injection prop');
+  app.unmount();
+});
+
+await test('npm pack: dry-run file list matches the frozen 70-entry contract and packed content passes the forbidden-token scan', () => {
   const dryRun = spawnSync('npm pack --dry-run --json', { cwd: packageDir, encoding: 'utf8', shell: true });
   assert.equal(dryRun.status, 0, `npm pack --dry-run must succeed: ${dryRun.stderr}`);
   const parsed = JSON.parse(dryRun.stdout);
   assert.equal(parsed[0].filename, `${PKG.name}-${PKG.version}.tgz`);
-  assert.equal(parsed[0].entryCount, 69);
-  assert.deepEqual(parsed[0].files.map((entry) => entry.path).sort(), [...FROZEN_PACK_FILES].sort(), 'the packed file set must match the frozen 69-entry contract');
+  assert.equal(parsed[0].entryCount, 70);
+  assert.deepEqual(parsed[0].files.map((entry) => entry.path).sort(), [...FROZEN_PACK_FILES].sort(), 'the packed file set must match the frozen 70-entry contract');
 
   const tmp = mkdtempSync(path.join(tmpdir(), 'pack-scan-'));
   try {
     const packed = spawnSync('npm pack --pack-destination ' + JSON.stringify(tmp), { cwd: packageDir, encoding: 'utf8', shell: true });
     assert.equal(packed.status, 0, `npm pack must succeed: ${packed.stderr}`);
     const tarball = path.join(tmp, `${PKG.name}-${PKG.version}.tgz`);
-    const extracted = spawnSync('tar', ['-xzf', tarball, '-C', tmp], { encoding: 'utf8' });
+    const extracted = spawnSync('tar', ['--force-local', '-xzf', tarball, '-C', tmp], { encoding: 'utf8' });
     assert.equal(extracted.status, 0, `tar extraction must succeed: ${extracted.stderr}`);
     const packedRoot = path.join(tmp, 'package');
     const packedFiles = [];
@@ -4061,7 +4953,7 @@ await test('npm pack: dry-run file list matches the frozen 69-entry contract and
     };
     visit(packedRoot);
     const relPaths = packedFiles.map((file) => path.relative(packedRoot, file).split(path.sep).join('/')).sort();
-    assert.deepEqual(relPaths, [...FROZEN_PACK_FILES].sort(), 'the extracted tarball content must match the frozen 69-entry contract');
+    assert.deepEqual(relPaths, [...FROZEN_PACK_FILES].sort(), 'the extracted tarball content must match the frozen 70-entry contract');
     for (const file of packedFiles) {
       const rel = path.relative(packedRoot, file).split(path.sep).join('/');
       const text = readFileSync(file, 'utf8').toLowerCase();

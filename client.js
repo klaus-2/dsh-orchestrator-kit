@@ -9,6 +9,8 @@ window.__ModuleLoader__.load({
     const CATALOG_ROUTE = '/api/dsh-orchestrator-kit.catalog';
     const EFFORTS_ROUTE = '/api/dsh-orchestrator-kit.efforts';
     const ROUTE_ROUTE = '/api/dsh-orchestrator-kit.route';
+    const EVENTS_ROUTE = '/api/dsh-orchestrator-kit.events';
+    const DIAGNOSTICS_ROUTE = '/api/dsh-orchestrator-kit.diagnostics';
 
     const PHASE_SECTIONS = [
       { id: 'discovery', ids: ['repo-scout', 'docs-scout', 'media-analyst', 'arch-advisor'] },
@@ -119,7 +121,34 @@ window.__ModuleLoader__.load({
         'notice.undo': 'Undone — the previous settings are restored.',
         'error.action.reget': 'Reload saved state, keep edits',
         'error.action.regetAria': 'Reload saved state and keep edits for {name}',
-        'error.hint.effort': 'The chosen reasoning effort may not be supported by this route — check the Reasoning effort select.'
+        'error.hint.effort': 'The chosen reasoning effort may not be supported by this route — check the Reasoning effort select.',
+        'batch.apply': 'Apply to phase',
+        'batch.applyAria': 'Apply the current route to every role in {phase}',
+        'batch.busy': 'Applying…',
+        'batch.cancel': 'Cancel',
+        'batch.summary': 'Batch finished: {applied} applied · {conflicted} conflicts · {failed} failed',
+        'batch.cancelled': 'Batch cancelled — {applied} roles were already updated.',
+        'batch.empty': 'Nothing to apply: no role in this phase has a draft route.',
+        'profile.summary': 'Routing profiles',
+        'profile.export': 'Export profile',
+        'profile.import': 'Import profile',
+        'profile.invalid': 'Invalid profile: {detail}',
+        'profile.rejected': 'Nothing was written: {count} entries failed.',
+        'profile.applied': 'Profile applied: {applied} roles updated, {skipped} skipped.',
+        'events.summary': 'Recent changes',
+        'events.empty': 'No changes recorded yet.',
+        'events.loadError': 'Failed to load the change log: {error}',
+        'events.entry': '{time} · {id} · {summary}',
+        'diagnostics.summary': 'Installed-card diagnostics',
+        'diagnostics.ok': 'No problems found.',
+        'diagnostics.missing': 'Missing roles: {ids}',
+        'diagnostics.invalid': 'Cards with invalid frontmatter: {ids}',
+        'diagnostics.outsideCatalog': 'Routes outside the live catalog: {ids}',
+        'diagnostics.drift': 'Body differs from the craft source: {ids}',
+        'diagnostics.craftMissing': 'craft/ sources are unavailable; drift checking was skipped.',
+        'diagnostics.loadError': 'Failed to load diagnostics: {error}',
+        'readonly.title': 'Read-only mode',
+        'readonly.notice': 'Saving is disabled by the server configuration (read-only mode). Controls are shown for reference.'
       },
       'pt-br': {
         'nav.label': 'Orchestrator',
@@ -216,7 +245,34 @@ window.__ModuleLoader__.load({
         'notice.undo': 'Desfeito — as configurações anteriores foram restauradas.',
         'error.action.reget': 'Recarregar estado salvo, manter edições',
         'error.action.regetAria': 'Recarregar estado salvo e manter as edições de {name}',
-        'error.hint.effort': 'O esforço de raciocínio escolhido pode não ser suportado por esta rota — verifique a seleção de Esforço de raciocínio.'
+        'error.hint.effort': 'O esforço de raciocínio escolhido pode não ser suportado por esta rota — verifique a seleção de Esforço de raciocínio.',
+        'batch.apply': 'Aplicar à fase',
+        'batch.applyAria': 'Aplicar a rota atual a todos os papéis de {phase}',
+        'batch.busy': 'Aplicando…',
+        'batch.cancel': 'Cancelar',
+        'batch.summary': 'Lote concluído: {applied} aplicados · {conflicted} conflitos · {failed} falhas',
+        'batch.cancelled': 'Lote cancelado — {applied} papéis já foram atualizados.',
+        'batch.empty': 'Nada para aplicar: nenhum papel desta fase tem uma rota em rascunho.',
+        'profile.summary': 'Perfis de roteamento',
+        'profile.export': 'Exportar perfil',
+        'profile.import': 'Importar perfil',
+        'profile.invalid': 'Perfil inválido: {detail}',
+        'profile.rejected': 'Nada foi gravado: {count} entradas falharam.',
+        'profile.applied': 'Perfil aplicado: {applied} papéis atualizados, {skipped} ignorados.',
+        'events.summary': 'Alterações recentes',
+        'events.empty': 'Nenhuma alteração registrada ainda.',
+        'events.loadError': 'Falha ao carregar o histórico: {error}',
+        'events.entry': '{time} · {id} · {summary}',
+        'diagnostics.summary': 'Diagnóstico dos cartões instalados',
+        'diagnostics.ok': 'Nenhum problema encontrado.',
+        'diagnostics.missing': 'Papéis ausentes: {ids}',
+        'diagnostics.invalid': 'Cartões com frontmatter inválido: {ids}',
+        'diagnostics.outsideCatalog': 'Rotas fora do catálogo ao vivo: {ids}',
+        'diagnostics.drift': 'Corpo difere da origem em craft/: {ids}',
+        'diagnostics.craftMissing': 'As origens em craft/ estão indisponíveis; a checagem de divergência foi ignorada.',
+        'diagnostics.loadError': 'Falha ao carregar o diagnóstico: {error}',
+        'readonly.title': 'Modo somente leitura',
+        'readonly.notice': 'O salvamento está desativado pela configuração do servidor (modo somente leitura). Os controles aparecem apenas como referência.'
       },
       zh: {
         'nav.label': 'Orchestrator',
@@ -313,7 +369,34 @@ window.__ModuleLoader__.load({
         'notice.undo': '已撤销 — 已恢复之前的设置。',
         'error.action.reget': '重新加载已保存状态，保留修改',
         'error.action.regetAria': '重新加载 {name} 的已保存状态并保留修改',
-        'error.hint.effort': '所选的推理强度可能不受此路由支持 — 请检查推理强度选择框。'
+        'error.hint.effort': '所选的推理强度可能不受此路由支持 — 请检查推理强度选择框。',
+        'batch.apply': '应用到阶段',
+        'batch.applyAria': '将当前路由应用到 {phase} 的所有角色',
+        'batch.busy': '正在应用…',
+        'batch.cancel': '取消',
+        'batch.summary': '批处理完成：已应用 {applied} · 冲突 {conflicted} · 失败 {failed}',
+        'batch.cancelled': '批处理已取消 — 已有 {applied} 个角色被更新。',
+        'batch.empty': '无可应用内容：此阶段没有任何角色存在草稿路由。',
+        'profile.summary': '路由配置集',
+        'profile.export': '导出配置集',
+        'profile.import': '导入配置集',
+        'profile.invalid': '配置集无效：{detail}',
+        'profile.rejected': '未写入任何内容：{count} 条失败。',
+        'profile.applied': '配置集已应用：更新 {applied} 个角色，跳过 {skipped} 个。',
+        'events.summary': '最近更改',
+        'events.empty': '尚无更改记录。',
+        'events.loadError': '加载更改日志失败：{error}',
+        'events.entry': '{time} · {id} · {summary}',
+        'diagnostics.summary': '已安装卡片诊断',
+        'diagnostics.ok': '未发现问题。',
+        'diagnostics.missing': '缺失角色：{ids}',
+        'diagnostics.invalid': 'frontmatter 无效的卡片：{ids}',
+        'diagnostics.outsideCatalog': '不在实时目录中的路由：{ids}',
+        'diagnostics.drift': '正文与 craft/ 源不一致：{ids}',
+        'diagnostics.craftMissing': 'craft/ 源不可用；已跳过偏差检查。',
+        'diagnostics.loadError': '加载诊断失败：{error}',
+        'readonly.title': '只读模式',
+        'readonly.notice': '保存已被服务器配置禁用（只读模式）。控件仅作参考。'
       }
     };
     PANEL_DICTS.pt = PANEL_DICTS['pt-br'];
@@ -464,12 +547,95 @@ window.__ModuleLoader__.load({
       return { role: data.role, unchanged: data.unchanged === true };
     }
 
+    const isEntryNameLike = (value) => typeof value === 'string' && /^[a-z][a-z0-9_-]*(?:\/[a-z][a-z0-9_-]*)*$/.test(value);
+
+    const eventSummaryOf = (record) => {
+      const next = record?.next ?? null;
+      const previous = record?.previous ?? null;
+      const nextProvider = typeof next?.provider === 'string' ? next.provider : null;
+      const nextModel = typeof next?.model === 'string' ? next.model : null;
+      const effort = typeof next?.reasoningEffort === 'string' ? next.reasoningEffort : null;
+      if (nextProvider === null || nextModel === null) {
+        return typeof previous?.disabled === 'boolean' && previous.disabled === false && next?.disabled === true
+          ? 'disabled'
+          : 'cleared';
+      }
+      const route = `${nextProvider}/${nextModel}`;
+      const withEffort = effort !== null ? `${route} (${effort})` : route;
+      return next?.disabled === true ? `${withEffort} · disabled` : withEffort;
+    };
+
+    const buildProfileOf = (list) => ({
+      version: 1,
+      generator: NS,
+      roles: Object.fromEntries((list ?? []).map((role) => [role.id, {
+        provider: role.provider || null,
+        model: role.model && role.model !== 'inherit' ? role.model : null,
+        reasoningEffort: role.reasoningEffort ?? null,
+        disabled: role.disabled === true
+      }]))
+    });
+
+    function validateProfileOf(doc) {
+      if (doc === null || typeof doc !== 'object' || Array.isArray(doc)) {
+        return { ok: false, detail: 'the profile must be a JSON object' };
+      }
+      if (doc.version !== 1) {
+        return { ok: false, detail: `unsupported version: ${String(doc.version)}` };
+      }
+      const roles = doc.roles;
+      if (roles === null || typeof roles !== 'object' || Array.isArray(roles) || Object.keys(roles).length === 0) {
+        return { ok: false, detail: 'roles must be a non-empty object' };
+      }
+      const entries = [];
+      for (const [id, value] of Object.entries(roles)) {
+        if (!isEntryNameLike(id)) {
+          return { ok: false, detail: `invalid role id: ${id}` };
+        }
+        if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+          return { ok: false, detail: `${id}: the entry must be an object` };
+        }
+        const providerOk = value.provider === null || (typeof value.provider === 'string' && value.provider !== '');
+        const modelOk = value.model === null || (typeof value.model === 'string' && value.model !== '');
+        if (!providerOk) return { ok: false, detail: `${id}: provider must be null or a non-empty string` };
+        if (!modelOk) return { ok: false, detail: `${id}: model must be null or a non-empty string` };
+        if ((value.provider === null) !== (value.model === null)) {
+          return { ok: false, detail: `${id}: provider and model must be set together` };
+        }
+        if (typeof value.model === 'string' && value.model === 'inherit') {
+          return { ok: false, detail: `${id}: model must not be 'inherit'; use null` };
+        }
+        if (value.reasoningEffort !== null && value.reasoningEffort !== undefined && (typeof value.reasoningEffort !== 'string' || value.reasoningEffort === '')) {
+          return { ok: false, detail: `${id}: reasoningEffort must be null or a non-empty string` };
+        }
+        if (typeof value.reasoningEffort === 'string' && (value.provider === null || value.model === null)) {
+          return { ok: false, detail: `${id}: reasoningEffort requires provider and model` };
+        }
+        if (typeof value.disabled !== 'boolean') {
+          return { ok: false, detail: `${id}: disabled must be a boolean` };
+        }
+        entries.push({
+          id,
+          provider: value.provider,
+          model: value.model,
+          reasoningEffort: typeof value.reasoningEffort === 'string' ? value.reasoningEffort : null,
+          disabled: value.disabled
+        });
+      }
+      return { ok: true, entries };
+    }
+
     async function runCardLoop(cards, runOne, options = {}) {
       const results = [];
       let aborted = false;
+      let cancelled = false;
       for (const card of cards) {
         if (typeof options.alive === 'function' && !options.alive()) {
           aborted = true;
+          break;
+        }
+        if (typeof options.shouldCancel === 'function' && options.shouldCancel()) {
+          cancelled = true;
           break;
         }
         try {
@@ -484,7 +650,7 @@ window.__ModuleLoader__.load({
           }
         }
       }
-      return { results, aborted };
+      return { results, aborted, cancelled };
     }
 
     const normalizeDraft = (role) => ({
@@ -570,6 +736,14 @@ window.__ModuleLoader__.load({
         const [legendOpen, setLegendOpen] = React.useState(storedPrefs.legend ?? true);
         const [, setEffortsTick] = React.useState(0);
         const [, setLocaleTick] = React.useState(0);
+        const [batchPhase, setBatchPhase] = React.useState(null);
+        const [cancelRef] = React.useState(() => ({ current: false }));
+        const [importing, setImporting] = React.useState(false);
+        const [readonlyMode, setReadonlyMode] = React.useState(false);
+        const [profileExportText, setProfileExportText] = React.useState(null);
+        const [profileFileInputRef] = React.useState(() => ({ current: null }));
+        const [eventsState, setEventsState] = React.useState({ open: false, loading: false, events: [], skipped: 0, error: null });
+        const [diagnosticsState, setDiagnosticsState] = React.useState({ open: false, loading: false, report: null, error: null });
         React.useEffect(() => ctx.locale.subscribe(() => setLocaleTick((n) => n + 1)), []);
         const t = localeOverride === null ? hostT : makeT(localeOverride);
         const onLocaleChange = (event) => {
@@ -593,6 +767,10 @@ window.__ModuleLoader__.load({
             .then(([rolesOutcome, catalogOutcome]) => {
               if (!alive) return;
               if (rolesOutcome.status === 'fulfilled' && Array.isArray(rolesOutcome.value?.roles)) {
+                setReadonlyMode((current) => {
+                  const envelopeReadonly = rolesOutcome.value.readOnly === true;
+                  return envelopeReadonly === current ? current : envelopeReadonly;
+                });
                 if (tracker.saves === startSaves) {
                   const list = rolesOutcome.value.roles;
                   const invalidCards = Array.isArray(rolesOutcome.value.invalid) ? rolesOutcome.value.invalid : [];
@@ -782,6 +960,7 @@ window.__ModuleLoader__.load({
         };
 
         const save = async (role) => {
+          if (readonlyMode) return;
           const busy = roles === null || drafts === null || savingId !== null || undoingId !== null || refreshing;
           const draft = drafts?.[role.id];
           if (busy || !draft) return;
@@ -852,6 +1031,7 @@ window.__ModuleLoader__.load({
         };
 
         const undo = async (role) => {
+          if (readonlyMode) return;
           const entry = undoEntryFor(role);
           const busy = roles === null || drafts === null || savingId !== null || undoingId !== null || refreshing || entry === null;
           if (busy) return;
@@ -894,9 +1074,258 @@ window.__ModuleLoader__.load({
           }
         };
 
+        const runBatch = async (section, batchTarget) => {
+          if (readonlyMode) return;
+          const targets = (batchTarget === null ? [] : section.roles.filter((role) => {
+            if (role.id === undefined) return false;
+            const base = normalizeDraft(role);
+            return base.provider !== batchTarget.provider || base.model !== batchTarget.model || base.reasoningEffort !== (batchTarget.reasoningEffort ?? '');
+          }));
+          if (batchTarget === null || targets.length === 0) {
+            setLastNotice({ kind: 'error', key: 'batch.empty' });
+            return;
+          }
+          cancelRef.current = false;
+          setBatchPhase(section.id);
+          setHighlightId(null);
+          const { results, aborted, cancelled } = await runCardLoop(targets, (role) => {
+            const payload = { id: role.id };
+            if (typeof role.mtimeMs === 'number' && Number.isFinite(role.mtimeMs) && role.mtimeMs >= 0) {
+              payload.expectedMtimeMs = role.mtimeMs;
+            }
+            payload.provider = batchTarget.provider;
+            payload.model = batchTarget.model;
+            if (batchTarget.reasoningEffort !== null && batchTarget.provider !== '') payload.reasoningEffort = batchTarget.reasoningEffort;
+            return postSettings(payload);
+          }, { alive: () => mountState.mounted, shouldCancel: () => cancelRef.current });
+
+          if (!mountState.mounted) return;
+          const ok = results.filter((result) => result.ok);
+          const conflicted = results.filter((result) => !result.ok && result.status === 409);
+          const failed = results.filter((result) => !result.ok && result.status !== 409);
+          if (ok.length > 0) {
+            tracker.saves += 1;
+            const byId = new Map(ok.map((result) => [result.id, result.role]));
+            const nextRoles = (rolesCache ?? roles ?? []).map((entry) => byId.get(entry.id) ?? entry);
+            rolesCache = nextRoles;
+            setRoles(nextRoles);
+            setDrafts((current) => {
+              const next = { ...current };
+              for (const [id, role] of byId.entries()) next[id] = normalizeDraft(role);
+              return next;
+            });
+            for (const id of byId.keys()) {
+              pruneStoreFor(draftStore, id);
+              sessionChangedIds.add(id);
+            }
+          }
+          setMessages((current) => {
+            const next = { ...current };
+            for (const result of results) {
+              if (result.ok) continue;
+              next[result.id] = result.status === 409
+                ? { kind: 'error', key: 'error.conflict', params: { detail: result.detail } }
+                : { kind: 'error', key: 'error.raw', params: { detail: result.detail } };
+            }
+            return next;
+          });
+          const message = cancelled
+            ? { kind: 'warning', key: 'batch.cancelled', params: { applied: String(ok.length) } }
+            : aborted
+              ? { kind: 'error', key: 'batch.summary', params: { applied: String(ok.length), conflicted: String(conflicted.length), failed: String(failed.length) } }
+              : { kind: 'ok', key: 'batch.summary', params: { applied: String(ok.length), conflicted: String(conflicted.length), failed: String(failed.length) } };
+          setLastNotice(message);
+          setBatchPhase(null);
+        };
+
+        const batchSourceOf = (list) => {
+          const target = list.find((role) => {
+            const draft = drafts?.[role.id];
+            if (!draft) return false;
+            const state = evaluateDraftState(draft, normalizeDraft(role), catalogEmpty);
+            return (state.routeDirty || state.effortDirty) && draft.provider !== '' && draft.model !== '';
+          });
+          if (!target) return null;
+          const draft = drafts[target.id];
+          return {
+            provider: draft.provider,
+            model: draft.model,
+            reasoningEffort: draft.reasoningEffort === '' ? null : draft.reasoningEffort
+          };
+        };
+
+        const runImport = async (doc) => {
+          if (readonlyMode) return;
+          const checked = validateProfileOf(doc);
+          if (!checked.ok) {
+            setLastNotice({ kind: 'error', key: 'profile.invalid', params: { detail: checked.detail } });
+            return;
+          }
+          let fresh = null;
+          try {
+            const reply = await fetchJson(ROLES_ROUTE);
+            if (Array.isArray(reply?.roles)) fresh = reply.roles;
+          } catch (error) {
+            setLastNotice({ kind: 'error', key: 'profile.invalid', params: { detail: `roles could not be refreshed: ${String(error?.message ?? error)}` } });
+            return;
+          }
+          if (fresh === null) {
+            setLastNotice({ kind: 'error', key: 'profile.invalid', params: { detail: 'roles could not be refreshed' } });
+            return;
+          }
+          rolesCache = fresh;
+          setRoles(fresh);
+          const known = new Set(fresh.map((role) => role.id));
+          const entries = checked.entries.filter((entry) => known.has(entry.id));
+          const skipped = checked.entries.length - entries.length;
+          if (entries.length === 0) {
+            setLastNotice({ kind: 'error', key: 'profile.rejected', params: { count: String(checked.entries.length) } });
+            return;
+          }
+          const byId = new Map(fresh.map((role) => [role.id, role]));
+          setImporting(true);
+          const { results } = await runCardLoop(entries, (entry) => {
+            const role = byId.get(entry.id);
+            const payload = {
+              id: entry.id,
+              provider: entry.provider,
+              model: entry.model,
+              disabled: entry.disabled,
+              reasoningEffort: entry.reasoningEffort
+            };
+            if (typeof role?.mtimeMs === 'number' && Number.isFinite(role.mtimeMs) && role.mtimeMs >= 0) {
+              payload.expectedMtimeMs = role.mtimeMs;
+            }
+            return postSettings(payload);
+          }, { alive: () => mountState.mounted });
+          setImporting(false);
+          if (!mountState.mounted) return;
+          const applied = results.filter((result) => result.ok);
+          const rejected = results.filter((result) => !result.ok);
+          const message = rejected.length === 0
+            ? { kind: 'ok', key: 'profile.applied', params: { applied: String(applied.length), skipped: String(skipped) } }
+            : { kind: 'error', key: 'profile.rejected', params: { count: String(rejected.length) } };
+          setLastNotice(message);
+          if (applied.length > 0) {
+            tracker.saves += 1;
+            const appliedById = new Map(applied.map((result) => [result.id, result.role]));
+            const nextRoles = (rolesCache ?? []).map((entry) => appliedById.get(entry.id) ?? entry);
+            rolesCache = nextRoles;
+            setRoles(nextRoles);
+            setDrafts((current) => {
+              const next = { ...current };
+              for (const [id, role] of appliedById.entries()) {
+                next[id] = normalizeDraft(role);
+                pruneStoreFor(draftStore, id);
+                sessionChangedIds.add(id);
+              }
+              return next;
+            });
+          }
+          setMessages((current) => {
+            const next = { ...current };
+            for (const result of rejected) {
+              next[result.id] = result.status === 409
+                ? { kind: 'error', key: 'error.conflict', params: { detail: result.detail } }
+                : { kind: 'error', key: 'error.raw', params: { detail: result.detail } };
+            }
+            return next;
+          });
+        };
+
+        const loadEvents = async () => {
+          setEventsState({ open: true, loading: true, events: [], skipped: 0, error: null });
+          try {
+            const reply = await fetchJson(EVENTS_ROUTE);
+            if (!Array.isArray(reply.events)) {
+              const err = new Error('Invalid events response: missing events field');
+              err.status = 502;
+              throw err;
+            }
+            setEventsState({ open: true, loading: false, events: reply.events, skipped: reply.skipped ?? 0, error: null });
+          } catch (error) {
+            setEventsState({ open: true, loading: false, events: [], skipped: 0, error: String(error?.message ?? error) });
+          }
+        };
+
+        const loadDiagnostics = async () => {
+          setDiagnosticsState({ open: true, loading: true, report: null, error: null });
+          try {
+            const reply = await fetchJson(DIAGNOSTICS_ROUTE);
+            if (reply === null || typeof reply !== 'object' || Array.isArray(reply)) {
+              const err = new Error('Invalid diagnostics response');
+              err.status = 502;
+              throw err;
+            }
+            setDiagnosticsState({ open: true, loading: false, report: {
+              missing: Array.isArray(reply.missing) ? reply.missing : [],
+              invalid: Array.isArray(reply.invalid) ? reply.invalid : [],
+              outsideCatalog: Array.isArray(reply.outsideCatalog) ? reply.outsideCatalog : [],
+              drift: Array.isArray(reply.drift) ? reply.drift : [],
+              craftAvailable: reply.craftAvailable === true
+            }, error: null });
+          } catch (error) {
+            setDiagnosticsState({ open: true, loading: false, report: null, error: String(error?.message ?? error) });
+          }
+        };
+
+        const exportProfile = () => {
+          const json = JSON.stringify(buildProfileOf(roles), null, 2);
+          if (typeof URL === 'object' || typeof URL === 'function') {
+            try {
+              if (typeof URL.createObjectURL === 'function') {
+                const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = 'dsh-orchestrator-routing-profile.json';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+                return;
+              }
+            } catch {
+              return exportProfileFallback(json);
+            }
+          }
+          return exportProfileFallback(json);
+        };
+
+        const exportProfileFallback = (json) => {
+          window.__orchestratorExport = json;
+          setProfileExportText(json);
+        };
+
+        const importProfile = () => {
+          if (profileFileInputRef.current === null) return;
+          profileFileInputRef.current.click();
+        };
+
+        const onImportFile = async (event) => {
+          const file = event.target?.files?.[0];
+          event.target.value = '';
+          if (!file) return;
+          let text = '';
+          try {
+            text = await file.text();
+          } catch (error) {
+            setLastNotice({ kind: 'error', key: 'profile.invalid', params: { detail: String(error?.message ?? error) } });
+            return;
+          }
+          let doc = null;
+          try {
+            doc = JSON.parse(text);
+          } catch (error) {
+            setLastNotice({ kind: 'error', key: 'profile.invalid', params: { detail: String(error?.message ?? error) } });
+            return;
+          }
+          await runImport(doc);
+        };
+
         const onPanelKeyDown = (event) => {
           if (!(event.ctrlKey || event.metaKey) || event.key !== 's') return;
           event.preventDefault();
+          if (readonlyMode) return;
           const role = (roles ?? []).find((entry) => entry.id === focusedCardId);
           if (role) save(role);
         };
@@ -952,8 +1381,8 @@ window.__ModuleLoader__.load({
           const providerModels = modelsOf(draft.provider);
           const modelMissing = draft.model !== '' && !providerModels.some((model) => model.id === draft.model);
           const effortMissing = draft.reasoningEffort !== '' && !efforts.some((effort) => effort.id === draft.reasoningEffort);
-          const effortDisabled = busy || isInherit || (effortLoading && draft.reasoningEffort === '') || (!effortLoading && efforts.length === 0 && draft.reasoningEffort === '');
-          const saveDisabled = busy || state.saveBlocked;
+          const effortDisabled = busy || readonlyMode || isInherit || (effortLoading && draft.reasoningEffort === '') || (!effortLoading && efforts.length === 0 && draft.reasoningEffort === '');
+          const saveDisabled = busy || readonlyMode || state.saveBlocked;
           const tone = statusTone(draft.disabled, isInherit);
           const phaseTone = PHASE_TONE[phaseOf(role.id)] ?? PHASE_TONE.other;
           const dirty = state.dirty;
@@ -970,7 +1399,7 @@ window.__ModuleLoader__.load({
           const compactControlStyle = { ...controlStyle, width: 'auto', flex: '1 1 140px', minWidth: 0 };
           const providerSelect = h('select', {
             value: draft.provider,
-            disabled: busy || catalogEmpty,
+            disabled: busy || readonlyMode || catalogEmpty,
             style: compact ? compactControlStyle : controlStyle,
             'aria-label': t('field.providerAria', { name: role.name }),
             onChange: (event) => {
@@ -992,7 +1421,7 @@ window.__ModuleLoader__.load({
             groups.map((group) => h('option', { key: group.provider, value: group.provider }, group.name)));
           const modelSelect = h('select', {
             value: draft.model,
-            disabled: busy || catalogEmpty || draft.provider === '',
+            disabled: busy || readonlyMode || catalogEmpty || draft.provider === '',
             style: compact ? compactControlStyle : controlStyle,
             'aria-label': t('field.modelAria', { name: role.name }),
             onChange: (event) => {
@@ -1028,7 +1457,7 @@ window.__ModuleLoader__.load({
             !isInherit && effortMissing ? h('option', { value: draft.reasoningEffort }, t('effort.savedUnavailable', { effort: draft.reasoningEffort })) : null,
             efforts.map((effort) => h('option', { key: effort.id, value: effort.id, title: effort.description },
               effort.name === effort.id ? effort.name : t('option.withId', { name: effort.name, id: effort.id }))));
-          const undoButton = undoEntryFor(role) ? h('button', {
+          const undoButton = undoEntryFor(role) && !readonlyMode ? h('button', {
             type: 'button',
             onClick: () => undo(role),
             disabled: busy || undoingId !== null,
@@ -1042,11 +1471,11 @@ window.__ModuleLoader__.load({
             style: saveDisabled ? { ...buttonStyle, opacity: 0.5 } : primaryButtonStyle,
             'aria-label': t('save.aria', { name: role.name })
           }, savingId === role.id ? t('save.busy') : t('save'));
-          const disabledControl = h('label', { style: { display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--dsw-alias-label-secondary)', cursor: busy ? 'default' : 'pointer', padding: '4px 0' } },
+          const disabledControl = h('label', { style: { display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--dsw-alias-label-secondary)', cursor: busy || readonlyMode ? 'default' : 'pointer', padding: '4px 0' } },
             h('input', {
               type: 'checkbox',
               checked: draft.disabled,
-              disabled: busy,
+              disabled: busy || readonlyMode,
               'aria-label': t('disabled.aria', { name: role.name }),
               onChange: (event) => setDraft(role.id, { disabled: event.target.checked })
             }),
@@ -1145,6 +1574,9 @@ window.__ModuleLoader__.load({
               'aria-label': t('refresh.aria')
             }, refreshing ? t('refresh.busy') : t('refresh'))),
           messages.__load ? h('div', { style: bannerStyle('error') }, messageText(messages.__load)) : null,
+          readonlyMode ? h('div', { style: bannerStyle('warning') },
+            h('div', { style: { fontWeight: 600 } }, t('readonly.title')),
+            t('readonly.notice')) : null,
           messages.__catalog ? h('div', { style: bannerStyle('error') }, messageText(messages.__catalog)) : null,
           messages.__invalid ? h('div', { style: bannerStyle('warning') }, messageText(messages.__invalid)) : null,
           catalogPartialWarning
@@ -1166,7 +1598,59 @@ window.__ModuleLoader__.load({
               h('div', {}, h('span', { style: legendTermStyle }, t('legend.inherit')), t('legend.inheritText')),
               h('div', {}, t('legend.subagent')),
               h('div', {}, t('legend.apply')),
-              lastServerTiming ? h('div', {}, t('legend.timing', { reads: lastServerTiming.reads ?? '—', catalog: lastServerTiming.catalog ?? '—' })) : null)),
+              lastServerTiming ? h('div', {}, t('legend.timing', { reads: lastServerTiming.reads ?? '—', catalog: lastServerTiming.catalog ?? '—' })) : null),
+            h('div', { style: { marginTop: 12, borderTop: '1px solid var(--dsw-alias-border-l1)', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 8 } },
+              h('div', { style: { fontSize: 12, fontWeight: 600, color: 'var(--dsw-alias-label-primary)' } }, t('profile.summary')),
+              h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' } },
+                h('button', { type: 'button', onClick: exportProfile, disabled: refreshing, style: { ...buttonStyle, fontSize: 11, padding: '4px 8px' } }, t('profile.export')),
+                h('button', { type: 'button', onClick: importProfile, disabled: refreshing || importing || readonlyMode, style: { ...buttonStyle, fontSize: 11, padding: '4px 8px' } }, importing ? t('refresh.busy') : t('profile.import')),
+                h('input', { type: 'file', accept: 'application/json', style: srOnlyStyle, 'aria-hidden': 'true', disabled: readonlyMode, onChange: onImportFile, ref: (node) => { profileFileInputRef.current = node; } })),
+              profileExportText !== null
+                ? h('textarea', { readOnly: true, rows: 6, value: profileExportText, onChange: () => {}, style: { ...controlStyle, fontFamily: 'monospace', fontSize: 11, marginTop: 8 } })
+                : null,
+              h('details', {
+                onToggle: (event) => { if (!event.target.open) setEventsState((current) => ({ ...current, open: false })); else if (eventsState.open === false) loadEvents(); },
+                style: { marginTop: 4 }
+              },
+                h('summary', { style: { cursor: 'pointer', fontSize: 12, color: 'var(--dsw-alias-label-secondary)' } }, t('events.summary')),
+                h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-secondary)', display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 } },
+                  eventsState.loading
+                    ? h('div', {}, t('refresh.busy'))
+                    : eventsState.error !== null
+                      ? h('div', {}, t('events.loadError', { error: eventsState.error }))
+                      : eventsState.events.length === 0
+                        ? h('div', {}, t('events.empty'))
+                        : eventsState.events.map((record, index) => h('div', { key: index }, t('events.entry', {
+                            time: record.at ?? '—',
+                            id: record.id ?? '—',
+                            summary: eventSummaryOf(record)
+                          }))))),
+              h('details', {
+                onToggle: (event) => { if (!event.target.open) setDiagnosticsState((current) => ({ ...current, open: false })); else if (diagnosticsState.open === false) loadDiagnostics(); },
+                style: { marginTop: 4 }
+              },
+                h('summary', { style: { cursor: 'pointer', fontSize: 12, color: 'var(--dsw-alias-label-secondary)' } }, t('diagnostics.summary')),
+                h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-secondary)', display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 } },
+                  diagnosticsState.loading
+                    ? h('div', {}, t('refresh.busy'))
+                    : diagnosticsState.error !== null
+                      ? h('div', {}, t('diagnostics.loadError', { error: diagnosticsState.error }))
+                      : diagnosticsState.report !== null && !diagnosticsState.report.craftAvailable
+                        ? h('div', {}, t('diagnostics.craftMissing'))
+                        : null,
+                  diagnosticsState.report !== null && diagnosticsState.error === null
+                    ? diagnosticsState.report.missing.length === 0
+                      && diagnosticsState.report.invalid.length === 0
+                      && diagnosticsState.report.outsideCatalog.length === 0
+                      && diagnosticsState.report.drift.length === 0
+                      ? h('div', {}, t('diagnostics.ok'))
+                      : [
+                          diagnosticsState.report.missing.length > 0 ? h('div', { key: 'missing' }, t('diagnostics.missing', { ids: diagnosticsState.report.missing.join(', ') })) : null,
+                          diagnosticsState.report.invalid.length > 0 ? h('div', { key: 'invalid' }, t('diagnostics.invalid', { ids: diagnosticsState.report.invalid.map((entry) => entry.id).join(', ') })) : null,
+                          diagnosticsState.report.outsideCatalog.length > 0 ? h('div', { key: 'outsideCatalog' }, t('diagnostics.outsideCatalog', { ids: diagnosticsState.report.outsideCatalog.join(', ') })) : null,
+                          diagnosticsState.report.drift.length > 0 ? h('div', { key: 'drift' }, t('diagnostics.drift', { ids: diagnosticsState.report.drift.join(', ') })) : null
+                        ]
+                    : null)))),
           h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' } },
             h('input', { type: 'search', value: search, onChange: (event) => setSearch(event.target.value), placeholder: t('search.placeholder'), 'aria-label': t('search.aria'), style: { ...controlStyle, width: 'auto', flex: '1 1 200px', minWidth: 0 } }),
             h('div', { role: 'group', 'aria-label': t('filter.status.aria'), style: { display: 'flex', flexWrap: 'wrap', gap: 4 } },
@@ -1200,12 +1684,30 @@ window.__ModuleLoader__.load({
                   ? h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-tertiary)', padding: '8px 0' } }, t('empty.noMatch'))
                   : visibleSections.length === 0
                     ? h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-tertiary)', padding: '8px 0' } }, t('empty.noGroup'))
-                    : visibleSections.map((section) => h('div', { key: section.id, style: { display: 'flex', flexDirection: 'column', gap: 8 } },
+                    : visibleSections.map((section) => {
+                        const batchTarget = batchSourceOf(section.roles);
+                        const batchBusy = batchPhase === section.id;
+                        return h('div', { key: section.id, style: { display: 'flex', flexDirection: 'column', gap: 8 } },
                         h('div', { style: sectionTitleStyle },
                           h('span', { style: dotStyle(PHASE_TONE[section.id] ?? PHASE_TONE.other) }),
                           t('phase.' + section.id),
-                          h('span', { style: { color: 'var(--dsw-alias-label-tertiary)', fontWeight: 400, fontVariantNumeric: 'tabular-nums' } }, section.roles.length)),
-                        h('div', { style: gridStyle }, section.roles.map((role) => renderCard(role, density === 'compact')))))));
+                          h('span', { style: { color: 'var(--dsw-alias-label-tertiary)', fontWeight: 400, fontVariantNumeric: 'tabular-nums' } }, section.roles.length),
+                          activeTabState !== 'all' ? h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' } },
+                            batchBusy
+                              ? [
+                                  h('span', { key: 'busy', style: { fontSize: 11, color: 'var(--dsw-alias-label-tertiary)' } }, t('batch.busy')),
+                                  h('button', { key: 'cancel', type: 'button', onClick: () => { cancelRef.current = true; }, style: { ...buttonStyle, fontSize: 11, padding: '4px 8px' } }, t('batch.cancel'))
+                                ]
+                              : h('button', {
+                                  type: 'button',
+                                  onClick: () => runBatch(section, batchTarget),
+                                  disabled: batchTarget === null || batchPhase !== null || readonlyMode,
+                                  style: batchTarget === null ? { ...buttonStyle, fontSize: 11, padding: '4px 8px', opacity: 0.5 } : { ...buttonStyle, fontSize: 11, padding: '4px 8px' },
+                                  'aria-label': t('batch.applyAria', { phase: t('phase.' + section.id) })
+                                }, t('batch.apply')))
+                            : null),
+                        h('div', { style: gridStyle }, section.roles.map((role) => renderCard(role, density === 'compact'))));
+                      })));
       };
     }
 

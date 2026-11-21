@@ -70,7 +70,7 @@ Salvar configurações idênticas às que já estão no card é um no-op: o pain
 
 Toda edição é protegida contra perda de trabalho. Alterar um card o marca como não salvo — o card ganha uma borda âmbar e o nome do papel ganha o sufixo “ (não salvo)” — e sair da página com edições não salvas dispara a confirmação de saída do navegador. Ctrl+S / Cmd+S salva o card em foco (no-op quando nada está em foco). Rascunhos não salvos sobrevivem à troca de abas e à reabertura da seção de configurações: eles são mantidos enquanto o estado do card no servidor ainda corresponde ao estado em que o rascunho se baseou, e uma mudança externa no disco descarta o rascunho obsoleto. O botão Refresh comum reseta os rascunhos; a ação de conflito abaixo é o caminho que preserva rascunhos. Cada salvamento oferece Desfazer: um nível por card, apenas para a sessão do navegador, nunca persistido — ele restaura as configurações anteriores àquele salvamento. Quando um salvamento ou desfazer falha com `409` porque o card mudou por baixo, a mensagem oferece “Recarregar estado salvo, manter edições”, que relê o estado salvo e reaplica o rascunho sem jamais reenviar o `mtimeMs` obsoleto; um `409` em um salvamento que definiu um esforço de raciocínio também aponta para o select de Esforço de raciocínio. Uma região aria-live polite anuncia o resultado do último salvamento ou desfazer, e um card salvo mantém uma borda verde até a próxima alteração.
 
-O painel fala com quatro rotas: `GET /api/dsh-orchestrator-kit.roles`, `GET /api/dsh-orchestrator-kit.catalog`, `GET /api/dsh-orchestrator-kit.efforts` e `POST /api/dsh-orchestrator-kit.route`. Respostas bem-sucedidas trazem um cabeçalho `Server-Timing` (apenas durações) quando uma métrica de tempo foi medida — leituras de roles, leituras de catalog, validação de rota e escritas; um salvamento sem alteração que não executou validação de rota não traz nenhum. A legenda mostra os tempos do último carregamento.
+O painel fala com seis rotas: `GET /api/dsh-orchestrator-kit.roles`, `GET /api/dsh-orchestrator-kit.catalog`, `GET /api/dsh-orchestrator-kit.efforts`, `GET /api/dsh-orchestrator-kit.events`, `GET /api/dsh-orchestrator-kit.diagnostics` e `POST /api/dsh-orchestrator-kit.route`. Respostas bem-sucedidas trazem um cabeçalho `Server-Timing` (apenas durações) quando uma métrica de tempo foi medida — leituras de roles, leituras de catalog, validação de rota e escritas; um salvamento sem alteração que não executou validação de rota não traz nenhum. A legenda mostra os tempos do último carregamento.
 
 Cada salvamento é protegido de ponta a ponta:
 
@@ -81,6 +81,24 @@ Cada salvamento é protegido de ponta a ponta:
 - **Limites de requisição** — corpos de salvamento de rota são limitados a 65536 bytes (`413` acima disso, antes de qualquer leitura de disco) e apenas campos conhecidos são aceitos (campos desconhecidos retornam `400`).
 - **Orientação no lock ocupado** — quando outro escritor segura o lock do card, o salvamento retorna `503` com o nome do lock e orientação de nova tentativa; arquivos de lock nunca são removidos automaticamente.
 - **Ocultação de segredos** — formas conhecidas de segredos e caminhos do diretório pessoal do usuário em corpos de erro e logs são substituídos pelos marcadores `[redacted]` e `[home]`, mantendo códigos de erro e contexto intactos.
+- **Modo somente leitura** — defina `DSH_ORCHESTRATOR_READONLY=1` (ou `true`) e o servidor responde a cada salvamento com `403` antes de ler o corpo ou tocar no disco; o painel espelha o flag vindo do bootstrap de roles e desativa todos os controles de escrita, exibindo um aviso de somente leitura. A exportação continua disponível — ela apenas lê.
+
+## Aplicar em lote, perfis, histórico e diagnóstico
+
+- **Aplicar em lote por fase** — em uma aba de fase (nunca na aba "All roles"), o cabeçalho de cada seção traz um botão **Aplicar à fase**. Ele copia a rota/esforço em rascunho do card de origem (o primeiro card com rascunho sujo) para todos os outros cards da seção, enviando um salvamento por card com seu próprio `mtimeMs` esperado. Os resultados são por card: um conflito `409` mantém o loop e reporta naquele card, uma falha que não seja 409 (por exemplo, o lock ocupado `503`) interrompe a execução e reporta o que foi aplicado, e o botão Cancelar para depois do card em andamento. Aplicar em lote nunca é atômico — é uma sequência de salvamentos validados comuns.
+- **Perfis de roteamento** — **Exportar perfil** grava as rotas salvas de todos os papéis em um JSON versionado (`version: 1`, `generator`, `roles` chaveado por id de papel; nenhum `mtimeMs` em lugar algum). **Importar perfil** valida todas as entradas primeiro — versão não suportada, rotas escritas pela metade ou ids malformados rejeitam o arquivo inteiro e nada é gravado; ids desconhecidos nesta máquina são ignorados com contagem. Depois que a validação passa, o painel recarrega a lista de cards (mtimes novos) e aplica cada entrada como um salvamento comum; entradas com falha são reportadas e nada é sobrescrito em silêncio.
+- **Alterações recentes** — cada salvamento bem-sucedido acrescenta um registro a um arquivo JSONL append-only ao lado dos cards (`.orchestrator-audit.jsonl`): hora, id do papel, rota anterior/seguinte, origem. Ele não guarda segredos nem caminhos absolutos, e é best-effort — uma falha ao gravar a auditoria nunca faz o salvamento falhar ou ser revertido. A seção **Alterações recentes** do painel (dentro da legenda) mostra os últimos 50 registros e é carregada sob demanda, nunca em cache.
+- **Diagnóstico dos cartões instalados** — uma seção somente leitura (dentro da legenda) reporta papéis ausentes no conjunto instalado em relação às origens em `craft/`, cards com frontmatter inválido, rotas que citam um modelo ausente do catálogo ao vivo e cards cujo corpo difere da origem em craft/ (o frontmatter diverge legitimamente; os corpos são comparados). Calculado sob demanda, nunca em cache; degrada graciosamente quando `craft/` está ausente.
+
+## Instalar o bundle Craft com o script
+
+Em vez de copiar `craft/` à mão:
+
+```
+node scripts/install-craft.js [--dry-run]
+```
+
+O script copia os 20 cards de papel para a raiz de agentes (`$DSH_AGENTS_HOME/agents/` quando a variável estiver definida, caso contrário `~/.agents/agents/`) e a árvore da skill dev-flow para `<raiz de agentes>/skills/dev-flow/`. Ele **sempre ignora arquivos existentes** — sem modo de sobrescrita, sem backups —, então um card editado pelo usuário nunca é sobrescrito; apague o arquivo para reinstalá-lo. Um lock de escrita retido produz a orientação documentada de nova tentativa/operação e o script sai com código 1. `--dry-run` reporta o que seria copiado sem escrever nada.
 
 ## Os 20 papéis
 
@@ -145,6 +163,15 @@ Cada aba mostra uma distribuição `roteado / herdado / desativado` dos seus pap
 **Funciona sem Agent Teams?**
 Não. As rotas são aplicadas quando o DSH despacha membros por `subagent_role`, que exige Agent Teams.
 
+**Como aplico uma rota a uma fase inteira?**
+Troque para a aba dessa fase, defina no card de origem a rota/esforço desejado (ele fica não salvo) e pressione o botão **Aplicar à fase** no cabeçalho da seção. Todos os outros cards da seção recebem essa rota como seu próprio salvamento validado; o resumo conta papéis aplicados, conflitos e falhas, e o botão Cancelar para depois do card em andamento.
+
+**Como levo meu roteamento para outra máquina?**
+Use **Exportar perfil** para baixar um JSON versionado de todas as rotas salvas, e **Importar perfil** na outra máquina. A importação valida o arquivo inteiro antes de gravar qualquer coisa, ignora ids de papéis que não existem localmente e aplica cada entrada com um `mtimeMs` lido de novo — nunca confiando nos mtimes carregados pelo arquivo (não há nenhum).
+
+**Onde fica o histórico de alterações?**
+Em um arquivo JSONL append-only ao lado dos cards de papel: `$DSH_AGENTS_HOME/agents/.orchestrator-audit.jsonl` quando a variável estiver definida, caso contrário `~/.agents/agents/.orchestrator-audit.jsonl`. Uma linha por salvamento bem-sucedido; a seção Alterações recentes do painel mostra os últimos 50. O arquivo cresce por design — apare-o manualmente se não quiser o histórico.
+
 **Preciso de chaves de provider?**
 Não. O kit não embute providers — os selects listam o que o catálogo do harness já oferece, com as credenciais que o próprio harness guarda.
 
@@ -160,7 +187,7 @@ PRs pequenos, Conventional Commits e `node scripts/test.mjs` verde três vezes a
 
 ## Segurança
 
-Sem superfície de execução remota: o kit só serve rotas HTTP locais e escreve frontmatter de cards de papel. Reporte vulnerabilidades em privado conforme [SECURITY.md](SECURITY.md).
+Sem superfície de execução remota: o kit só serve rotas HTTP locais e escreve frontmatter de cards de papel. O histórico de alterações registra apenas ids de papéis e valores de rota — nunca segredos, caminhos absolutos ou conteúdo dos cards — e o modo somente leitura e o script de instalação estão documentados em [SECURITY.md](SECURITY.md). Reporte vulnerabilidades em privado conforme [SECURITY.md](SECURITY.md).
 
 ## Licença
 

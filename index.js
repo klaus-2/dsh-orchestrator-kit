@@ -1,6 +1,7 @@
-import { lstat, readFile, readdir, realpath, stat } from 'node:fs/promises';
+import { appendFile, lstat, readFile, readdir, realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write';
 import { parseDocument, visit } from 'yaml';
 
@@ -21,6 +22,13 @@ function agentsRootOf(env = process.env) {
   const configured = env.DSH_AGENTS_HOME;
   if (typeof configured === 'string' && configured.trim() !== '') return path.resolve(configured.trim());
   return path.join(homedir(), '.agents');
+}
+
+function readOnlyMode() {
+  const flag = process.env.DSH_ORCHESTRATOR_READONLY;
+  if (typeof flag !== 'string') return false;
+  const value = flag.trim().toLowerCase();
+  return value === '1' || value === 'true';
 }
 
 function isEntryName(value) {
@@ -102,6 +110,19 @@ function dominantEolOf(text) {
   const crlf = (text.match(/\r\n/g) ?? []).length;
   const lf = (text.match(/\n/g) ?? []).length - crlf;
   return lf >= crlf ? '\n' : '\r\n';
+}
+
+function bodyOf(text) {
+  const match = FRONTMATTER.exec(text);
+  return match === null ? text : text.slice(match[0].length);
+}
+
+function craftAgentsDirOf() {
+  try {
+    return fileURLToPath(new URL('./craft/agents/', import.meta.url));
+  } catch {
+    return null;
+  }
 }
 
 function optionalScalar(meta, key, basename) {
@@ -188,6 +209,17 @@ function parseRoleCard(text, basename = 'role card', options = {}) {
     ...(model === undefined ? {} : { model }),
     ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
     disabled: meta.disabled === true
+  };
+}
+
+function summarizeMeta(meta) {
+  const text = (value) => typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
+  const model = text(meta?.model);
+  return {
+    provider: text(meta?.provider),
+    model: model === 'inherit' ? null : model,
+    reasoningEffort: text(meta?.reasoning_effort) ?? text(meta?.reasoningEffort),
+    disabled: meta?.disabled === true
   };
 }
 
@@ -436,6 +468,7 @@ async function apply(ctx, config = {}) {
     }
   });
   const cardsDir = () => path.join(agentsRootOf(), 'agents');
+  const auditFileOf = () => path.join(cardsDir(), '.orchestrator-audit.jsonl');
   const timeoutMs = typeof config?.catalogTimeoutMs === 'number' && Number.isFinite(config.catalogTimeoutMs) && config.catalogTimeoutMs > 0
     ? config.catalogTimeoutMs
     : CATALOG_TIMEOUT_MS;
@@ -456,7 +489,7 @@ async function apply(ctx, config = {}) {
       try {
         entries = await readdir(cardsDir(), { withFileTypes: true });
       } catch (error) {
-        if (error?.code === 'ENOENT') return json({ ok: true, roles: [], invalid: [] }, 200, [['reads', performance.now() - started]]);
+        if (error?.code === 'ENOENT') return json({ ok: true, roles: [], invalid: [], readOnly: readOnlyMode() }, 200, [['reads', performance.now() - started]]);
         console.warn(redactText(`${name}: the roles directory is unreadable:`), safeErrorText(error));
         return json({ ok: false, error: `the roles directory is unreadable: ${safeErrorText(error)}` }, 500);
       }
@@ -496,7 +529,7 @@ async function apply(ctx, config = {}) {
       await Promise.all(Array.from({ length: Math.min(CARD_READ_CONCURRENCY, candidates.length) }, () => worker()));
       roles.sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
       invalid.sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
-      return json({ ok: true, roles, invalid }, 200, [['reads', performance.now() - started]]);
+      return json({ ok: true, roles, invalid, readOnly: readOnlyMode() }, 200, [['reads', performance.now() - started]]);
     }
   });
 
@@ -551,10 +584,127 @@ async function apply(ctx, config = {}) {
   });
 
   ctx.connection?.fetch?.register({
+    path: '/api/dsh-orchestrator-kit.events',
+    methods: ['GET'],
+    requestBody: 'buffered',
+    fetch: async () => {
+      const started = performance.now();
+      const limit = 50;
+      let text = '';
+      try {
+        text = await readFile(auditFileOf(), 'utf8');
+      } catch (error) {
+        if (error?.code === 'ENOENT') return json({ ok: true, events: [], skipped: 0 }, 200, [['reads', performance.now() - started]]);
+        console.warn(redactText(`${name}: the audit log is unreadable:`), safeErrorText(error));
+        return json({ ok: false, error: `the audit log is unreadable: ${safeErrorText(error)}` }, 500);
+      }
+      const lines = text.split('\n').filter((line) => line.trim() !== '');
+      const events = [];
+      let skipped = 0;
+      for (const line of lines.slice(-limit)) {
+        try {
+          const record = JSON.parse(line);
+          if (record === null || typeof record !== 'object') { skipped += 1; continue; }
+          events.push({
+            at: typeof record.at === 'string' ? record.at : null,
+            id: typeof record.id === 'string' ? record.id : null,
+            previous: record.previous ?? null,
+            next: record.next ?? null,
+            origin: typeof record.origin === 'string' ? record.origin : null
+          });
+        } catch { skipped += 1; }
+      }
+      return json({ ok: true, events, skipped }, 200, [['reads', performance.now() - started]]);
+    }
+  });
+
+  ctx.connection?.fetch?.register({
+    path: '/api/dsh-orchestrator-kit.diagnostics',
+    methods: ['GET'],
+    requestBody: 'buffered',
+    fetch: async () => {
+      const started = performance.now();
+      const report = { missing: [], invalid: [], outsideCatalog: [], drift: [], craftAvailable: false };
+      const installed = [];
+      try {
+        const entries = await readdir(cardsDir(), { withFileTypes: true });
+        for (const entry of entries) {
+          if (!entry.isFile() || !entry.name.endsWith('.md')) continue;
+          const id = entry.name.slice(0, -3);
+          let text;
+          try {
+            text = await readFile(path.join(cardsDir(), entry.name), 'utf8');
+          } catch (error) {
+            report.invalid.push({ id, error: safeErrorText(error) });
+            continue;
+          }
+          try {
+            const card = parseRoleCard(text, entry.name);
+            installed.push({ id, card, body: bodyOf(text) });
+          } catch (error) {
+            report.invalid.push({ id, error: safeErrorText(error) });
+          }
+        }
+      } catch (error) {
+        if (error?.code !== 'ENOENT') {
+          console.warn(redactText(`${name}: the roles directory is unreadable for diagnostics:`), safeErrorText(error));
+          return json({ ok: false, error: `the roles directory is unreadable: ${safeErrorText(error)}` }, 500);
+        }
+      }
+      const craftDir = craftAgentsDirOf();
+      if (craftDir !== null) {
+        report.craftAvailable = true;
+        let craftIds = [];
+        try {
+          craftIds = (await readdir(craftDir, { withFileTypes: true }))
+            .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
+            .map((entry) => entry.name.slice(0, -3));
+        } catch (error) {
+          if (error?.code !== 'ENOENT') console.warn(redactText(`${name}: craft sources are unreadable:`), safeErrorText(error));
+          report.craftAvailable = false;
+          craftIds = [];
+        }
+        if (report.craftAvailable) {
+          const installedIds = new Set(installed.map((entry) => entry.id));
+          report.missing = craftIds.filter((id) => !installedIds.has(id)).sort();
+          for (const entry of installed) {
+            if (!craftIds.includes(entry.id)) continue;
+            try {
+              const source = await readFile(path.join(craftDir, `${entry.id}.md`), 'utf8');
+              if (bodyOf(source) !== entry.body) report.drift.push(entry.id);
+            } catch (error) {
+              if (error?.code !== 'ENOENT') console.warn(redactText(`${name}: craft source ${entry.id} is unreadable:`), safeErrorText(error));
+            }
+          }
+          report.drift.sort();
+        }
+      }
+      const catalog = await modelCatalog(ctx, timeoutMs);
+      if (catalog.available === true) {
+        const catalogIds = new Set();
+        for (const group of catalog.groups) {
+          for (const model of group.models) catalogIds.add(`${group.provider}/${model.id}`);
+        }
+        for (const entry of installed) {
+          const provider = entry.card.provider;
+          const model = entry.card.model;
+          if (typeof provider !== 'string' || typeof model !== 'string' || model === 'inherit') continue;
+          if (!catalogIds.has(`${provider}/${model}`)) report.outsideCatalog.push(entry.id);
+        }
+      }
+      report.outsideCatalog.sort();
+      return json({ ok: true, ...report }, 200, [['catalog', performance.now() - started]]);
+    }
+  });
+
+  ctx.connection?.fetch?.register({
     path: '/api/dsh-orchestrator-kit.route',
     methods: ['POST'],
     requestBody: 'buffered',
     fetch: async (request) => {
+      if (readOnlyMode()) {
+        return json({ ok: false, code: 'readonly', error: 'the panel is in read-only mode: saving is disabled by the server configuration' }, 403);
+      }
       const contentLength = Number(request.headers.get('content-length'));
       if (Number.isFinite(contentLength) && contentLength > MAX_ROUTE_BODY_BYTES) {
         return json({ ok: false, error: `the request body exceeds the ${MAX_ROUTE_BODY_BYTES}-byte limit` }, 413);
@@ -752,6 +902,17 @@ async function apply(ctx, config = {}) {
           try {
             const afterStat = await lstatNoSymlink(file);
             const afterText = await readFile(file, 'utf8');
+            try {
+              await appendFile(auditFileOf(), `${JSON.stringify({
+                at: new Date().toISOString(),
+                id,
+                previous: summarizeMeta(existingMeta),
+                next: { provider: nextCard.provider ?? null, model: nextCard.model ?? null, reasoningEffort: nextCard.reasoningEffort ?? null, disabled: nextCard.disabled === true },
+                origin: 'panel'
+              })}\n`, 'utf8');
+            } catch (error) {
+              console.warn(redactText(`${name}: appending the audit record for ${id} failed:`), safeErrorText(error));
+            }
             return { status: 200, mtimeMs: afterStat.mtimeMs, text: afterText };
           } catch (error) {
             if (error?.statusCode === 400) return { status: 400, error: safeErrorText(error) };

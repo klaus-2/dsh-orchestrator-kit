@@ -70,7 +70,7 @@ Saving settings identical to the card's current ones is a no-op: the panel answe
 
 Every edit is protected against losing work. Changing a card marks it unsaved — the card gains an amber border and the role name gains the “ (unsaved)” suffix — and leaving the page with unsaved edits triggers the browser's leave confirmation. Ctrl+S / Cmd+S saves the focused card (a no-op when nothing is focused). Unsaved drafts survive switching tabs and reopening the settings section: they are kept while the card's server state still matches the state the draft was based on, and an external change on disk discards the stale draft. The plain Refresh button resets drafts; the conflict action below is the draft-preserving path. Every save offers Undo: one level per card, for the browser session only, never persisted — it restores the settings from before that save. When a save or undo fails with `409` because the card changed underneath, the message offers “Reload saved state, keep edits”, which re-reads the saved state and reapplies the draft without ever resending the stale `mtimeMs`; a `409` on a save that set a reasoning effort also points to the Reasoning effort select. A polite live region announces the last save or undo outcome, and a saved card keeps a green border until the next change.
 
-The panel talks to four routes: `GET /api/dsh-orchestrator-kit.roles`, `GET /api/dsh-orchestrator-kit.catalog`, `GET /api/dsh-orchestrator-kit.efforts` and `POST /api/dsh-orchestrator-kit.route`. Successful responses carry a `Server-Timing` header (durations only) when a timing metric was measured — roles reads, catalog reads, route validation and writes; an unchanged save that ran no route validation carries none. The legend shows the last load timings.
+The panel talks to six routes: `GET /api/dsh-orchestrator-kit.roles`, `GET /api/dsh-orchestrator-kit.catalog`, `GET /api/dsh-orchestrator-kit.efforts`, `GET /api/dsh-orchestrator-kit.events`, `GET /api/dsh-orchestrator-kit.diagnostics` and `POST /api/dsh-orchestrator-kit.route`. Successful responses carry a `Server-Timing` header (durations only) when a timing metric was measured — roles reads, catalog reads, route validation and writes; an unchanged save that ran no route validation carries none. The legend shows the last load timings.
 
 Every save is protected end to end:
 
@@ -81,6 +81,24 @@ Every save is protected end to end:
 - **Request limits** — route-save bodies are capped at 65536 bytes (`413` beyond that, before any disk read) and only known fields are accepted (unknown fields return `400`).
 - **Busy-lock guidance** — when another writer holds the card lock, the save returns `503` with the lock name and retry guidance; lock files are never removed automatically.
 - **Secret redaction** — known secret shapes and user-home paths in error bodies and logs are replaced by `[redacted]` and `[home]` markers, keeping error codes and context intact.
+- **Read-only mode** — set `DSH_ORCHESTRATOR_READONLY=1` (or `true`) and the server answers every save with `403` before reading the body or touching disk; the panel mirrors the flag from the roles bootstrap and disables every mutating control, showing a read-only notice. Export stays available — it only reads.
+
+## Batch apply, profiles, change log and diagnostics
+
+- **Batch apply per phase** — on a phase tab (never the "All roles" tab), each section header carries an **Apply to phase** button. It copies the source card's draft route/effort (the first card with a dirty draft) to every other card in that section, posting one save per card with its own expected `mtimeMs`. Results are per-card: a `409` conflict keeps the loop going and reports on that card, a non-409 failure (for example the `503` busy lock) stops the run and reports what was applied, and a Cancel button stops after the in-flight card. Batch apply is never atomic — it is a sequence of ordinary validated saves.
+- **Routing profiles** — **Export profile** writes the saved routes of all roles to a versioned JSON (`version: 1`, `generator`, `roles` keyed by role id; no `mtimeMs` anywhere). **Import profile** validates every entry first — unsupported version, half-written routes or malformed ids reject the whole file and write nothing; ids unknown on this machine are skipped with a count. After validation passes, the panel refreshes the card list (fresh mtimes), then applies each entry as a normal save; failed entries are reported and nothing is silently overwritten.
+- **Recent changes** — every successful save appends one record to an append-only JSONL file beside the cards (`.orchestrator-audit.jsonl`): time, role id, previous/next route, origin. It stores no secrets and no absolute paths, and it is best-effort — an audit-write failure never fails or rolls back the save. The panel's **Recent changes** section (inside the legend) shows the last 50 records and is fetched on demand, never cached.
+- **Installed-card diagnostics** — a read-only section (inside the legend) reports roles missing from the installed set versus the `craft/` sources, cards with invalid frontmatter, routes naming a model absent from the live catalog, and cards whose body differs from the craft source (frontmatter legitimately diverges, bodies are compared). Computed on demand, never cached; it degrades gracefully when `craft/` is absent.
+
+## Install the craft bundle with the script
+
+Instead of copying `craft/` by hand:
+
+```
+node scripts/install-craft.js [--dry-run]
+```
+
+The script copies the 20 role cards into the agents root (`$DSH_AGENTS_HOME/agents/` when that variable is set, otherwise `~/.agents/agents/`) and the dev-flow skill tree into `<agents home>/skills/dev-flow/`. It **skips existing files always** — no overwrite mode, no backups — so a user-edited card is never clobbered; delete the file to reinstall it. A held writer lock produces the documented retry/operator guidance and the script exits 1. `--dry-run` reports what would be copied without writing anything.
 
 ## The 20 roles
 
@@ -145,6 +163,15 @@ Each tab shows a `routed / inherit / disabled` breakdown of its roles in saved s
 **Does it work without Agent Teams?**
 No. Routes are applied when DSH dispatches members through `subagent_role`, which requires Agent Teams.
 
+**How do I apply a route to a whole phase?**
+Switch to that phase's tab, set the route/effort you want on one card (it stays unsaved), and press the **Apply to phase** button in the section header. Every other card in the section receives that route as its own validated save; the summary counts applied roles, conflicts and failures, and the Cancel button stops after the card in flight.
+
+**How do I move my routing to another machine?**
+Use **Export profile** to download a versioned JSON of all saved routes, and **Import profile** on the other machine. Import validates the whole file before writing anything, skips role ids that do not exist locally, and applies each entry with a freshly read `mtimeMs` — never trusting mtimes carried by the file (there are none).
+
+**Where is the change log stored?**
+In an append-only JSONL file beside the role cards: `$DSH_AGENTS_HOME/agents/.orchestrator-audit.jsonl` when that variable is set, otherwise `~/.agents/agents/.orchestrator-audit.jsonl`. One line per successful save; the panel's Recent changes section shows the last 50. The file grows by design — trim it manually if you do not want the history.
+
 **Do I need provider API keys?**
 No. The kit has no embedded providers — the selects list what the harness catalog already offers, with the credentials the harness itself holds.
 
@@ -160,7 +187,7 @@ Small PRs, Conventional Commits, and `node scripts/test.mjs` green three times b
 
 ## Security
 
-No remote-execution surface: the kit only serves local HTTP routes and writes role-card frontmatter. Report issues privately per [SECURITY.md](SECURITY.md).
+No remote-execution surface: the kit only serves local HTTP routes and writes role-card frontmatter. The audit log records role ids and route values only — never secrets, absolute paths or card contents — and the read-only mode plus the install script are documented in [SECURITY.md](SECURITY.md). Report issues privately per [SECURITY.md](SECURITY.md).
 
 ## License
 
