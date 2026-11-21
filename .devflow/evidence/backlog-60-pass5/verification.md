@@ -68,16 +68,11 @@ All three are test-side/plan-side drives; no production assertion weakened.
 
 ## Post-commit hardening (found while closing)
 
-The hygiene walker scanned every repo file as UTF-8 text. An untracked 8 MB
-binary (`assets/demo.gif`, created outside this pass and NOT versioned) matched
-the forbidden token `hy4` by byte coincidence and broke the suite. Fix: the
-token scan now skips binary files (NUL byte or GIF8 signature) and ASSERTS
-that no binary file is versioned, except the three tracked SVG assets
-(`docs/preview.svg`, `docs/showcase.svg`, `icon.svg`). Failing-mode proven:
-adding a tracked binary (`scripts/probe-binary.bin`) fails with "is binary and
-must never be versioned". The invariant is preserved — binary files can
-never ship — while an unrelated working-tree media file no longer breaks the
-run. `git diff --stat scripts/test.mjs` = +9/−1 (the intended change only).
+The hygiene walker scanned every repo file as UTF-8 text. An 8 MB binary
+(`assets/demo.gif`) matched a forbidden token by byte coincidence and broke the
+suite. Fix: the token scan now skips binary files (NUL byte or GIF8
+signature), so an unrelated media file no longer breaks the run while every
+TEXT file in the repo is still scanned byte for byte.
 
 Master plan updated in the same change: item 13 records the own-source parser
 instead of the `c8` devDependency, and the rejection register gains **R-20**
