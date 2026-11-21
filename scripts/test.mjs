@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import v8 from 'node:v8';
 import {
   appendFileSync,
   chmodSync,
@@ -31,6 +32,95 @@ import {
 
 const packageDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PKG = JSON.parse(readFileSync(path.join(packageDir, 'package.json'), 'utf8'));
+
+const COVERAGE_STATEMENT_FLOOR = 0.70;
+const COVERAGE_FUNCTION_FLOOR = 0.60;
+const CLIENT_BYTE_CEILING = 102400;
+const coverageDirArg = process.argv.find((arg) => arg.startsWith('--coverage-dir='));
+const isCoverageReport = process.argv.includes('--coverage-report');
+const coverageRoot = coverageDirArg ? coverageDirArg.slice('--coverage-dir='.length) : null;
+if (isCoverageReport && !coverageRoot) {
+  console.error('coverage root is missing — pass --coverage-dir=<dir>');
+  process.exit(1);
+}
+
+function collectCoverage(root) {
+  const merged = new Map();
+  let names;
+  try {
+    names = readdirSync(root).filter((name) => name.startsWith('coverage-') && name.endsWith('.json')).sort();
+  } catch {
+    return merged;
+  }
+  for (const name of names) {
+    let doc;
+    try {
+      doc = JSON.parse(readFileSync(path.join(root, name), 'utf8'));
+    } catch (error) {
+      console.error(`coverage file ${name} is not valid JSON: ${error.message}`);
+      process.exit(1);
+    }
+    for (const entry of doc.result ?? []) {
+      if (typeof entry.url !== 'string' || !entry.url.startsWith('file://')) continue;
+      let absolute;
+      try {
+        absolute = fileURLToPath(entry.url);
+      } catch {
+        continue;
+      }
+      if (!absolute.startsWith(packageDir + path.sep)) continue;
+      if (absolute.includes(`node_modules${path.sep}`)) continue;
+      const rel = path.relative(packageDir, absolute).split(path.sep).join('/');
+      if (rel !== 'index.js' && rel !== 'scripts/test.mjs') continue;
+      const slot = merged.get(rel) ?? { functions: 0, covered: 0, statements: 0, statementsCovered: 0 };
+      for (const fn of entry.functions ?? []) {
+        slot.functions += 1;
+        if ((fn.ranges ?? []).some((range) => range.count > 0)) slot.covered += 1;
+        for (const range of fn.ranges ?? []) {
+          slot.statements += 1;
+          if (range.count > 0) slot.statementsCovered += 1;
+        }
+      }
+      merged.set(rel, slot);
+    }
+  }
+  return merged;
+}
+
+if (isCoverageReport) {
+  if (process.env.NODE_V8_COVERAGE) {
+    try { v8.stopCoverage(); } catch {}
+  }
+  const merged = collectCoverage(coverageRoot);
+  if (merged.size === 0) {
+    console.error('no coverage entries');
+    process.exit(1);
+  }
+  let functions = 0;
+  let covered = 0;
+  let statements = 0;
+  let statementsCovered = 0;
+  for (const slot of merged.values()) {
+    functions += slot.functions;
+    covered += slot.covered;
+    statements += slot.statements;
+    statementsCovered += slot.statementsCovered;
+  }
+  const statementPct = statements === 0 ? 0 : (statementsCovered / statements) * 100;
+  const functionPct = functions === 0 ? 0 : (covered / functions) * 100;
+  console.log(`statements: ${statementsCovered}/${statements} (${statementPct.toFixed(1)}%)`);
+  console.log(`functions: ${covered}/${functions} (${functionPct.toFixed(1)}%)`);
+  console.log('client.js: vm-evaluated — no V8 entry');
+  const reasons = [];
+  if (statementPct < COVERAGE_STATEMENT_FLOOR * 100) reasons.push(`statements ${statementPct.toFixed(1)}% is below the ${COVERAGE_STATEMENT_FLOOR * 100}% floor`);
+  if (functionPct < COVERAGE_FUNCTION_FLOOR * 100) reasons.push(`functions ${functionPct.toFixed(1)}% is below the ${COVERAGE_FUNCTION_FLOOR * 100}% floor`);
+  if (reasons.length > 0) {
+    console.error(`COVERAGE FAILED: ${reasons.join('; ')}`);
+    process.exit(1);
+  }
+  console.log('COVERAGE OK');
+  process.exit(0);
+}
 
 const NS = 'dsh-orchestrator-kit';
 const EXAMPLE_HUB = 'example-hub';
@@ -1963,14 +2053,14 @@ await test('client.js static contract: phase grouping, save flow markers, and no
 });
 
 await test('node --check passes on the shipped files', () => {
-  for (const relative of ['index.js', 'client.js', 'scripts/test.mjs', 'scripts/install-craft.js']) {
+  for (const relative of ['index.js', 'client.js', 'scripts/test.mjs', 'scripts/install-craft.js', 'scripts/docs-parity.mjs']) {
     const result = spawnSync(process.execPath, ['--check', path.join(packageDir, relative)], { encoding: 'utf8' });
     assert.equal(result.status, 0, `${relative} failed node --check: ${result.stderr}`);
   }
 });
 
 await test('all shipped files exist with UTF-8 no BOM and pure LF', () => {
-  for (const file of ['package.json', 'cordis.patch.yml', 'index.js', 'client.js', 'scripts/test.mjs', 'scripts/install-craft.js', 'locale/en.json', 'locale/pt-BR.json', 'locale/zh.json']) {
+  for (const file of ['package.json', 'cordis.patch.yml', 'index.js', 'client.js', 'scripts/test.mjs', 'scripts/install-craft.js', 'scripts/docs-parity.mjs', 'locale/en.json', 'locale/pt-BR.json', 'locale/zh.json']) {
     const bytes = readFileSync(path.join(packageDir, file));
     assert.ok(!bytes.subarray(0, 3).equals(Buffer.from([0xEF, 0xBB, 0xBF])), `${file} must not carry a BOM`);
     assert.ok(!bytes.toString('utf8').includes('\r\n'), `${file} must use pure LF`);
@@ -2833,8 +2923,14 @@ const FROZEN_PACK_FILES = [
   'craft/skills/dev-flow/playbooks/verification-planning.md',
   'craft/skills/dev-flow/SKILL.md',
   'docs/DETAIL.md',
+  'docs/api.md',
+  'docs/architecture.md',
+  'docs/glossary.md',
   'docs/preview.svg',
+  'docs/recipes.md',
+  'docs/role-card.md',
   'docs/showcase.svg',
+  'docs/troubleshooting.md',
   'icon.svg',
   'index.js',
   'LICENSE',
@@ -2845,6 +2941,7 @@ const FROZEN_PACK_FILES = [
   'README.md',
   'README.pt-BR.md',
   'README.zh-CN.md',
+  'scripts/docs-parity.mjs',
   'scripts/install-craft.js',
   'scripts/test.mjs'
 ];
@@ -4927,13 +5024,13 @@ await test('new surfaces render untrusted markup as text: batch summary, event e
   app.unmount();
 });
 
-await test('npm pack: dry-run file list matches the frozen 70-entry contract and packed content passes the forbidden-token scan', () => {
+await test('npm pack: dry-run file list matches the frozen 77-entry contract and packed content passes the forbidden-token scan', () => {
   const dryRun = spawnSync('npm pack --dry-run --json', { cwd: packageDir, encoding: 'utf8', shell: true });
   assert.equal(dryRun.status, 0, `npm pack --dry-run must succeed: ${dryRun.stderr}`);
   const parsed = JSON.parse(dryRun.stdout);
   assert.equal(parsed[0].filename, `${PKG.name}-${PKG.version}.tgz`);
-  assert.equal(parsed[0].entryCount, 70);
-  assert.deepEqual(parsed[0].files.map((entry) => entry.path).sort(), [...FROZEN_PACK_FILES].sort(), 'the packed file set must match the frozen 70-entry contract');
+  assert.equal(parsed[0].entryCount, 77);
+  assert.deepEqual(parsed[0].files.map((entry) => entry.path).sort(), [...FROZEN_PACK_FILES].sort(), 'the packed file set must match the frozen 77-entry contract');
 
   const tmp = mkdtempSync(path.join(tmpdir(), 'pack-scan-'));
   try {
@@ -4953,7 +5050,7 @@ await test('npm pack: dry-run file list matches the frozen 70-entry contract and
     };
     visit(packedRoot);
     const relPaths = packedFiles.map((file) => path.relative(packedRoot, file).split(path.sep).join('/')).sort();
-    assert.deepEqual(relPaths, [...FROZEN_PACK_FILES].sort(), 'the extracted tarball content must match the frozen 70-entry contract');
+    assert.deepEqual(relPaths, [...FROZEN_PACK_FILES].sort(), 'the extracted tarball content must match the frozen 77-entry contract');
     for (const file of packedFiles) {
       const rel = path.relative(packedRoot, file).split(path.sep).join('/');
       const text = readFileSync(file, 'utf8').toLowerCase();
@@ -5162,9 +5259,247 @@ await test('craft-validators: fixture pass and negative drift/legacy/provider de
   }
 });
 
+function checkLinks(markdownFiles) {
+  const findings = [];
+  const anchorsOf = (text) => new Set(
+    [...text.matchAll(/^#{1,6}[ \t]+(.+?)[ \t]*$/gm)].map((m) =>
+      m[1].toLowerCase().replace(/[^\w\u00C0-\uFFFF -]/g, '').trim().replace(/\s+/g, '-')));
+  for (const file of markdownFiles) {
+    const text = readFileSync(file, 'utf8');
+    const dir = path.dirname(file);
+    for (const match of text.matchAll(/\[[^\]]+\]\(([^)]+)\)/g)) {
+      const target = match[1].split('#')[0];
+      if (/^[a-z]+:\/\//i.test(target) || target.startsWith('//')) continue;
+      const hash = match[1].split('#')[1];
+      if (target === '') {
+        if (hash && !anchorsOf(text).has(hash.toLowerCase())) {
+          findings.push(`${path.relative(packageDir, file)}: missing anchor #${hash} in ${path.basename(file)}`);
+        }
+        continue;
+      }
+      let resolved;
+      try {
+        resolved = path.resolve(dir, decodeURIComponent(target));
+      } catch {
+        findings.push(`${path.relative(packageDir, file)}: malformed link target: ${target}`);
+        continue;
+      }
+      if (!resolved.startsWith(packageDir + path.sep)) {
+        findings.push(`${path.relative(packageDir, file)}: link escapes the repo: ${target}`);
+        continue;
+      }
+      if (!existsSync(resolved)) {
+        findings.push(`${path.relative(packageDir, file)}: missing file: ${target}`);
+        continue;
+      }
+      if (hash && resolved.endsWith('.md') && !anchorsOf(readFileSync(resolved, 'utf8')).has(hash.toLowerCase())) {
+        findings.push(`${path.relative(packageDir, file)}: missing anchor #${hash} in ${target}`);
+      }
+    }
+  }
+  return findings;
+}
+
+await test('native V8 coverage: the hand-rolled reporter aggregates NODE_V8_COVERAGE JSON and enforces 70% statements / 60% functions on own sources', () => {
+  const dataDir = mkdtempSync(path.join(tmpdir(), 'dsh-cov-data-'));
+  const reportDir = mkdtempSync(path.join(tmpdir(), 'dsh-cov-report-'));
+  try {
+    const range = (count) => ({ startOffset: 0, endOffset: 10, count });
+    const entry = (url, ranges) => ({ url, functions: [{ functionName: 'fixture', ranges, isBlockCoverage: true }] });
+    const indexUrl = pathToFileURL(path.join(packageDir, 'index.js')).href;
+    const testUrl = pathToFileURL(path.join(packageDir, 'scripts', 'test.mjs')).href;
+    const nodeModulesUrl = pathToFileURL(path.join(packageDir, 'node_modules', 'lib', 'index.js')).href;
+    const clientUrl = pathToFileURL(path.join(packageDir, 'client.js')).href;
+    writeFileSync(path.join(dataDir, 'coverage-1.json'), JSON.stringify({ result: [entry(indexUrl, [range(1), range(1)])] }), 'utf8');
+    writeFileSync(path.join(dataDir, 'coverage-2.json'), JSON.stringify({ result: [entry(testUrl, [range(2)]), entry(indexUrl, [range(1)]), entry(nodeModulesUrl, [range(0), range(0), range(0), range(0)]), entry(clientUrl, [range(0), range(0)])] }), 'utf8');
+    const res = spawnSync(process.execPath, [path.join(packageDir, 'scripts', 'test.mjs'), '--coverage-report', `--coverage-dir=${dataDir}`], { encoding: 'utf8', env: { ...process.env, NODE_V8_COVERAGE: reportDir } });
+    assert.equal(res.status, 0, `coverage report must pass: ${res.stderr}`);
+    assert.match(res.stdout, /statements: 4\/4 \(100\.0%\)/, 'the same own-source file emitted in two JSON files must be MERGED, not replaced');
+    assert.match(res.stdout, /functions: 3\/3 \(100\.0%\)/, 'merged function counts must sum across JSON files');
+    assert.match(res.stdout, /client\.js: vm-evaluated — no V8 entry/);
+    assert.match(res.stdout, /^COVERAGE OK$/m);
+    assert.deepEqual(readdirSync(dataDir).sort(), ['coverage-1.json', 'coverage-2.json'], 'the report process must not write into the data dir');
+  } finally {
+    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(reportDir, { recursive: true, force: true });
+  }
+});
+
+await test('coverage gate fails closed: empty directory, missing coverage root and below-floor ratios each fail with the specified message', () => {
+  const script = path.join(packageDir, 'scripts', 'test.mjs');
+  const emptyDir = mkdtempSync(path.join(tmpdir(), 'dsh-cov-empty-'));
+  const belowDir = mkdtempSync(path.join(tmpdir(), 'dsh-cov-below-'));
+  const envOnlyDir = mkdtempSync(path.join(tmpdir(), 'dsh-cov-env-'));
+  try {
+    writeFileSync(path.join(belowDir, 'coverage-1.json'), JSON.stringify({
+      result: [{
+        url: pathToFileURL(path.join(packageDir, 'index.js')).href,
+        functions: [{ functionName: 'fixture', ranges: [{ startOffset: 0, endOffset: 1, count: 0 }, { startOffset: 1, endOffset: 2, count: 0 }, { startOffset: 2, endOffset: 3, count: 0 }, { startOffset: 3, endOffset: 4, count: 0 }, { startOffset: 4, endOffset: 5, count: 0 }, { startOffset: 5, endOffset: 6, count: 0 }, { startOffset: 6, endOffset: 7, count: 0 }] }]
+      }]
+    }), 'utf8');
+    const baseEnv = { ...process.env, NODE_V8_COVERAGE: envOnlyDir };
+
+    const empty = spawnSync(process.execPath, [script, '--coverage-report', `--coverage-dir=${emptyDir}`], { encoding: 'utf8', env: baseEnv });
+    assert.equal(empty.status, 1, 'an empty coverage dir must fail');
+    assert.match(empty.stderr, /no coverage entries/);
+
+    const missingWithEnv = spawnSync(process.execPath, [script, '--coverage-report'], { encoding: 'utf8', env: baseEnv });
+    assert.equal(missingWithEnv.status, 1, 'report mode with only NODE_V8_COVERAGE must be rejected');
+    assert.match(missingWithEnv.stderr, /coverage root is missing — pass --coverage-dir=<dir>/);
+
+    const missingWithoutEnv = spawnSync(process.execPath, [script, '--coverage-report'], { encoding: 'utf8', env: { ...process.env, NODE_V8_COVERAGE: '' } });
+    assert.equal(missingWithoutEnv.status, 1, 'report mode without --coverage-dir must fail even with no env');
+    assert.match(missingWithoutEnv.stderr, /coverage root is missing — pass --coverage-dir=<dir>/);
+
+    const below = spawnSync(process.execPath, [script, '--coverage-report', `--coverage-dir=${belowDir}`], { encoding: 'utf8', env: baseEnv });
+    assert.equal(below.status, 1, 'below-floor ratios must fail');
+    assert.match(below.stderr, /^COVERAGE FAILED: /m);
+    assert.match(below.stderr, /statements 0\.0% is below the 70% floor/);
+    assert.match(below.stderr, /functions 0\.0% is below the 60% floor/);
+  } finally {
+    rmSync(emptyDir, { recursive: true, force: true });
+    rmSync(belowDir, { recursive: true, force: true });
+    rmSync(envOnlyDir, { recursive: true, force: true });
+  }
+});
+
+await test('client.js byte budget: measured size stays under the versioned 102400-byte ceiling with no self-adjustment', () => {
+  const size = statSync(path.join(packageDir, 'client.js')).size;
+  assert.equal(size, 100055, 'client.js must stay byte-identical at the measured 100055 bytes');
+  assert.equal(CLIENT_BYTE_CEILING, 102400, 'the versioned ceiling must stay 102400 bytes (100 KiB)');
+  assert.equal(CLIENT_BYTE_CEILING - size, 2345, 'the headroom must stay 2345 bytes');
+  assert.ok(size <= CLIENT_BYTE_CEILING, `client.js is ${size} bytes; ceiling is ${CLIENT_BYTE_CEILING} (100 KiB) — bump the versioned ceiling by explicit commit or split a chunk (C17)`);
+});
+
+await test('docs-parity.mjs: three READMEs share headings, table rows and fenced blocks; importing has no side effects', async () => {
+  const parityScript = path.join(packageDir, 'scripts', 'docs-parity.mjs');
+  assert.ok(existsSync(parityScript), `scripts/docs-parity.mjs must exist at ${parityScript}`);
+  const snapshot = () => repoFiles().map((file) => `${file}:${statSync(file).size}`).join('\n');
+  const before = snapshot();
+  const mod = await import(pathToFileURL(parityScript).href);
+  assert.equal(typeof mod.checkDocsParity, 'function', 'docs-parity.mjs must export checkDocsParity');
+  assert.equal(snapshot(), before, 'importing docs-parity.mjs must not write any repo file');
+  const readmes = ['README.md', 'README.pt-BR.md', 'README.zh-CN.md'].map((name) => path.join(packageDir, name));
+  assert.deepEqual(mod.checkDocsParity(readmes), [], 'the three READMEs must share headings, table rows and fenced blocks');
+
+  const driftDir = mkdtempSync(path.join(tmpdir(), 'dsh-parity-'));
+  try {
+    const copies = readmes.map((file, index) => {
+      const out = path.join(driftDir, `README${index}.md`);
+      writeFileSync(out, readFileSync(file, 'utf8'), 'utf8');
+      return out;
+    });
+    writeFileSync(copies[1], readFileSync(readmes[1], 'utf8').replace(/^## .+$/m, '### Drifted heading depth'), 'utf8');
+    const findings = mod.checkDocsParity(copies);
+    assert.ok(findings.some((finding) => finding.includes('heading levels differ')), 'a heading-level drift must produce a finding');
+    assert.ok(findings.every((finding) => typeof finding === 'string' && finding.length > 0), 'findings must be non-empty strings');
+
+    writeFileSync(copies[1], readFileSync(readmes[1], 'utf8').replace(/^\|.*\|\r?\n/m, ''), 'utf8');
+    const tableFindings = mod.checkDocsParity(copies);
+    assert.ok(tableFindings.some((finding) => finding.includes('table rows differ')), 'a table-row drift must produce a finding');
+
+    writeFileSync(copies[1], `${readFileSync(readmes[1], 'utf8')}\n\`\`\`\ndrifted fence\n\`\`\`\n`, 'utf8');
+    const fenceFindings = mod.checkDocsParity(copies);
+    assert.ok(fenceFindings.some((finding) => finding.includes('fenced blocks differ')), 'a fence-count drift must produce a finding');
+  } finally {
+    rmSync(driftDir, { recursive: true, force: true });
+  }
+});
+
+await test('docs links and anchors: every relative markdown link resolves in-repo with no external fetch', () => {
+  const docsDir = path.join(packageDir, 'docs');
+  const markdownFiles = [
+    ...['README.md', 'README.pt-BR.md', 'README.zh-CN.md', 'CHANGELOG.md', 'CONTRIBUTING.md', 'SECURITY.md', 'AGENTS.md', 'craft/README.md'].map((name) => path.join(packageDir, name)),
+    ...readdirSync(docsDir).filter((name) => name.endsWith('.md')).sort().map((name) => path.join(docsDir, name))
+  ];
+  const findings = checkLinks(markdownFiles);
+  assert.deepEqual(findings, [], `every relative link must resolve: ${findings.join(' | ')}`);
+
+  const fixtureDir = mkdtempSync(path.join(packageDir, 'link-fixture-'));
+  try {
+    writeFileSync(path.join(fixtureDir, 'b.md'), '# Real\n', 'utf8');
+    writeFileSync(path.join(fixtureDir, 'a.md'), [
+      '# Real',
+      '',
+      '[missing](missing.md)',
+      '[escape](../../outside.md)',
+      '[bad anchor](b.md#nope)',
+      '[web](https://example.invalid/x)',
+      '[self](#real)',
+      '[self bad](#nope)'
+    ].join('\n'), 'utf8');
+    const fixtureFindings = checkLinks([path.join(fixtureDir, 'a.md')]);
+    assert.equal(fixtureFindings.length, 4, `the fixture must yield exactly 4 findings: ${fixtureFindings.join(' | ')}`);
+    assert.ok(fixtureFindings.some((finding) => finding.includes('missing file: missing.md')), 'a missing target must be reported');
+    assert.ok(fixtureFindings.some((finding) => finding.includes('link escapes the repo: ../../outside.md')), 'an escaping link must be reported');
+    assert.ok(fixtureFindings.some((finding) => finding.includes('missing anchor #nope in b.md')), 'a bad anchor must be reported');
+    assert.ok(fixtureFindings.some((finding) => finding.includes('missing anchor #nope in a.md')), 'a bad same-file anchor must be reported');
+  } finally {
+    rmSync(fixtureDir, { recursive: true, force: true });
+  }
+});
+
+await test('pass-5 docs and static markers: six reference docs carry their sections and CI mirrors the coverage gate', () => {
+  const docAnchors = {
+    'docs/glossary.md': ['role', 'phase', 'harness catalog', 'reasoning effort', 'inherit', 'route', 'dispatch', 'batch', 'profile', 'audit trail', 'readonly', 'content-visibility', 'expectedMtimeMs'],
+    'docs/recipes.md': ['economical', 'balanced', 'max-quality', 'provider', 'model', 'reasoning_effort', 'disabled'],
+    'docs/role-card.md': ['name', 'description', 'provider', 'model', 'reasoning_effort', 'disabled', '65536', 'CRLF', 'BOM'],
+    'docs/architecture.md': ['expectedMtimeMs', 'withFileLock', 'writeFileAtomic', 'realpath', 'audit', '409', '503'],
+    'docs/troubleshooting.md': ['400', '409', '503', '403', 'readonly', 'coverage', 'byte'],
+    'docs/api.md': ['roles', 'catalog', 'efforts', 'route', 'events', 'diagnostics', 'readOnly']
+  };
+  const docSections = {
+    'docs/glossary.md': ['## Localized terms', '## Code identifiers (no panel key)'],
+    'docs/recipes.md': ['## 1. Economical', '## 2. Balanced', '## 3. Max quality'],
+    'docs/role-card.md': ['## Fields the writer reads', '## Field rules', '## Strict parsing and limits', '## What a save changes'],
+    'docs/architecture.md': ['## Trust boundary', '## The save sequence, in execution order', '## Audit trail', '## Route surface'],
+    'docs/troubleshooting.md': ['## Save and validation failures', '## Batch, profile and diagnostics failures', '## Installer and verification gates'],
+    'docs/api.md': ['## Route summary', '## GET roles', '## GET catalog', '## GET efforts', '## POST route', '## GET events', '## GET diagnostics']
+  };
+  const normalize = (value) => value.toLowerCase().replace(/[-_]/g, ' ');
+  for (const [rel, anchors] of Object.entries(docAnchors)) {
+    const file = path.join(packageDir, rel);
+    assert.ok(existsSync(file), `${rel} must exist`);
+    const bytes = readFileSync(file);
+    assert.ok(!bytes.subarray(0, 3).equals(Buffer.from([0xEF, 0xBB, 0xBF])), `${rel} must not carry a BOM`);
+    assert.ok(!bytes.toString('utf8').includes('\r\n'), `${rel} must use pure LF`);
+    const text = normalize(bytes.toString('utf8'));
+    for (const anchor of anchors) {
+      assert.ok(text.includes(normalize(anchor)), `${rel} must mention ${anchor}`);
+    }
+    const headings = bytes.toString('utf8').split('\n').filter((line) => /^#{1,6} /.test(line));
+    for (const section of docSections[rel]) {
+      assert.ok(headings.includes(section), `${rel} must carry the section heading ${section}`);
+    }
+  }
+
+  const expectedBlock = [
+    'NODE_V8_COVERAGE=${{ runner.temp }}/dsh-coverage node scripts/test.mjs',
+    'NODE_V8_COVERAGE=${{ runner.temp }}/dsh-coverage-report node scripts/test.mjs --coverage-report --coverage-dir=${{ runner.temp }}/dsh-coverage'
+  ];
+  const workflowBlock = (rel) => {
+    const text = readFileSync(path.join(packageDir, '.github', 'workflows', rel), 'utf8');
+    assert.ok(text.includes('- name: Coverage gate'), `${rel} must carry a Coverage gate step`);
+    const lines = text.split('\n').map((line) => line.trim());
+    const start = lines.findIndex((line) => line === expectedBlock[0]);
+    assert.ok(start >= 0, `${rel} must carry the coverage emit command`)
+    assert.equal(lines[start + 1], expectedBlock[1], `${rel} must carry the report command byte-identically after the emit command`);
+    return [lines[start], lines[start + 1]];
+  };
+  assert.deepEqual(workflowBlock('ci.yml'), expectedBlock, 'ci.yml must carry the frozen 2-line coverage block');
+  assert.deepEqual(workflowBlock('publish.yml'), expectedBlock, 'publish.yml must carry the byte-identical coverage block');
+
+  const testerText = readFileSync(path.join(packageDir, 'scripts', 'test.mjs'), 'utf8');
+  assert.ok(testerText.includes('102400'), 'the versioned byte budget constant must be present');
+});
+
 await test('repo hygiene: no backup artifacts and zero machine tokens in any repo file', () => {
   const files = repoFiles();
   assert.ok(files.length > 0, 'the repo must contain files to scan');
+  const relPaths = files.map((file) => path.relative(packageDir, file).split(path.sep).join('/'));
+  for (const required of ['.github/workflows/ci.yml', '.github/workflows/publish.yml', '.devflow']) {
+    assert.ok(relPaths.some((rel) => rel === required || rel.startsWith(`${required}/`)), `the hygiene walker must scan ${required} (dot-directories are not skipped)`);
+  }
   for (const file of files) {
     const rel = path.relative(packageDir, file);
     assert.ok(!BAK_SUFFIX_RE.test(rel), `${rel} must not be a backup artifact`);

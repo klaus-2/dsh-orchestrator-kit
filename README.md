@@ -185,6 +185,15 @@ Edit the `panel` object in `locale/<lang>.json`, then mirror the change verbatim
 
 Small PRs, Conventional Commits, and `node scripts/test.mjs` green three times before you push — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
+Verification also enforces a native coverage gate (70% statements / 60% functions) and a versioned `client.js` byte budget; durable reference docs live in `docs/`. See [CONTRIBUTING.md](CONTRIBUTING.md) for the commands and the glossary.
+
+```bash
+NODE_V8_COVERAGE=$(node -p "require('node:os').tmpdir()")/dsh-coverage node scripts/test.mjs
+NODE_V8_COVERAGE=$(node -p "require('node:os').tmpdir()")/dsh-coverage-report node scripts/test.mjs --coverage-report --coverage-dir=$(node -p "require('node:os').tmpdir()")/dsh-coverage
+```
+
+Both coverage directories must stay OUTSIDE the checkout: the hygiene walker scans the repo tree, and the absolute npm URLs embedded in V8 JSON would fail it. Clear the data directory before a fresh measurement: V8 keeps uniquely named JSON files, so reusing a directory merges stale ranges with the current run.
+
 ## Security
 
 No remote-execution surface: the kit only serves local HTTP routes and writes role-card frontmatter. The audit log records role ids and route values only — never secrets, absolute paths or card contents — and the read-only mode plus the install script are documented in [SECURITY.md](SECURITY.md). Report issues privately per [SECURITY.md](SECURITY.md).

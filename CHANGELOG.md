@@ -33,6 +33,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Installed-card diagnostics: a new read-only `GET /api/dsh-orchestrator-kit.diagnostics` route reports roles missing versus the `craft/` sources, cards with invalid frontmatter, routes outside the live catalog, and cards whose body differs from the craft source. Computed on demand, never cached, and it degrades gracefully when `craft/` is absent (`craftAvailable: false`, still `200`); the outside-catalog list requires a live catalog and is omitted when it is unavailable. The panel shows the report in a legend section.
 - Craft install script: `node scripts/install-craft.js [--dry-run]` copies the 20 role cards into the agents root and the dev-flow skill tree into `<agents home>/skills/dev-flow/`. It always skips existing files (no overwrite mode, no backups), verifies path containment, prints relative paths only, and turns a held writer lock into actionable retry/operator guidance with exit code 1.
 - Read-only mode: `DSH_ORCHESTRATOR_READONLY=1` (or `true`) makes the server answer every save with `403` (`code: 'readonly'`) before reading the body or touching disk, and the roles bootstrap carries the flag; the panel disables every mutating control and shows a read-only notice, keeping export available.
+- Native V8 coverage gate: `NODE_V8_COVERAGE` JSON is aggregated by an own-source parser (URL-to-filesystem containment, `node_modules` excluded) and enforced at 70% statements / 60% functions. Coverage data and report output go to separate external directories; the gate is runnable locally with the two commands in [CONTRIBUTING.md](CONTRIBUTING.md) and is mirrored in CI and the publish workflow.
+- `client.js` byte budget: an in-suite assertion enforces the versioned 102400-byte (100 KiB) ceiling against the measured 100055 bytes (2345 bytes of headroom). Raising the ceiling requires an explicit commit; the assertion never self-adjusts. Until that explicit commit, `client.js` is byte-frozen at 100055 bytes — even an in-budget edit must update the recorded measurement in the same commit.
+- Six durable reference documents in `docs/`: `api.md` (the six routes), `architecture.md`, `glossary.md`, `recipes.md`, `role-card.md` and `troubleshooting.md` — all shipped in the npm tarball.
+- Documentation guards: `scripts/docs-parity.mjs` checks that the three READMEs share headings, table rows and fenced blocks, and an in-runner checker resolves every relative Markdown link and heading anchor without network access.
 
 ### Changed
 
@@ -46,6 +50,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Remounting the settings panel skips the catalog refetch while a cached catalog exists (roles always refetch; an explicit refresh always refetches both).
 - The panel now disables every mutating control when the server is in read-only mode (`DSH_ORCHESTRATOR_READONLY`), mirroring the flag from the roles bootstrap; the server `403` remains the authoritative gate.
 - The panel now talks to six routes: the four original ones plus the new `GET /api/dsh-orchestrator-kit.events` and `GET /api/dsh-orchestrator-kit.diagnostics` read-only routes.
+- CI and publish workflows gained a mirrored `Coverage gate` step: the emit run writes V8 data to an external directory under `runner.temp` and the report run writes to a separate one, reading the data through `--coverage-dir` (both outside the checkout).
 
 ### Security
 

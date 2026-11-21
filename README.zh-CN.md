@@ -185,6 +185,15 @@ English、Português (BR) 与 简体中文（en/pt-BR/zh）。面板默认跟随
 
 小 PR、Conventional Commits，并在推送前让 `node scripts/test.mjs` 连绿三次 — 见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
+校验还包括原生覆盖率门槛（语句 70% / 函数 60%）与 `client.js` 的版本化字节预算；参考文档位于 `docs/`。命令与术语表见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+```bash
+NODE_V8_COVERAGE=$(node -p "require('node:os').tmpdir()")/dsh-coverage node scripts/test.mjs
+NODE_V8_COVERAGE=$(node -p "require('node:os').tmpdir()")/dsh-coverage-report node scripts/test.mjs --coverage-report --coverage-dir=$(node -p "require('node:os').tmpdir()")/dsh-coverage
+```
+
+两个覆盖率目录都必须位于仓库之外：卫生检查会扫描仓库树，V8 JSON 中嵌入的 npm 绝对路径会导致检查失败。重新测量前请清空数据目录：V8 会保留名称唯一的 JSON 文件，复用目录会把旧区间与本次运行混在一起。
+
 ## 安全
 
 没有远程执行面：本套件只提供本地 HTTP 路由并写入角色卡片 frontmatter。更改日志只记录角色 id 与路由值 — 绝不记录密钥、绝对路径或卡片内容 — 只读模式与安装脚本见 [SECURITY.md](SECURITY.md)。请按 [SECURITY.md](SECURITY.md) 私密上报。

@@ -1,0 +1,5 @@
+index.js exit=0
+client.js exit=0
+scripts/test.mjs exit=0
+scripts/install-craft.js exit=0
+scripts/docs-parity.mjs exit=0

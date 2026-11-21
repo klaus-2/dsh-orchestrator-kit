@@ -1,0 +1,86 @@
+ok applyRouteToCard: set writes provider and model
+ok applyRouteToCard: reset restores model inherit and removes provider
+ok applyRouteToCard: half-written route throws
+ok applyRouteToCard: round-trip preserves comments and unknown keys
+ok applyRouteToCard: card without frontmatter throws a clear message
+ok applyRouteToCard: CRLF card keeps CRLF and a byte-identical body
+ok applyRouteToCard: LF card keeps LF
+ok applyRouteToCard: BOM card parses and the result has no BOM
+ok isEntryName: accepts plain ids and rejects traversal, uppercase, backslash, empty
+ok cardPathOf: id with .. is barred before touching the disk
+ok parseRoleCard: disabled coercion, reasoning_effort, alias, and conflict detection
+ok applyCardSettings: canonical reasoning_effort, reset cleanup, route-change cleanup, disabled, CRLF/BOM
+ok agentsRootOf: DSH_AGENTS_HOME wins, blank means unset, default is the home agents dir
+ok HTTP API: GET .roles handles ENOENT, omits invalid cards, sorts alphabetically, returns reasoningEffort and mtimeMs
+ok HTTP API: GET .catalog handles partial provider timeouts, degraded flag, failedProviders, llm:undefined default, and throwing currentSelection
+ok HTTP API: GET .efforts validates params, handles 502/503/409/504 and returns efforts
+ok HTTP API: POST .route decoupled disabled, validation, effort 400/409/503, expectedMtimeMs 409 and TOCTOU 409
+ok strict frontmatter: parseRoleCard strict mode rejects anchors, aliases, explicit tags, deep nesting and oversized blocks; lenient mode unchanged
+ok HTTP API: GET .roles surfaces parse-failed cards in invalid[] with redacted errors and keeps valid roles sorted
+ok HTTP API: POST .route refuses anchored, aliased, tagged, deep or oversized frontmatter with 400 before any write
+ok redactText: credential URLs, authorization headers, key assignments, key shapes and home paths become markers; codes and plain URLs survive
+ok HTTP API: catalog failures and unreadable-directory errors redact secrets and home paths in bodies and logs
+ok HTTP API: POST .route enforces the 65536-byte body cap and rejects unknown fields
+ok HTTP API: POST .route identical payload answers unchanged:true without a write; stale expectedMtimeMs still 409 first
+ok HTTP API: simultaneous POST .route on one role serializes to one 200 and one 409 with card integrity
+ok HTTP API: a held writer lock yields 503 lock-timeout with a relative lock name and is never auto-recovered
+ok HTTP API: Server-Timing on roles/catalog/route success carries durations only
+ok HTTP API: GET .roles with 40 cards returns every card sorted (bounded parallel reads)
+ok no-op save detects an external edit during the validation window
+ok redaction: adversarial secret shapes are fully redacted and linear
+ok request and frontmatter caps enforce UTF-8 bytes at the exact boundary
+ok no-op save honors CRLF cards and the depth cap boundary
+ok yaml-ok: cordis.patch.yml parses with the plugin row, preset row, portable customSkillDirs, and fixed subagent config
+ok preset rows: interrupt stays disabled and the Office row mirrors the shipped standard preset
+ok persona: the team API matches DSH 0.2.2-rc.2+ (no removed teammate tools)
+ok persona: interrupt_agent is described accurately (present in the host, not mounted here)
+ok persona: the shared task board is conditional on Team mode being enabled
+ok persona: an explicit child route is bounded by the session model-selection policy
+ok persona: the final-stage adversarial verification workflow is task-type branched and DSH-compatible
+ok persona: Craft 20 roles, .devflow/ state, grilling, and zero legacy role or path leaks
+ok client.js registers under the exact package name (web-boot row id)
+ok server and client agree on the /api/<name>.* route surface
+ok package.json: public npm contract (name, exports, files, dsh manifest, no private)
+ok client.js static contract: phase grouping, save flow markers, and no old-name leftovers
+ok node --check passes on the shipped files
+ok all shipped files exist with UTF-8 no BOM and pure LF
+ok client.js: runtime module registration, phase grouping, save, 409, refresh failure retention, remount efforts, and catalog failure fallback
+ok client.js: unchanged notice, invalid-card warning banner and server-timing legend line render through the VM harness
+ok client.js: untrusted catalog and card strings render as text, never as HTML
+ok locale parity: en/pt-BR/zh panel key sets identical, values non-empty, frozen dictionary schema, meta preserved
+ok locale registration: embedded dictionaries sync with locale JSON panel sections; pt mirrors pt-BR; addLanguage pt-BR; inject slots+locale
+ok i18n structural gate: every panel string renders through t (sentinel bind) and every frozen dictionary key is covered across driven states
+ok panel language switch: override renders pt-BR/zh from dictionaries, Auto follows host, best-effort localStorage persists and restores, storage failure degrades to host language
+ok save safety: mtime-keyed draft hoisting, dirty seal on every section, warn-before-unload and Ctrl+S on the focused card
+ok undo last save: reverse POST of the pre-save summary with the post-save mtime, snapshot lifecycle and loop-helper guards
+ok save error actions: 409 re-GET keeps the draft and never resends a stale mtime; effort hint; lock-timeout guidance renders
+ok accessible save confirmation: shared polite region announces success/failure/unchanged, saved-card highlight and live top summary
+ok role view controls: search, status filter, sort selector and per-tab status breakdown compose with phase tabs
+ok density modes: compact one-line rows keep the same controls; grid cards reserve space via content-visibility; inherit hint shows the chat default
+ok panel prefs: tab, legend and density persist same-session with best-effort localStorage and degrade silently
+ok remount cache: a fresh catalog cache skips the catalog refetch while roles still refetch; explicit refresh always refetches both
+ok catalog 503 state: banner renders, provider/model selects disable, route saves block and disabled-only saves still work
+ok client.js pass-3 static markers: contentVisibility, undoSnapshots, prefs key and aria-live present in source
+ok batch apply: per-phase loop reuses runCardLoop with the cancel hook, per-card results, 409 continue-and-report and abort on first 503
+ok routing profiles: export carries version and no mtimes; import validates every entry before the first write, then refresh-then-applies
+dsh-orchestrator-kit: the audit log is unreadable: EISDIR: illegal operation on a directory, read '[home]\AppData\Local\Temp\map-audit-events-xCZUVv\agents\.orchestrator-audit.jsonl'
+ok audit trail: append inside the write lock, relative-only records with no secrets, best-effort failure, and the bounded events route
+ok diagnostics: missing, invalid, outside-catalog and body-drift detection degrade gracefully when craft/ is unavailable
+ok readonly mode: the env flag returns 403 before any disk read, the roles envelope carries readOnly and the panel disables every mutating control
+ok craft installer: tmp-home copy, skip-existing always, lock-timeout guidance, and path containment
+ok new surfaces render untrusted markup as text: batch summary, event entries and diagnostics lists
+ok npm pack: dry-run file list matches the frozen 77-entry contract and packed content passes the forbidden-token scan
+ok codemap.mjs: CLI/API init, changes, update, removed files, gitignore, legacy migration, symlink rejection, error propagation, and ReDoS guard
+ok craft-repo: 20 Craft role cards ship clean frontmatter, model: inherit on line 4, zero provider routing
+ok craft-repo: craft/agents and craft/skills/dev-flow/agents mirror bodies byte-identically (20 roles)
+ok craft-repo: dev-flow SKILL.md frontmatter and the exact 9 playbooks, zero leaks
+ok craft-validators: fixture pass and negative drift/legacy/provider detection
+ok native V8 coverage: the hand-rolled reporter aggregates NODE_V8_COVERAGE JSON and enforces 70% statements / 60% functions on own sources
+ok coverage gate fails closed: empty directory, missing coverage root and below-floor ratios each fail with the specified message
+ok client.js byte budget: measured size stays under the versioned 102400-byte ceiling with no self-adjustment
+ok docs-parity.mjs: three READMEs share headings, table rows and fenced blocks; importing has no side effects
+ok docs links and anchors: every relative markdown link resolves in-repo with no external fetch
+ok pass-5 docs and static markers: six reference docs carry their sections and CI mirrors the coverage gate
+ok repo hygiene: no backup artifacts and zero machine tokens in any repo file
+ok rename completeness: no removed local plugin identity anywhere in the repo
+ALL TESTS PASSED

@@ -28,6 +28,10 @@ jobs:
         run: npm ci
       - name: Test suite
         run: node scripts/test.mjs
+      - name: Coverage gate
+        run: |
+          NODE_V8_COVERAGE=${{ runner.temp }}/dsh-coverage node scripts/test.mjs
+          NODE_V8_COVERAGE=${{ runner.temp }}/dsh-coverage-report node scripts/test.mjs --coverage-report --coverage-dir=${{ runner.temp }}/dsh-coverage
       - name: Verify pack whitelist
         run: npm pack --dry-run
       - name: Publish to npm

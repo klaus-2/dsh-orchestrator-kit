@@ -185,6 +185,15 @@ Edite o objeto `panel` em `locale/<lang>.json` e replique a alteração de forma
 
 PRs pequenos, Conventional Commits e `node scripts/test.mjs` verde três vezes antes de enviar — veja [CONTRIBUTING.md](CONTRIBUTING.md).
 
+A verificação também aplica um gate de cobertura nativo (70% de statements / 60% de functions) e um limite versionado de bytes para `client.js`; a documentação de referência fica em `docs/`. Veja [CONTRIBUTING.md](CONTRIBUTING.md) para os comandos e o glossário.
+
+```bash
+NODE_V8_COVERAGE=$(node -p "require('node:os').tmpdir()")/dsh-coverage node scripts/test.mjs
+NODE_V8_COVERAGE=$(node -p "require('node:os').tmpdir()")/dsh-coverage-report node scripts/test.mjs --coverage-report --coverage-dir=$(node -p "require('node:os').tmpdir()")/dsh-coverage
+```
+
+Ambos os diretórios de cobertura devem ficar FORA do checkout: o verificador de higiene varre a árvore do repositório e as URLs absolutas de npm embutidas no JSON do V8 fariam a checagem falhar. Limpe o diretório de dados antes de uma nova medição: o V8 mantém arquivos JSON com nomes únicos, e reutilizar o diretório mistura intervalos antigos com a execução atual.
+
 ## Segurança
 
 Sem superfície de execução remota: o kit só serve rotas HTTP locais e escreve frontmatter de cards de papel. O histórico de alterações registra apenas ids de papéis e valores de rota — nunca segredos, caminhos absolutos ou conteúdo dos cards — e o modo somente leitura e o script de instalação estão documentados em [SECURITY.md](SECURITY.md). Reporte vulnerabilidades em privado conforme [SECURITY.md](SECURITY.md).
