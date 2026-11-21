@@ -104,7 +104,7 @@ COND = conditional decision recorded when its trigger fires.
 | 10 | Frontmatter round-trip | DONE | scripts/test.mjs:290-465 |
 | 11 | Deterministic catalog stub | DONE | scripts/test.mjs:516-674,676-943 |
 | 12 | Concurrency tests | P1 | simultaneous POST + busy lock + stale mtime (TOCTOU already at scripts/test.mjs:767-792) |
-| 13 | Coverage thresholds | P5 | C13: NODE_V8_COVERAGE + c8 devDep; runner migration REJ (R-15) |
+| 13 | Coverage thresholds | P5 | C13: NODE_V8_COVERAGE + own-source parser (NO c8 devDependency — R-20); external coverage dirs, 70% statements / 60% functions |
 | 14 | docs/glossary.md | P5 | C22; referenced from CONTRIBUTING |
 | 15 | Relative-link/anchor CI check | P5 | C14: in-runner (~10 lines), no external URLs, no separate flaky step |
 | 16 | scripts/docs-parity.mjs | P5 | C14: named file ships, IMPORTED by test.mjs, runs with the suite |
@@ -168,7 +168,7 @@ after its own executable plan passes `plan-auditor` `OKAY`.
 | 2 | i18n seam (atomic big-bang) | 38, 8, 40(language override), 6 | C8, C11, C14 | first dictionary + VM-harness t/locale stubs + static-test reworks (SAVE_NOTICE literal 1156, pt-BR ban 1161-1162 → locale-key parity + STRUCTURAL t-usage gate) + pack assertion/tarball token scan ALL in this one commit; one documented live-host smoke (browser-qa, evidence logged); anti-flake 5x |
 | 3 | Save-safety & UX | 9(503-state), 39, 40(prefs), 41, 43, 46, 47, 50, 51, 52, 53, 55, 56, 57, 59 + D3 remount catalog-cache skip | C9(undo), C10(drafts), C11, C15 | XSS fixture tests re-run (new rendering); live-host smoke; anti-flake 5x |
 | 4 | Multi-card & admin surfaces | 49, 48, 25, 44, 45, 24 + 60 conditional | C9(batch/import), C17, C18, C19, C20, C21 | security gate (new write surfaces + readonly + audit); concurrency tests for audit+card window and installer races; live-host smoke; size tripwire evaluated → chunking decision recorded; anti-flake 5x |
-| 5 | Test-infra, docs & CI | 13, 58, 14–21 + READMEs trilingual final + CHANGELOG consolidation + CONTRIBUTING glossary link | C13, C14, C22 | c8 thresholds + CI step mirrored into publish.yml SAME commit; docs-parity.mjs + relative-link check imported by test.mjs; client.js byte-size assert set; anti-flake 5x |
+| 5 | Test-infra, docs & CI | 13, 58, 14–21 + READMEs trilingual final + CHANGELOG consolidation + CONTRIBUTING glossary link | C13, C14, C22 | own-source coverage thresholds (70% statements / 60% functions) + CI step mirrored into publish.yml SAME commit; docs-parity.mjs + relative-link check imported by test.mjs; client.js byte-size assert set; anti-flake 5x |
 
 Sequencing rationale: Pass 1 hardens the trust boundary everything else writes
 through, independent of UI. Pass 2 lands the i18n seam BEFORE the UI-heavy passes so
@@ -399,6 +399,7 @@ worker proposing to re-add one of these must first overturn the cited evidence.
 | R-17 | `schema:'failsafe'` for strict YAML | Live-proven: stringifies booleans on read AND `doc.toString()` throws "Tag not resolved for Boolean value" on write — breaks the round-trip writer. Rejection-only visit() under the core schema instead (C2). |
 | R-18 | Orphan-lock auto-recovery | File age cannot prove the owner stopped; auto-removal breaks the cross-process protocol for other DSH writers (library doc: "orphan recovery is an operator action"). Actionable error instead (C5). |
 | R-19 | "Atomic" batch/import framing | Per-card conflict detection is the design; all-or-nothing across 20 files is not achievable with the lock protocol and not user-named (C9). |
+| R-20 | `c8` devDependency for the coverage gate (13) | A dependency only to read JSON the runtime already emits. `NODE_V8_COVERAGE` is runner-agnostic (R-15) and the entries carry per-range counts, so the suite aggregates them itself: zero new dependencies, machine-independent denominator (own sources only), and the gate stays inside the custom runner instead of adding a second reporter (C13). |
 
 Host-provided items: 1 (R-01), 29 (R-04). User-named capabilities are never
 silently deleted: every rejection above either preserves the capability in a

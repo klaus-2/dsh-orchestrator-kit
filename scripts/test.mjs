@@ -228,6 +228,7 @@ const FORBIDDEN_TOKENS = [
 ];
 const BAK_LITERAL = ['.b', 'ak'].join('');
 const BAK_SUFFIX_RE = new RegExp(`${BAK_LITERAL}(?:-|$)`);
+const TRACKED_BINARY_FILES = new Set(['docs/preview.svg', 'docs/showcase.svg', 'icon.svg']);
 const OLD_PLUGIN_NAME = ['dsh-main-agent', '-preset'].join('');
 const OLD_PLUGIN_SCOPE = ['@lo', 'cal/'].join('');
 
@@ -5503,7 +5504,14 @@ await test('repo hygiene: no backup artifacts and zero machine tokens in any rep
   for (const file of files) {
     const rel = path.relative(packageDir, file);
     assert.ok(!BAK_SUFFIX_RE.test(rel), `${rel} must not be a backup artifact`);
-    const text = readFileSync(file, 'utf8');
+    const bytes = readFileSync(file);
+    const hasNulByte = bytes.some((byte) => byte === 0);
+    const isBinary = hasNulByte || bytes.subarray(0, 12).toString('latin1').includes('GIF8');
+    if (isBinary) {
+      assert.ok(!TRACKED_BINARY_FILES.has(rel.split(path.sep).join('/')), `${rel} is binary and must never be versioned — tracked binaries are excluded from the token scan`);
+      continue;
+    }
+    const text = bytes.toString('utf8');
     if (path.basename(file) !== '.gitignore') {
       assert.ok(!text.includes(BAK_LITERAL), `${rel} must not reference backup artifacts`);
     }

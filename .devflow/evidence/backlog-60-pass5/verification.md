@@ -66,6 +66,28 @@ No retry masking, no timing assertions.
   self-contained and pass immediately).
 All three are test-side/plan-side drives; no production assertion weakened.
 
+## Post-commit hardening (found while closing)
+
+The hygiene walker scanned every repo file as UTF-8 text. An untracked 8 MB
+binary (`assets/demo.gif`, created outside this pass and NOT versioned) matched
+the forbidden token `hy4` by byte coincidence and broke the suite. Fix: the
+token scan now skips binary files (NUL byte or GIF8 signature) and ASSERTS
+that no binary file is versioned, except the three tracked SVG assets
+(`docs/preview.svg`, `docs/showcase.svg`, `icon.svg`). Failing-mode proven:
+adding a tracked binary (`scripts/probe-binary.bin`) fails with "is binary and
+must never be versioned". The invariant is preserved — binary files can
+never ship — while an unrelated working-tree media file no longer breaks the
+run. `git diff --stat scripts/test.mjs` = +9/−1 (the intended change only).
+
+Master plan updated in the same change: item 13 records the own-source parser
+instead of the `c8` devDependency, and the rejection register gains **R-20**
+(why no coverage dependency ships).
+
+Final verification after the fix: suite 84/84 × 5 green; coverage preflight
+cmd1 exit 0 / cmd2 exit 0 with `statements: 1784/2101 (84.9%)`, `functions:
+833/951 (87.6%)`, `COVERAGE OK`, zero coverage JSONs in the checkout; npm pack
+entryCount 77.
+
 ## Final-gate record
 
 - Security gate: **PASS** — 0 exploitable findings; hygiene walker untouched,

@@ -63,7 +63,7 @@ ok catalog 503 state: banner renders, provider/model selects disable, route save
 ok client.js pass-3 static markers: contentVisibility, undoSnapshots, prefs key and aria-live present in source
 ok batch apply: per-phase loop reuses runCardLoop with the cancel hook, per-card results, 409 continue-and-report and abort on first 503
 ok routing profiles: export carries version and no mtimes; import validates every entry before the first write, then refresh-then-applies
-dsh-orchestrator-kit: the audit log is unreadable: EISDIR: illegal operation on a directory, read '[home]\AppData\Local\Temp\map-audit-events-JZPsSM\agents\.orchestrator-audit.jsonl'
+dsh-orchestrator-kit: the audit log is unreadable: EISDIR: illegal operation on a directory, read '[home]\AppData\Local\Temp\map-audit-events-7LVcUg\agents\.orchestrator-audit.jsonl'
 ok audit trail: append inside the write lock, relative-only records with no secrets, best-effort failure, and the bounded events route
 ok diagnostics: missing, invalid, outside-catalog and body-drift detection degrade gracefully when craft/ is unavailable
 ok readonly mode: the env flag returns 403 before any disk read, the roles envelope carries readOnly and the panel disables every mutating control
