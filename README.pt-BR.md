@@ -10,7 +10,9 @@ Painel de controle de roteamento de modelos para times de agentes de IA — atri
 [![CI](https://img.shields.io/github/actions/workflow/status/klaus-2/dsh-orchestrator-kit/ci.yml?style=flat)](https://github.com/klaus-2/dsh-orchestrator-kit/actions/workflows/ci.yml)
 [![Plugin DeepSeek Harness](https://img.shields.io/badge/DeepSeek%20Harness-plugin-orange.svg?style=flat)](#instalacao-dsh)
 
-![Fluxo do kit Orchestrator](docs/showcase.svg)
+![Demonstração do dsh-orchestrator-kit](assets/demo.gif)
+
+> Vídeo em Full HD: [assets/demo.mp4](assets/demo.mp4) · Diagrama animado do fluxo Craft: [docs/showcase.svg](docs/showcase.svg)
 
 ## Por que usar
 

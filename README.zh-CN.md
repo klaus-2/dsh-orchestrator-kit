@@ -10,7 +10,9 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/klaus-2/dsh-orchestrator-kit/ci.yml?style=flat)](https://github.com/klaus-2/dsh-orchestrator-kit/actions/workflows/ci.yml)
 [![DeepSeek Harness 插件](https://img.shields.io/badge/DeepSeek%20Harness-plugin-orange.svg?style=flat)](#安装dsh)
 
-![Orchestrator kit 工作流](docs/showcase.svg)
+![dsh-orchestrator-kit 演示](assets/demo.gif)
+
+> 高清完整视频：[assets/demo.mp4](assets/demo.mp4) · Craft 工作流动态示意图：[docs/showcase.svg](docs/showcase.svg)
 
 ## 为什么使用
 

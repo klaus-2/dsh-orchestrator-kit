@@ -37,6 +37,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `client.js` byte budget: an in-suite assertion enforces the versioned 102400-byte (100 KiB) ceiling against the measured 100055 bytes (2345 bytes of headroom). Raising the ceiling requires an explicit commit; the assertion never self-adjusts. Until that explicit commit, `client.js` is byte-frozen at 100055 bytes — even an in-budget edit must update the recorded measurement in the same commit.
 - Six durable reference documents in `docs/`: `api.md` (the six routes), `architecture.md`, `glossary.md`, `recipes.md`, `role-card.md` and `troubleshooting.md` — all shipped in the npm tarball.
 - Documentation guards: `scripts/docs-parity.mjs` checks that the three READMEs share headings, table rows and fenced blocks, and an in-runner checker resolves every relative Markdown link and heading anchor without network access.
+- Promotional motion-graphics demo (`assets/demo.gif` and `assets/demo.mp4`) featured in the three READMEs.
 
 ### Changed
 

@@ -10,7 +10,9 @@ Model routing control panel for AI agent teams — assign provider, model and re
 [![CI](https://img.shields.io/github/actions/workflow/status/klaus-2/dsh-orchestrator-kit/ci.yml?style=flat)](https://github.com/klaus-2/dsh-orchestrator-kit/actions/workflows/ci.yml)
 [![DeepSeek Harness plugin](https://img.shields.io/badge/DeepSeek%20Harness-plugin-orange.svg?style=flat)](#install-dsh)
 
-![Orchestrator kit workflow](docs/showcase.svg)
+![dsh-orchestrator-kit demo](assets/demo.gif)
+
+> Full HD video: [assets/demo.mp4](assets/demo.mp4) · Animated Craft workflow diagram: [docs/showcase.svg](docs/showcase.svg)
 
 ## Why use this
 
