@@ -35,4 +35,5 @@ jobs:
       - name: Verify pack whitelist
         run: npm pack --dry-run
       - name: Publish to npm
+        if: vars.NPM_PUBLISH_VIA_CI == 'true'
         run: npm publish

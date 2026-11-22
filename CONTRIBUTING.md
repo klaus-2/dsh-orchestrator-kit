@@ -55,6 +55,8 @@ Role, phase, route, dispatch, profile and the other pipeline terms are defined i
 2. Bump the top-level `version` to the version being released — the shipped notes only reach the panel when that version matches the running package version.
 3. Run `node scripts/test.mjs` and keep it green: the file ships in the npm tarball and is part of its frozen file contract.
 
+Publishing: pushing a `v*` tag runs the Publish workflow (test suite, coverage gate, pack whitelist); the `npm publish` step runs only when the repository variable `NPM_PUBLISH_VIA_CI` is set to `true` — until then, releases are published manually with `npm publish` from an authenticated owner session.
+
 ## Pull requests
 
 - Keep PRs small: one concern per PR, ideally under ~300 changed lines.
