@@ -1,14 +1,14 @@
 # Architecture
 
-The kit is a plugin with two parts: `index.js` registers six HTTP routes on the host connection and owns all validation and persistence; `client.js` is the settings panel that calls those routes. There is no separate server process and no database — the role cards on disk are the state.
+The kit is a plugin with two parts: `index.js` registers seven HTTP routes on the host connection and owns all validation and persistence; `client.js` is the settings panel that calls those routes. There is no separate server process and no database — the role cards on disk are the state.
 
-Source: `index.js:461-482` (route registration entry point), `client.js:8-13` (the six route constants).
+Source: `index.js:581-1100` (route registration entry point), `client.js:9-20` (the seven route constants).
 
 ## Trust boundary
 
 Authentication and per-user authorization are not implemented in this plugin. Every handler is registered through `ctx.connection?.fetch?.register`, so the host connection is the trust fence: it decides which callers may reach these paths. The plugin adds one application-level gate, read-only mode, driven by the `DSH_ORCHESTRATOR_READONLY` environment flag. When that flag is `1` or `true`, the write route returns 403 before touching the body; read routes keep working and the roles response reports `readOnly: true`.
 
-Source: `index.js:27-32` (read-only flag), `index.js:482`, `index.js:536`, `index.js:554`, `index.js:586`, `index.js:621`, `index.js:700` (host registration), `index.js:705-707` (write gate).
+Source: `index.js:43-47` (read-only flag), `index.js:603`, `index.js:657`, `index.js:675`, `index.js:707`, `index.js:742`, `index.js:844` (host registration), `index.js:848-850` (write gate).
 
 ## The save sequence, in execution order
 
@@ -34,17 +34,17 @@ This is the order the write route actually follows. Steps 10a-10f run inside one
 12. **Post-write validation, outside the lock.** The read-back text is parsed in strict mode and converted to a role summary. A failure here is 500; the file has already been written and there is no rollback.
 13. **Response.** Status 200 with `{ ok: true, role }`, plus `server-timing` entries for the catalog lookup and the write when applicable.
 
-Source: `index.js:705-762` (steps 1-3), `index.js:764-798` (steps 4-7), `index.js:805-852` (steps 8-9), `index.js:853-875` (unchanged branch and pre-lock recheck), `index.js:882-922` (step 10), `index.js:928-941` (step 11), `index.js:944-952` (steps 12-13).
+Source: `index.js:848-905` (steps 1-3), `index.js:907-941` (steps 4-7), `index.js:948-995` (steps 8-9), `index.js:996-1018` (unchanged branch and pre-lock recheck), `index.js:1025-1065` (step 10), `index.js:1071-1084` (step 11), `index.js:1087-1095` (steps 12-13).
 
 The audit append is best-effort. If it fails, the server writes a redacted warning to its log and still returns 200: the saved card is not rolled back and the failure is not surfaced to the panel. The difference between the read-back in step 10d and the parse in step 12 is deliberate — only the raw read and the audit record are inside the lock.
 
-Source: `index.js:902-916` (read-back and best-effort append), `index.js:944-951` (post-write parse).
+Source: `index.js:1045-1065` (read-back and best-effort append), `index.js:1087-1094` (post-write parse).
 
 ## Audit trail
 
 The audit file is `<agent home>/agents/.orchestrator-audit.jsonl`, where `<agent home>` is `DSH_AGENTS_HOME` when set and the host's default agent home otherwise. Each line is one JSON record with `at` (an ISO timestamp), `id`, `previous` and `next` routing summaries, and `origin: "panel"`. The events route reads this file, returns the last 50 non-empty lines, and returns an empty list when the file does not exist. Malformed or non-object lines are counted in `skipped` rather than failing the request.
 
-Source: `index.js:21-25` (agent home resolution), `index.js:470-471` (roles directory and audit path), `index.js:215-224` and `index.js:906-912` (record shape), `index.js:592` and `index.js:601-616` (50-line cap and skip counting), `index.js:597` (missing file branch).
+Source: `index.js:37-41` (agent home resolution), `index.js:591` (roles directory and audit path), `index.js:231-240` and `index.js:1049-1058` (record shape), `index.js:713` and `index.js:722-737` (50-line cap and skip counting), `index.js:718` (missing file branch).
 
 ## Route surface
 
@@ -56,5 +56,12 @@ Source: `index.js:21-25` (agent home resolution), `index.js:470-471` (roles dire
 | `/api/dsh-orchestrator-kit.route` | POST | Validate and atomically save routing settings for one role. |
 | `/api/dsh-orchestrator-kit.events` | GET | Read the last 50 audit records. |
 | `/api/dsh-orchestrator-kit.diagnostics` | GET | Compare installed cards with craft sources and the live catalog. |
+| `/api/dsh-orchestrator-kit.update` | GET | Compare the running version with the latest GitHub release (npm-gated). |
 
-Source: `index.js:483`, `index.js:537`, `index.js:555`, `index.js:701`, `index.js:587`, `index.js:622` (registered paths and methods); `scripts/test.mjs:1898-1904` (six-route contract).
+Source: `index.js:603`, `index.js:657`, `index.js:675`, `index.js:844`, `index.js:707`, `index.js:742`, `index.js:821` (registered paths and methods); `scripts/test.mjs:2198-2203` (route-surface contract).
+
+## Update checking
+
+The seventh route, `GET /api/dsh-orchestrator-kit.update`, compares the running version with the latest GitHub release and double-gates the result against the npm registry before the panel may advertise an install. Both outbound requests are read-only GETs without credentials, on a 10-second timeout; the check reads nothing the read-only flag protects and runs regardless of it. Installing is not a server operation: the panel asks the host's plugin manager client-side, so no install request ever passes through this plugin's server code.
+
+Source: `index.js:547-579` (GitHub/npm probe), `index.js:821-841` (route), `client.js:590-659` (updater store and install flow).

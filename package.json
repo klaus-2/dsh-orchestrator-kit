@@ -42,6 +42,7 @@
     "docs/",
     "icon.svg",
     "craft/",
+    "release-notes.json",
     "scripts/",
     "README.md",
     "CHANGELOG.md",
@@ -63,7 +64,7 @@
     },
     "client": {
       "platform": "web",
-      "inject": []
+      "inject": ["@deepseek-ai/dsh-api-remotes"]
     }
   }
 }

@@ -47,6 +47,14 @@ Anything that exists only on your machine must never reach the repository — th
 
 Role, phase, route, dispatch, profile and the other pipeline terms are defined in [docs/glossary.md](docs/glossary.md).
 
+## Release notes per release
+
+`release-notes.json` at the repository root feeds the panel's What's-new dialog. Every release must update it as part of the release work:
+
+1. Write short plain-text notes (a few lines, no links) for all three languages: `en`, `pt-BR` and `zh`.
+2. Bump the top-level `version` to the version being released — the shipped notes only reach the panel when that version matches the running package version.
+3. Run `node scripts/test.mjs` and keep it green: the file ships in the npm tarball and is part of its frozen file contract.
+
 ## Pull requests
 
 - Keep PRs small: one concern per PR, ideally under ~300 changed lines.

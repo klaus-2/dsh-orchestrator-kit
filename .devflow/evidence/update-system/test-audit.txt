@@ -1,0 +1,55 @@
+test-auditor verdict — update-system diff (uncommitted working tree)
+Scope: git diff HEAD (index.js, client.js, package.json, scripts/test.mjs, locale x3, release-notes.json) against plan .devflow/plans/update-system.md. Read-only audit; no files edited; test suites NOT executed by this auditor (evidence run-1/2/3.txt reviewed: ALL TESTS PASSED, exit code 0, 3 consecutive runs).
+
+Rating: 7/10 (7 = one Important gap; no 9-10 gaps)
+
+BEHAVIOR -> TEST MAPPING (summary)
+- C1 helpers (parseVersion/newer/releaseNotes/shippedNotes/installedUpdate/checkUpdate): Direct coverage, near-exhaustive — scripts/test.mjs:1214-1359. Strict x.y.z + pre-release/partial/garbage rejection, numeric compare, ## Install cut, 20000 cap, __proto__ key filter (via JSON.parse trick), version-mismatch/array/string/null payloads, live 3-language shipped notes, sandbox-copy installedUpdate (equal/newer/older/corrupt disk), happy-path deepEqual envelope, GitHub headers, npm bare-version URL, npm 404/throw closes newer gate, GitHub 500/bad-tag/pre-release-tag/missing-tag reject, foreign + github.com@userinfo html_url omitted, renamed/unversioned pkg unmanaged, aborted-signal propagation to both probes.
+- C1 route GET /api/dsh-orchestrator-kit.update (index.js route registration): NONE at integration level. Only static regex route-surface count (scripts/test.mjs:2130-2138) and helper units. Every other route (roles/catalog/efforts/route/events/diagnostics) has HTTP API tests driving real apply(); the update route is the only exception. Client-side tests stub the route, so a server envelope regression passes the suite.
+- C2 updater state machine: Direct — scripts/test.mjs:3871-4027. current/available/manual/restart/error/404-preserves-restart, installedNewer->restart, remembered===latest->restart, install spec name@version + requestId prefix, already-installed -> exact-tarball fallback spec, applied->current + both storage keys, restart-required->restart + key, invalid result first-diagnostic-line error, manager-refusal error, malformed latest guard with zero manager calls (installCalls.length 6).
+- C2 row controls: Direct — button labels per state, disabled while installing, notes link href/label, version line, restart uses installed version.
+- C2 What's-new: Direct — scripts/test.mjs:4029-4176. once-per-version (SEEN set before open, remount no re-show), install-record consumption + en-merge, host-absent restore + next-start consume, en fallback, first-key fallback, lang attr, plainNotes heading/bold strip, star persistence thanked/dismissed into dsh-orchestrator-kit.prefs (no 4th key).
+- C2 sentinel i18n gate: Direct — scripts/test.mjs:3751-3868 drives all 7 row states + held check + dialog open/close + star keys; all 18 new keys proven through t.
+- C3/C4: Direct — inject array, files list, FROZEN_PACK_FILES 78, npm pack 78-entry, PANEL_KEYS parity gate, byte budget re-measured (132516 / ceiling 135168), docs anchors updated.
+
+GAPS (ranked)
+1. [7/10] No HTTP-API integration test for the update route. index.js route block (registered in apply). Existing: helper units + static regex only. Uncaught regressions: dropping the installed passthrough (restart detection dies), breaking the ?current=1 zero-network branch (dialog open would hit GitHub/npm per open), changing the 502 {ok:false,error} envelope away from the frozen C1/docs contract, dropping request.signal relay. Test outline: reuse the HTTP API ctx pattern (connection.fetch.register capture), stub global fetch with release/npm fixtures; assert default 200 envelope deepEqual incl. installed; assert ?current=1 makes zero outbound calls and returns {ok:true,current,notes}; assert failing GitHub fetch -> 502 + {ok:false,error:/answered 500/}.
+2. [5/10] React stub useSyncExternalStore (scripts/test.mjs:2348-2350 and :3199) ignores subscribe, so listener wiring (client.js createUpdater/subscribe fan-out) never executes. Broken subscribe/unsubscribe would freeze real UIs on stale update states while the suite stays green. Outline: one mount variant whose useSyncExternalStore actually subscribes; assert store emit triggers re-render; or drive updater.subscribe(fn) directly + check() + disposer.
+3. [5/10] localStorage-failure resilience for the three new keys untested: harness has storage:'throw' (scripts/test.mjs:2225, used at :4215 and :4867 for other surfaces) but no update test mounts with it. Dropping an inner try/catch would turn an applied install into an error row or kill the dialog. Outline: mount with storage:'throw', run available->install and load(); assert row reaches current/restart and no throw escapes.
+4. [5/10] busy reentrancy guard (client.js check/install) untested. The 15 s auto-check timer can race a manual check/install; a regressed guard would let the auto-check overwrite an in-flight installing/restart state. Outline: hold first check, call check() again directly, release; assert one route fetch and the first outcome wins.
+5. [5/10] whatsNew.load() record-keep branch for "harness still runs the older copy" (record version > running version -> keep()) untested; regression deletes the record and the restart-required install's dialog never shows after restart. Outline: seed WHATS_NEW with a 9.9.9 record, host answers 0.2.0 -> no dialog AND record still stored; then host answers 9.9.9 -> dialog opens, record consumed.
+6. [4/10] Fresh-install branch (no SEEN, no record -> nothing shown, SEEN recorded) never asserted — runs implicitly in all mounts but no outcome check; a regression showing the dialog on every fresh install passes. Outline: empty-storage mount with host notes; assert no modal + SEEN_KEY set.
+7. [4/10] primitives-absent degradation (Modal undefined -> dialog null, row intact) untested; harness stub always supplies primitives (scripts/test.mjs:2328-2330). Outline: mount variant where the base module require throws; assert overlay component returns null and the row still checks/installs.
+8. [3/10] Preserve-restart branch is !response.ok but tests drive only 404; add a 500/502 preserve check (same branch, cheap alongside gap 1).
+9. [3/10] Broken WHATS_NEW record JSON (discard path) untested. Low consequence.
+10. [3/10] checkUpdate release-body JSON parse failure -> check fails (502) untested.
+11. [2/10] Cosmetic/unworth-it: notes-link hidden on current status; disabled during checking (only installing asserted); refreshSeq race guard; client-side __proto__/isGitHubUrl filters on the record (redundant defense behind server filters).
+
+ANTI-FLAKE / QUALITY
+- No tautological mocks found: the manager/installBundle stubs assert exact spec strings and call counts; fetch stubs carry fixture payloads the assertions decode (deepEqual on envelopes and storage contents).
+- Deterministic async throughout: held-promise checks/installs, zero sleeps, unref'd 15 s timer, timers cleared via plugin disposers on unmount, 404-default update fixtures prevent cross-test leakage (scripts/test.mjs:2244,2306).
+- installedUpdate tested against a real sandbox copy with real disk writes (equal/newer/older/corrupt) rather than a self-mock.
+- Byte budget re-measured (132516 bytes, ceiling 135168), pack contract 77->78 updated in both hard counts.
+
+POSITIVE OBSERVATIONS
+- checkUpdate unit suite is exemplary: full-envelope deepEqual, header + userinfo-URL + abort-propagation assertions, both npm-gate failure modes.
+- The install flow drives the complete already-installed -> tarball fallback with exact spec strings, requestId prefix, and persisted keys, plus a malformed-version guard asserting zero manager calls.
+- Sentinel gate proves every one of the 18 new locale keys renders through t in driven states.
+- Evidence discipline: 3 consecutive green runs logged, token-free artifacts.
+
+RECOMMENDED PRIORITY (for test-writer)
+1. HTTP-API integration test for GET /update (gap 1) — the only route without one; contract-frozen shapes.
+2. subscribe-wiring assertion (gap 2).
+3. storage:'throw' mount across install + whatsNew.load (gap 3).
+4. busy reentrancy double-check (gap 4).
+5. record-keep branch order<0 (gap 5).
+6. fresh-install no-show assertion (gap 6).
+7. primitives-absent mount variant (gap 7).
+
+LIMITATIONS
+- Test suites were not executed by this auditor (read-only role); green status taken from .devflow/evidence/update-system/run-1/2/3.txt.
+- Docs/README/locale diffs audited only through their gates (parity, anchors, PANEL_KEYS), not line-by-line for prose accuracy.
+- The reference repo (dsh-composer-plus) was not fetched; reference-anchored behavior was evaluated against the frozen plan contract only.
+- Coverage-report mode (--coverage-report) output not inspected.
+
+Verdict: SUFFICIENT

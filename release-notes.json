@@ -1,0 +1,8 @@
+{
+  "version": "0.1.0",
+  "notes": {
+    "en": "Initial release of the Orchestrator kit.\nTurns Settings into a control panel for AI agent teams: route provider, model and reasoning effort for each of the 20 Craft dev-flow roles.\nFail-closed validation against the live provider catalog, atomic locked writes and per-role inherit defaults.\nShips the Orchestrator preset persona, 20 craft role cards and the dev-flow skill.",
+    "pt-BR": "Primeira versão do Orchestrator kit.\nTransforma as configurações em um painel de controle para times de agentes de IA: roteie provider, model e reasoning effort para cada um dos 20 papéis dev-flow Craft.\nValidação fail-closed contra o catálogo de providers ao vivo, escritas atômicas com lock e padrões de herança por papel.\nInclui a persona de preset Orchestrator, 20 cartões de papéis craft e a skill dev-flow.",
+    "zh": "Orchestrator 套件首个版本。\n将设置变为 AI 智能体团队的控制面板：为 20 角色 Craft dev-flow 流水线的每个角色配置 provider、model 与 reasoning effort 路由。\n基于实时 provider 目录进行 fail-closed 校验，写入原子化并带锁，支持按角色继承默认值。\n随附 Orchestrator 预设 persona、20 张 craft 角色卡与 dev-flow skill。"
+  }
+}

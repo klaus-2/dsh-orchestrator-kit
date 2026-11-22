@@ -27,7 +27,8 @@ import {
   applyRouteToCard,
   cardPathOf,
   isEntryName,
-  parseRoleCard
+  parseRoleCard,
+  shippedNotes
 } from '../index.js';
 
 const packageDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -35,7 +36,7 @@ const PKG = JSON.parse(readFileSync(path.join(packageDir, 'package.json'), 'utf8
 
 const COVERAGE_STATEMENT_FLOOR = 0.70;
 const COVERAGE_FUNCTION_FLOOR = 0.60;
-const CLIENT_BYTE_CEILING = 112640;
+const CLIENT_BYTE_CEILING = 131072;
 const coverageDirArg = process.argv.find((arg) => arg.startsWith('--coverage-dir='));
 const isCoverageReport = process.argv.includes('--coverage-report');
 const coverageRoot = coverageDirArg ? coverageDirArg.slice('--coverage-dir='.length) : null;
@@ -1210,6 +1211,207 @@ await test('redactText: credential URLs, authorization headers, key assignments,
   assert.equal(redactText('provider: example-hub\nmodel: flash-a'), 'provider: example-hub\nmodel: flash-a', 'plain card frontmatter must pass through unchanged');
 });
 
+await test('update helpers: parseVersion, newer, releaseNotes, shippedNotes, installedUpdate and checkUpdate contracts', async () => {
+  const mod = await import('../index.js');
+  const { parseVersion, newer, releaseNotes, shippedNotes, installedUpdate, checkUpdate } = mod;
+  for (const helper of [parseVersion, newer, releaseNotes, shippedNotes, installedUpdate, checkUpdate]) {
+    assert.equal(typeof helper, 'function', 'index.js must export the update helper set');
+  }
+
+  assert.deepEqual(parseVersion('1.2.3'), [1, 2, 3]);
+  assert.deepEqual(parseVersion('v1.2.3'), [1, 2, 3], 'a v-prefixed tag must parse');
+  assert.equal(parseVersion('1.2.3-rc.1'), undefined, 'a pre-release tag must not parse as a version');
+  assert.equal(parseVersion('1.2'), undefined, 'a partial version must not parse');
+  assert.equal(parseVersion('not a version'), undefined);
+  assert.equal(parseVersion(120), undefined, 'a non-string version must not parse');
+
+  assert.equal(newer('1.2.4', '1.2.3'), true, 'a higher patch component is newer');
+  assert.equal(newer('2.0.0', '1.9.9'), true, 'a higher major component is newer');
+  assert.equal(newer('1.2.3', '1.2.3'), false, 'an equal version is never newer');
+  assert.equal(newer('1.2.2', '1.2.3'), false, 'a lower version is never newer (no downgrade)');
+  assert.equal(newer('1.2.10', '1.2.9'), true, 'components must compare numerically');
+  assert.equal(newer('garbage', '1.2.3'), false, 'an unparsable candidate is never newer');
+  assert.equal(newer('1.2.4', 'garbage'), false, 'an unparsable base is never newer');
+
+  assert.equal(releaseNotes('Body text\n## Install\nrun npm i'), 'Body text\n', 'the install boilerplate must be cut at the ## Install heading');
+  assert.equal(releaseNotes('Body only'), 'Body only', 'a body without the heading passes through');
+  assert.equal(releaseNotes('x'.repeat(20001)).length, 20000, 'notes must cap at 20000 characters');
+  assert.equal(releaseNotes(null), undefined, 'a null body must degrade to undefined');
+  assert.equal(releaseNotes(42), undefined, 'a non-string body must degrade to undefined');
+
+  const notesData = { version: PKG.version, notes: { en: 'English notes', 'pt-BR': 'Notas', zh: '说明' } };
+  assert.deepEqual(shippedNotes(notesData), { en: 'English notes', 'pt-BR': 'Notas', zh: '说明' }, 'valid language keys must pass through');
+  assert.deepEqual(
+    shippedNotes(JSON.parse(`{"version":"${PKG.version}","notes":{"en":"ok","__proto__":"bad"}}`)),
+    { en: 'ok' },
+    '__proto__-style language keys must be filtered'
+  );
+  assert.deepEqual(shippedNotes({ version: PKG.version, notes: { en: 5, 'pt-BR': 'ok' } }), { 'pt-BR': 'ok' }, 'non-string note values must be skipped');
+  assert.equal(shippedNotes({ version: '9.9.9', notes: { en: 'x' } }), undefined, 'a version mismatch must invalidate the payload');
+  assert.equal(shippedNotes({ version: PKG.version, notes: 'nope' }), undefined, 'non-object notes must invalidate the payload');
+  assert.equal(shippedNotes({ version: PKG.version, notes: {} }), undefined, 'an empty note set must return undefined');
+  assert.equal(shippedNotes(null), undefined, 'a null payload must return undefined');
+  assert.equal(shippedNotes([PKG.version]), undefined, 'an array payload must return undefined');
+  assert.equal(shippedNotes('nope'), undefined, 'a string payload must return undefined');
+  const liveNotes = shippedNotes();
+  assert.ok(liveNotes !== undefined && typeof liveNotes === 'object', 'the shipped release-notes.json must resolve through the default payload');
+  assert.deepEqual(Object.keys(liveNotes ?? {}).sort(), ['en', 'pt-BR', 'zh'], 'the shipped notes must carry the three package languages');
+
+  const sandboxDir = mkdtempSync(path.join(packageDir, 'probe-installed-update-'));
+  try {
+    writeFileSync(path.join(sandboxDir, 'index.js'), readFileSync(path.join(packageDir, 'index.js')));
+    writeFileSync(path.join(sandboxDir, 'package.json'), JSON.stringify({ name: PKG.name, version: PKG.version }), 'utf8');
+    const sandboxMod = await import(pathToFileURL(path.join(sandboxDir, 'index.js')).href);
+    assert.equal(sandboxMod.installedUpdate(), undefined, 'an on-disk version equal to the running one must not be reported');
+    writeFileSync(path.join(sandboxDir, 'package.json'), JSON.stringify({ name: PKG.name, version: '9.9.9' }), 'utf8');
+    assert.equal(sandboxMod.installedUpdate(), '9.9.9', 'a strictly newer on-disk version must be reported');
+    writeFileSync(path.join(sandboxDir, 'package.json'), JSON.stringify({ name: PKG.name, version: '0.0.9' }), 'utf8');
+    assert.equal(sandboxMod.installedUpdate(), undefined, 'an older on-disk version must not be reported');
+    writeFileSync(path.join(sandboxDir, 'package.json'), '{broken', 'utf8');
+    assert.equal(sandboxMod.installedUpdate(), undefined, 'a corrupt on-disk package must degrade to undefined');
+  } finally {
+    rmSync(sandboxDir, { recursive: true, force: true });
+  }
+
+  const pkg = { name: NS, version: '0.1.0' };
+  const releaseFixture = (overrides = {}) => ({
+    tag_name: 'v0.2.0',
+    html_url: 'https://github.com/klaus-2/dsh-orchestrator-kit/releases/tag/v0.2.0',
+    body: 'Release body\n## Install\nnpm i',
+    ...overrides
+  });
+  const githubFetch = (release, npmBehavior = { status: 200 }) => {
+    const calls = [];
+    const impl = async (url, init) => {
+      calls.push({ url, init });
+      if (url === 'https://api.github.com/repos/klaus-2/dsh-orchestrator-kit/releases/latest') {
+        return new Response(JSON.stringify(release), { status: 200 });
+      }
+      if (npmBehavior.throw === true) throw new Error('npm registry unreachable');
+      return new Response('{}', { status: npmBehavior.status });
+    };
+    return { calls, impl };
+  };
+
+  const happy = githubFetch(releaseFixture());
+  const info = await checkUpdate(happy.impl, pkg);
+  assert.deepEqual(info, {
+    name: NS,
+    current: '0.1.0',
+    latest: '0.2.0',
+    managed: true,
+    newer: true,
+    url: 'https://github.com/klaus-2/dsh-orchestrator-kit/releases/tag/v0.2.0',
+    notes: 'Release body\n'
+  }, 'the happy path must report the bare latest version with the npm gate open');
+  assert.equal(happy.calls[0].url, 'https://api.github.com/repos/klaus-2/dsh-orchestrator-kit/releases/latest', 'the GitHub probe must hit the releases API');
+  assert.equal(happy.calls[0].init.headers.accept, 'application/vnd.github+json', 'the GitHub probe must send the releases accept header');
+  assert.equal(happy.calls[0].init.headers['user-agent'], NS, 'the GitHub probe must send the package user-agent');
+  assert.equal(happy.calls[1].url, 'https://registry.npmjs.org/dsh-orchestrator-kit/0.2.0', 'the npm gate must use the bare version URL');
+  assert.ok(typeof happy.calls[0].init.signal?.aborted === 'boolean', 'the GitHub probe must receive a composed abort signal');
+
+  assert.equal((await checkUpdate(githubFetch(releaseFixture(), { status: 404 }).impl, pkg)).newer, false, 'an npm non-OK answer must close the newer gate');
+  assert.equal((await checkUpdate(githubFetch(releaseFixture(), { throw: true }).impl, pkg)).newer, false, 'a thrown npm call must close the gate, not fail the check');
+
+  const ghFail = githubFetch(releaseFixture());
+  ghFail.impl = async () => new Response('nope', { status: 500 });
+  await assert.rejects(() => checkUpdate(ghFail.impl, pkg), /the GitHub releases API answered 500/, 'a GitHub failure must fail the whole check');
+
+  const badTag = githubFetch(releaseFixture({ tag_name: 'v0.2' }));
+  await assert.rejects(() => checkUpdate(badTag.impl, pkg), /no usable x\.y\.z tag/, 'a non x.y.z tag must fail the check');
+  const preReleaseTag = githubFetch(releaseFixture({ tag_name: 'v1.2.3-rc.1' }));
+  await assert.rejects(() => checkUpdate(preReleaseTag.impl, pkg), /no usable x\.y\.z tag/, 'a pre-release tag must fail the check');
+  const noTag = githubFetch({});
+  await assert.rejects(() => checkUpdate(noTag.impl, pkg), /no usable x\.y\.z tag/, 'a missing tag must fail the check');
+
+  const foreign = githubFetch(releaseFixture({ html_url: 'https://example.invalid/release/0.2.0' }));
+  const foreignInfo = await checkUpdate(foreign.impl, pkg);
+  assert.ok(!('url' in foreignInfo), 'a non-github html_url must be omitted entirely');
+  assert.equal(foreignInfo.latest, '0.2.0');
+
+  const userinfo = githubFetch(releaseFixture({ html_url: 'https://github.com@evil.example/klaus-2/dsh-orchestrator-kit/releases/tag/v0.2.0' }));
+  const userinfoInfo = await checkUpdate(userinfo.impl, pkg);
+  assert.ok(!('url' in userinfoInfo), 'a github.com@userinfo html_url must be omitted (the real host is not GitHub)');
+  assert.equal(userinfoInfo.latest, '0.2.0');
+
+  const renamed = await checkUpdate(githubFetch(releaseFixture()).impl, { name: 'linked-copy', version: '0.1.0' });
+  assert.equal(renamed.managed, false, 'a copy not installed from npm must be unmanaged');
+  assert.equal(renamed.name, 'linked-copy');
+  const noVersion = await checkUpdate(githubFetch(releaseFixture()).impl, { name: NS });
+  assert.equal(noVersion.managed, false, 'a package without a version string is unmanaged');
+  assert.ok(!('current' in noVersion), 'the current field must be omitted without a version');
+  assert.equal(noVersion.newer, false, 'no version means the newer gate stays closed');
+
+  const controller = new AbortController();
+  controller.abort();
+  const gated = githubFetch(releaseFixture());
+  await assert.doesNotReject(() => checkUpdate(gated.impl, pkg, controller.signal), 'an aborted request signal must not fail the mocked probes');
+  assert.equal(gated.calls[0].init.signal.aborted, true, 'the request signal must propagate into the GitHub probe');
+  assert.equal(gated.calls[1].init.signal.aborted, true, 'the request signal must propagate into the npm gate');
+});
+
+await test('HTTP API: GET .update serves the npm-gated release probe, zero-network ?current=1 and fail-closed 502', async () => {
+  const tmpHome = mkdtempSync(path.join(tmpdir(), 'map-http-update-'));
+  const prevWarn = console.warn;
+  console.warn = () => {};
+  const originalFetch = globalThis.fetch;
+  const release = {
+    tag_name: 'v0.2.0',
+    html_url: 'https://github.com/klaus-2/dsh-orchestrator-kit/releases/tag/v0.2.0',
+    body: 'Integration release body\n## Install\nnpm i'
+  };
+  let githubBehavior = { ok: true };
+  let outboundCalls = 0;
+  let lastSignal = null;
+  globalThis.fetch = async (url, init) => {
+    outboundCalls += 1;
+    lastSignal = init?.signal ?? null;
+    if (String(url).startsWith('https://api.github.com/')) {
+      if (!githubBehavior.ok) return new Response('rate limited', { status: 500 });
+      return new Response(JSON.stringify(release), { status: 200 });
+    }
+    return new Response('{}', { status: 200 });
+  };
+  try {
+    await withMockHost({ agentsHome: tmpHome, llm: undefined }, async ({ call }) => {
+      const probe = await call(`/api/${NS}.update`);
+      assert.equal(probe.status, 200);
+      assert.deepEqual(probe.data, {
+        ok: true,
+        name: NS,
+        current: PKG.version,
+        latest: '0.2.0',
+        managed: true,
+        newer: true,
+        url: 'https://github.com/klaus-2/dsh-orchestrator-kit/releases/tag/v0.2.0',
+        notes: 'Integration release body\n'
+      }, 'the default update probe must serve the npm-gated release envelope');
+      assert.ok(!('installed' in probe.data), 'an equal on-disk version must not add the installed field');
+
+      const before = outboundCalls;
+      const current = await call(`/api/${NS}.update?current=1`);
+      assert.equal(current.status, 200);
+      assert.deepEqual(current.data, { ok: true, current: PKG.version, notes: shippedNotes() }, '?current=1 must serve the running version with the shipped notes');
+      assert.equal(outboundCalls, before, '?current=1 must make zero outbound network calls');
+
+      githubBehavior = { ok: false };
+      const failed = await call(`/api/${NS}.update`);
+      assert.equal(failed.status, 502);
+      assert.deepEqual(failed.data, { ok: false, error: 'the GitHub releases API answered 500 for the latest release' }, 'a GitHub failure must fail the route with the check error message');
+      githubBehavior = { ok: true };
+
+      const controller = new AbortController();
+      controller.abort();
+      await call(`/api/${NS}.update`, { signal: controller.signal });
+      assert.equal(lastSignal?.aborted, true, 'the request signal must propagate into the GitHub probe');
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.warn = prevWarn;
+    rmSync(tmpHome, { recursive: true, force: true });
+  }
+});
+
 await test('HTTP API: catalog failures and unreadable-directory errors redact secrets and home paths in bodies and logs', async () => {
   const tmpHome = mkdtempSync(path.join(tmpdir(), 'map-http-redact-'));
   const prevWarn = console.warn;
@@ -1986,10 +2188,10 @@ await test('client.js registers under the exact package name (web-boot row id)',
 });
 
 await test('server and client agree on the /api/<name>.* route surface', () => {
-  const routeRe = /\/api\/dsh-orchestrator-kit\.(roles|catalog|efforts|route|events|diagnostics)/g;
+  const routeRe = /\/api\/dsh-orchestrator-kit\.(roles|catalog|efforts|route|events|diagnostics|update)/g;
   const serverRoutes = [...readFileSync(path.join(packageDir, 'index.js'), 'utf8').matchAll(routeRe)].map((m) => m[0]).sort();
   const clientRoutes = [...readFileSync(path.join(packageDir, 'client.js'), 'utf8').matchAll(routeRe)].map((m) => m[0]).sort();
-  assert.equal(serverRoutes.length, 6, 'index.js must register exactly the 6 namespaced routes');
+  assert.equal(serverRoutes.length, 7, 'index.js must register exactly the 7 namespaced routes');
   assert.deepEqual(serverRoutes, clientRoutes, 'client.js must call exactly the routes index.js registers');
 });
 
@@ -2019,6 +2221,7 @@ await test('package.json: public npm contract (name, exports, files, dsh manifes
     'docs/',
     'icon.svg',
     'craft/',
+    'release-notes.json',
     'scripts/',
     'README.md',
     'CHANGELOG.md',
@@ -2027,7 +2230,7 @@ await test('package.json: public npm contract (name, exports, files, dsh manifes
   assert.equal(PKG.scripts.test, 'node scripts/test.mjs');
   assert.equal(PKG.dsh.bundle.patch, './cordis.patch.yml');
   assert.equal(PKG.dsh.client.platform, 'web');
-  assert.deepEqual(PKG.dsh.client.inject, []);
+  assert.deepEqual(PKG.dsh.client.inject, ['@deepseek-ai/dsh-api-remotes'], 'the client bundle must inject the api-remotes base module so the updater reaches remote.pluginManager');
   assert.ok(PKG.dependencies.yaml, 'yaml must be a dependency');
   assert.ok(PKG.dependencies['@deepseek-ai/dsh-atomic-write'], 'dsh-atomic-write must be a dependency');
 });
@@ -2069,7 +2272,6 @@ await test('all shipped files exist with UTF-8 no BOM and pure LF', () => {
 
 function mountVmClient(fetchHandler, options = {}) {
   let registeredModule = null;
-  let injectedFactory = null;
   const slotsSection = [];
   const fetchCalls = [];
   const pluginDisposers = [];
@@ -2095,6 +2297,14 @@ function mountVmClient(fetchHandler, options = {}) {
     return template.replace(/\{(\w+)\}/g, (match, name) => (name in params ? String(params[name]) : match));
   };
   const boundFns = new Map();
+  const UPDATE_ROUTE_URL = `/api/${NS}.update`;
+  const defaultUpdateReply = (url) => {
+    if (url === `${UPDATE_ROUTE_URL}?current=1`) {
+      const notes = shippedNotes();
+      return new Response(JSON.stringify({ ok: true, current: PKG.version, ...(notes === undefined ? {} : { notes }) }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ ok: true, name: NS, current: PKG.version, latest: PKG.version, managed: true, newer: false }), { status: 200 });
+  };
   const localeStub = {
     register(ns, locale, dict) {
       localeState.registrations.push({ ns, locale, dict });
@@ -2147,9 +2357,11 @@ function mountVmClient(fetchHandler, options = {}) {
       setTimeout,
       clearTimeout
     },
-    fetch: (url, opts) => track(Promise.resolve().then(() => {
+    fetch: (url, opts) => track(Promise.resolve().then(async () => {
       fetchCalls.push({ url, opts });
-      return fetchHandler(url, opts);
+      const reply = await fetchHandler(url, opts);
+      if (options.updateFixtures !== false && (url === UPDATE_ROUTE_URL || url === `${UPDATE_ROUTE_URL}?current=1`) && reply.status === 404) return defaultUpdateReply(url);
+      return reply;
     })),
     encodeURIComponent,
     JSON,
@@ -2170,8 +2382,13 @@ function mountVmClient(fetchHandler, options = {}) {
   let hookCursor = 0;
   let pendingEffects = [];
   const plugin = registeredModule.factory((dep) => {
+    if (dep === '@deepseek-ai/dsh-client-ui-primitives') {
+      if (options.primitives === false) throw new Error('module not available');
+      return { Modal: 'vm-modal', Button: 'vm-button' };
+    }
     assert.equal(dep, 'react');
     return {
+      Fragment: 'vm-fragment',
       createElement(type, props, ...children) {
         return { type, props: props ?? {}, children: children.flat(Infinity).filter((c) => c !== null && c !== undefined && c !== false) };
       },
@@ -2184,14 +2401,18 @@ function mountVmClient(fetchHandler, options = {}) {
       },
       useEffect(effect, deps) {
         pendingEffects.push({ idx: hookCursor++, effect, deps });
+      },
+      useSyncExternalStore(subscribe, getSnapshot) {
+        return getSnapshot();
       }
     };
   });
+  const injectedFactories = [];
   plugin.apply({
     slots: {
       inject(slot, factory) {
-        assert.equal(slot, 'settings.section');
-        injectedFactory = factory;
+        assert.ok(slot === 'settings.section' || slot === 'shell.overlay', `unexpected slot injection ${slot}`);
+        injectedFactories.push(factory);
       },
       register(meta, component) {
         slotsSection.push({ meta, component });
@@ -2203,11 +2424,21 @@ function mountVmClient(fetchHandler, options = {}) {
       const dispose = fn();
       pluginDisposers.push(dispose);
       return dispose;
-    }
+    },
+    ...(options.pluginManager === undefined ? {} : {
+      inject(deps, setup) {
+        assert.deepEqual([...deps], ['remote.pluginManager'], 'the update wiring must inject remote.pluginManager');
+        setup({ remote: { pluginManager: options.pluginManager }, effect(fn2) { return fn2(); } });
+        return { dispose() {} };
+      }
+    })
   });
-  injectedFactory();
-  const Component = slotsSection[0].component;
-  const sectionMeta = slotsSection[0].meta;
+  for (const factory of injectedFactories) factory();
+  const sectionEntry = slotsSection.find((entry) => entry.meta.name === 'settings.section');
+  assert.ok(sectionEntry, 'the settings section must register its component');
+  const overlayEntry = slotsSection.find((entry) => entry.meta.id === 'whats-new') ?? null;
+  const Component = sectionEntry.component;
+  const sectionMeta = sectionEntry.meta;
 
   const runPluginDisposers = () => {
     for (const dispose of pluginDisposers.splice(0)) {
@@ -2231,6 +2462,7 @@ function mountVmClient(fetchHandler, options = {}) {
       hookCursor = 0;
       pendingEffects = [];
       const tree = Component();
+      const overlayTree = overlayEntry === null ? null : overlayEntry.component();
       for (const item of pendingEffects) {
         const prev = effectRecords[item.idx];
         if (!prev || depsChanged(prev.deps, item.deps)) {
@@ -2239,14 +2471,14 @@ function mountVmClient(fetchHandler, options = {}) {
           effectRecords[item.idx] = { deps: item.deps, cleanup };
         }
       }
-      return tree;
+      return overlayTree === null ? tree : { type: 'div', props: {}, children: [tree, overlayTree] };
     };
 
     const settle = async (waitForInflight = true) => {
       let tree = renderCycle();
       for (let step = 0; step < 12; step++) {
         if (waitForInflight && inflight.size > 0) {
-          await Promise.all([...inflight]);
+          await Promise.allSettled([...inflight]);
         }
         await new Promise((r) => setTimeout(r, 0));
         const hadInflight = waitForInflight && inflight.size > 0;
@@ -2873,7 +3105,25 @@ const PANEL_KEYS = [
   'support.cta',
   'support.thanks',
   'support.close',
-  'support.dismiss'
+  'support.dismiss',
+  'update.title',
+  'update.checking',
+  'update.current',
+  'update.available',
+  'update.installing',
+  'update.restart',
+  'update.manual',
+  'update.failed',
+  'update.version',
+  'update.check',
+  'update.install',
+  'update.notes',
+  'update.whatsNew',
+  'whatsNew.title',
+  'whatsNew.close',
+  'whatsNew.star',
+  'whatsNew.starLink',
+  'whatsNew.starDismiss'
 ];
 
 const FROZEN_PACK_FILES = [
@@ -2951,6 +3201,7 @@ const FROZEN_PACK_FILES = [
   'README.md',
   'README.pt-BR.md',
   'README.zh-CN.md',
+  'release-notes.json',
   'scripts/docs-parity.mjs',
   'scripts/install-craft.js',
   'scripts/test.mjs'
@@ -2998,7 +3249,12 @@ await test('locale registration: embedded dictionaries sync with locale JSON pan
     }
   });
   runInContext(source, probeSandbox);
-  const probePlugin = probeModule.factory(() => ({ createElement() {}, useState() {}, useEffect() {} }));
+  const probePlugin = probeModule.factory(() => ({
+    createElement() {},
+    useState() {},
+    useEffect() {},
+    useSyncExternalStore(subscribe, getSnapshot) { return getSnapshot(); }
+  }));
   assert.deepEqual([...probePlugin.inject], ['slots', 'locale'], 'the plugin must inject slots and locale');
 
   const registrationHandler = async (url) => {
@@ -3057,6 +3313,9 @@ await test('i18n structural gate: every panel string renders through t (sentinel
     'English', 'Português (BR)', '简体中文',
     '—', '', '0', '1', '2', '3',
     EXAMPLE_CLOUD, 'reasoner-d',
+    '0.1.0', '0.2.0',
+    'Update notes fixture', 'Notas de versão fixture',
+    'malformed update info',
     gateBreakdownText(gateRoles),
     gateBreakdownText(gateRoles.slice(0, 1)),
     gateBreakdownText(gateRoles.slice(1)),
@@ -3090,6 +3349,7 @@ await test('i18n structural gate: every panel string renders through t (sentinel
         const value = node.props?.[prop];
         if (typeof value === 'string') checkValue(value);
       }
+      if (node.props?.footer && typeof node.props.footer === 'object') scanTree(node.props.footer);
       for (const child of node.children ?? []) scanTree(child);
     }
   };
@@ -3544,8 +3804,426 @@ await test('i18n structural gate: every panel string renders through t (sentinel
   assert.equal(routePostsOf(vmReadonlyGate).length, readonlyPostsBefore, 'Ctrl+S must be a no-op in readonly mode');
   appReadonlyGate.unmount();
 
+  const updateFixtures = {
+    current: { ok: true, name: NS, current: '0.1.0', latest: '0.1.0', managed: true, newer: false },
+    available: { ok: true, name: NS, current: '0.1.0', latest: '0.2.0', managed: true, newer: true, url: 'https://github.com/klaus-2/dsh-orchestrator-kit/releases/tag/v0.2.0' },
+    manual: { ok: true, name: NS, current: '0.1.0', latest: '0.3.0', managed: false, newer: true },
+    restart: { ok: true, name: NS, current: '0.1.0', latest: '0.2.0', managed: true, newer: true, installed: '0.2.0' }
+  };
+  const dialogNotesFixture = { en: 'Update notes fixture', 'pt-BR': 'Notas de versão fixture' };
+  let updateMode = 'held';
+  let holdUpdateCheck = null;
+  let holdUpdateInstall = null;
+  const updateManager = {
+    installBundle() {
+      const reply = { ok: true, value: { application: 'applied', version: '0.2.0' } };
+      if (holdUpdateInstall) {
+        return new Promise((resolve) => { holdUpdateInstall = () => resolve(reply); });
+      }
+      return Promise.resolve(reply);
+    }
+  };
+  const vmUpdateGate = mountVmClient(async (url) => {
+    if (url === `/api/${NS}.update?current=1`) {
+      return new Response(JSON.stringify({ ok: true, current: '0.1.0', notes: dialogNotesFixture }), { status: 200 });
+    }
+    if (url === `/api/${NS}.update`) {
+      if (updateMode === 'held') {
+        return new Promise((resolve) => {
+          holdUpdateCheck = () => resolve(new Response(JSON.stringify(updateFixtures.current), { status: 200 }));
+        });
+      }
+      if (updateMode === 'error') return new Response(JSON.stringify({ ok: false, error: 'update boom' }), { status: 500 });
+      if (updateMode === '404') return new Response(JSON.stringify({ ok: false }), { status: 404 });
+      return new Response(JSON.stringify(updateFixtures[updateMode]), { status: 200 });
+    }
+    if (url.startsWith(`/api/${NS}.roles`)) return okRolesReply();
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify(gateCatalog), { status: 200 });
+    if (url.startsWith(`/api/${NS}.efforts`)) return new Response(JSON.stringify(gateEfforts), { status: 200 });
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  }, { sentinelBind: true, pluginManager: updateManager, updateFixtures: false });
+  const updateRowTextOf = (node) => collectText(findNodes(node, (n) => n.type === 'div' && n.props.className === 'dsh-ok-update')[0] ?? { children: [] }).join('\n');
+  const updateActionOf = (node) => findNodes(node, (n) => n.type === 'button' && n.props.className === 'dsh-ok-update-action')[0];
+  const whatsNewButtonOf = (node) => findNodes(node, (n) => n.type === 'button' && n.props.className === 'dsh-ok-update-open')[0];
+  const appUpdateGate = vmUpdateGate.mountInstance();
+  let treeUpdateGate = await appUpdateGate.settle(false);
+  scanTree(treeUpdateGate);
+  assert.ok(collectText(treeUpdateGate).join('').includes('⟦update.checking⟧'), 'a held update check must render update.checking through t');
+  holdUpdateCheck();
+  holdUpdateCheck = null;
+  treeUpdateGate = await appUpdateGate.settle();
+  scanTree(treeUpdateGate);
+  assert.ok(collectText(treeUpdateGate).join('').includes('⟦update.current⟧'), 'an up-to-date check must render update.current through t');
+  assert.ok(collectText(treeUpdateGate).join('').includes('⟦update.version⟧'), 'the running version must render through update.version');
+  assert.ok(whatsNewButtonOf(treeUpdateGate), 'the shipped notes must render the What\'s-new control through t');
+  whatsNewButtonOf(treeUpdateGate).props.onClick();
+  treeUpdateGate = appUpdateGate.renderCycle();
+  scanTree(treeUpdateGate);
+  const gateDialogModal = findNodes(treeUpdateGate, (n) => n.type === 'vm-modal')[0];
+  assert.equal(gateDialogModal.props.title, '⟦whatsNew.title⟧', 'whatsNew.title must render through t in the open What\'s-new dialog');
+  const gateDialogFooterText = collectText(gateDialogModal.props.footer).join('');
+  for (const key of ['update.notes', 'whatsNew.close']) {
+    assert.ok(gateDialogFooterText.includes(`⟦${key}⟧`), `${key} must render through t in the dialog footer`);
+  }
+  const gateDialogText = collectText(treeUpdateGate).join('');
+  for (const key of ['whatsNew.star', 'whatsNew.starLink', 'whatsNew.starDismiss']) {
+    assert.ok(gateDialogText.includes(`⟦${key}⟧`), `${key} must render through t in the What's-new star line`);
+  }
+  assert.ok(collectText(treeUpdateGate).includes('Update notes fixture'), 'the dialog must render the active-language notes as exact fixture data');
+  findNodes(findNodes(treeUpdateGate, (n) => n.type === 'vm-modal')[0].props.footer, (n) => n.type === 'vm-button')[0].props.onClick();
+  treeUpdateGate = appUpdateGate.renderCycle();
+  scanTree(treeUpdateGate);
+  assert.equal(findNodes(treeUpdateGate, (n) => n.type === 'vm-modal').length, 0, 'closing the dialog must remove it from the render');
+
+  updateMode = 'available';
+  updateActionOf(treeUpdateGate).props.onClick();
+  treeUpdateGate = await appUpdateGate.settle();
+  scanTree(treeUpdateGate);
+  assert.ok(collectText(treeUpdateGate).join('').includes('⟦update.available⟧'), 'an installable update must render update.available through t');
+  assert.ok(collectText(treeUpdateGate).join('').includes('⟦update.install⟧'), 'the installable update must render update.install through t');
+  assert.ok(collectText(treeUpdateGate).join('').includes('⟦update.notes⟧'), 'the release link must render update.notes through t');
+  holdUpdateInstall = true;
+  updateActionOf(treeUpdateGate).props.onClick();
+  treeUpdateGate = await appUpdateGate.settle(false);
+  scanTree(treeUpdateGate);
+  assert.ok(collectText(treeUpdateGate).join('').includes('⟦update.installing⟧'), 'an in-flight install must render update.installing through t');
+  assert.equal(updateActionOf(treeUpdateGate).props.disabled, true, 'the action control must disable while installing');
+  holdUpdateInstall();
+  holdUpdateInstall = null;
+  treeUpdateGate = await appUpdateGate.settle();
+  scanTree(treeUpdateGate);
+  assert.equal(vmUpdateGate.storage.get('dsh-orchestrator-kit.update.installed'), '0.2.0', 'the applied install must remember the installed version');
+
+  updateMode = 'manual';
+  updateActionOf(treeUpdateGate).props.onClick();
+  treeUpdateGate = await appUpdateGate.settle();
+  scanTree(treeUpdateGate);
+  assert.ok(collectText(treeUpdateGate).join('').includes('⟦update.manual⟧'), 'a non-npm copy must render update.manual through t');
+
+  updateMode = 'error';
+  updateActionOf(treeUpdateGate).props.onClick();
+  treeUpdateGate = await appUpdateGate.settle();
+  scanTree(treeUpdateGate);
+  assert.ok(collectText(treeUpdateGate).join('').includes('⟦update.failed⟧'), 'a failed update check must render update.failed through t');
+
+  updateMode = 'restart';
+  updateActionOf(treeUpdateGate).props.onClick();
+  treeUpdateGate = await appUpdateGate.settle();
+  scanTree(treeUpdateGate);
+  assert.ok(collectText(treeUpdateGate).join('').includes('⟦update.restart⟧'), 'a newer on-disk copy must render update.restart through t');
+
+  updateMode = '404';
+  updateActionOf(treeUpdateGate).props.onClick();
+  treeUpdateGate = await appUpdateGate.settle();
+  scanTree(treeUpdateGate);
+  assert.ok(updateRowTextOf(treeUpdateGate).includes('⟦update.restart⟧'), 'a 404 while a restart state stands must preserve the restart state');
+  assert.ok(collectText(treeUpdateGate).join('').includes('⟦update.check⟧'), 'the row action must render update.check through t');
+  appUpdateGate.unmount();
+
   const missingKeys = requiredKeys.filter((key) => !observedKeys.has(key));
   assert.deepEqual(missingKeys, [], 'every panel dictionary key must render through t in at least one driven state');
+});
+
+await test('client.js updater: full state machine, install flow with already-installed tarball fallback and row controls per state', async () => {
+  const enPanel = localePanelOf('en');
+  const updateRowTextOf = (tree) => collectText(findNodes(tree, (n) => n.type === 'div' && n.props.className === 'dsh-ok-update')[0] ?? { children: [] }).join('\n');
+  const updateActionOf = (tree) => findNodes(tree, (n) => n.type === 'button' && n.props.className === 'dsh-ok-update-action')[0];
+  const updateNotesLinkOf = (tree) => findNodes(tree, (n) => n.type === 'a' && n.props.className === 'dsh-ok-update-link')[0];
+
+  const fixtures = {
+    current: { ok: true, name: NS, current: '0.1.0', latest: '0.1.0', managed: true, newer: false },
+    available: { ok: true, name: NS, current: '0.1.0', latest: '0.2.0', managed: true, newer: true, url: 'https://github.com/klaus-2/dsh-orchestrator-kit/releases/tag/v0.2.0', notes: 'GitHub release body' },
+    manual: { ok: true, name: NS, current: '0.1.0', latest: '0.3.0', managed: false, newer: true, url: 'https://github.com/klaus-2/dsh-orchestrator-kit/releases/tag/v0.3.0' },
+    restart: { ok: true, name: NS, current: '0.1.0', latest: '0.2.0', managed: true, newer: true, installed: '0.2.0' }
+  };
+  let updateMode = 'current';
+  const plainHandler = async (url) => {
+    if (url === `/api/${NS}.update`) {
+      if (updateMode === 'reject') throw new Error('bridge gone');
+      if (updateMode === 'error') return new Response(JSON.stringify({ ok: false, error: 'update boom' }), { status: 500 });
+      if (updateMode === '404') return new Response(JSON.stringify({ ok: false }), { status: 404 });
+      return new Response(JSON.stringify(fixtures[updateMode]), { status: 200 });
+    }
+    if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles: [{ id: 'planner', name: 'planner', description: 'Plans the work', provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: null, disabled: false, mtimeMs: 1000 }] }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify({ ok: true, available: true, degraded: false, default: null, groups: [{ provider: EXAMPLE_HUB, name: 'Example Hub', models: [{ id: 'flash-a', name: 'Flash A' }] }] }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.efforts`)) return new Response(JSON.stringify({ ok: true, defaultEffort: 'medium', efforts: [{ id: 'high', name: 'High' }] }), { status: 200 });
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  };
+
+  const plainVm = mountVmClient(plainHandler, { updateFixtures: false });
+  const appPlain = plainVm.mountInstance();
+  let treePlain = await appPlain.settle();
+  assert.ok(updateRowTextOf(treePlain).includes(enPanel['update.current']), 'an up-to-date check must render update.current');
+  assert.ok(updateRowTextOf(treePlain).includes('Version 0.1.0'), 'the row must render the running version through update.version');
+  assert.equal(updateActionOf(treePlain).children[0], enPanel['update.check'], 'the current state must offer the check control');
+  assert.equal(updateActionOf(treePlain).props.disabled, false, 'the check control must stay enabled on the current state');
+
+  updateMode = 'available';
+  updateActionOf(treePlain).props.onClick();
+  treePlain = await appPlain.settle();
+  assert.ok(updateRowTextOf(treePlain).includes(enPanel['update.available'].replace('{version}', '0.2.0')), 'an installable update must render update.available with the latest version');
+  assert.equal(updateActionOf(treePlain).children[0], enPanel['update.check'], 'without a plugin manager the available state must keep the check control');
+  const plainNotesLink = updateNotesLinkOf(treePlain);
+  assert.ok(plainNotesLink, 'the release link must render for a url-carrying answer');
+  assert.equal(plainNotesLink.props.href, fixtures.available.url, 'the release link must open the release url');
+  assert.equal(plainNotesLink.children[0], enPanel['update.notes'], 'the release link must read update.notes');
+
+  updateMode = 'manual';
+  updateActionOf(treePlain).props.onClick();
+  treePlain = await appPlain.settle();
+  assert.ok(updateRowTextOf(treePlain).includes(enPanel['update.manual'].replace('{version}', '0.3.0')), 'a non-npm copy must render update.manual');
+
+  updateMode = 'error';
+  updateActionOf(treePlain).props.onClick();
+  treePlain = await appPlain.settle();
+  assert.ok(updateRowTextOf(treePlain).includes(enPanel['update.failed'].replace('{error}', 'update boom')), 'a failed check must render update.failed with the error detail');
+
+  updateMode = 'restart';
+  updateActionOf(treePlain).props.onClick();
+  treePlain = await appPlain.settle();
+  assert.ok(updateRowTextOf(treePlain).includes(enPanel['update.restart'].replace('{version}', '0.2.0')), 'a newer on-disk copy must render update.restart with the installed version');
+
+  updateMode = '404';
+  updateActionOf(treePlain).props.onClick();
+  treePlain = await appPlain.settle();
+  assert.ok(updateRowTextOf(treePlain).includes(enPanel['update.restart'].replace('{version}', '0.2.0')), 'a 404 while a restart state stands must preserve the restart state');
+
+  updateMode = 'reject';
+  updateActionOf(treePlain).props.onClick();
+  treePlain = await appPlain.settle();
+  assert.ok(updateRowTextOf(treePlain).includes(enPanel['update.restart'].replace('{version}', '0.2.0')), 'a rejected check while a restart state stands must preserve the restart state');
+  updateMode = 'current';
+  updateActionOf(treePlain).props.onClick();
+  treePlain = await appPlain.settle();
+  assert.ok(updateRowTextOf(treePlain).includes(enPanel['update.current']), 'a successful re-check must resolve the preserved restart state');
+  appPlain.unmount();
+
+  const noPrimitivesVm = mountVmClient(plainHandler, { primitives: false });
+  const appNoPrimitives = noPrimitivesVm.mountInstance();
+  const treeNoPrimitives = await appNoPrimitives.settle();
+  assert.equal(findNodes(treeNoPrimitives, (n) => n.type === 'button' && n.props.className === 'dsh-ok-update-open').length, 0, 'a primitives-less host must not render the What\'s-new button');
+  appNoPrimitives.unmount();
+  const withPrimitivesVm = mountVmClient(plainHandler);
+  const appWithPrimitives = withPrimitivesVm.mountInstance();
+  const treeWithPrimitives = await appWithPrimitives.settle();
+  assert.ok(findNodes(treeWithPrimitives, (n) => n.type === 'button' && n.props.className === 'dsh-ok-update-open').length > 0, 'a primitives-capable host must render the What\'s-new button');
+  appWithPrimitives.unmount();
+
+  const installCalls = [];
+  const installReplies = [];
+  let holdInstall = null;
+  const fakeManager = {
+    installBundle(spec, opts) {
+      installCalls.push({ spec, requestId: opts?.requestId });
+      const reply = installReplies.shift() ?? { ok: true, value: { application: 'applied', version: '0.2.0' } };
+      if (holdInstall) {
+        return new Promise((resolve) => { holdInstall = () => resolve(reply); });
+      }
+      return Promise.resolve(reply);
+    }
+  };
+  let installFixture = fixtures.available;
+  const installVm = mountVmClient(async (url) => {
+    if (url === `/api/${NS}.update`) return new Response(JSON.stringify(installFixture), { status: 200 });
+    return plainHandler(url);
+  }, { pluginManager: fakeManager });
+  const appInstall = installVm.mountInstance();
+  let treeInstall = await appInstall.settle();
+  assert.equal(updateActionOf(treeInstall).children[0], enPanel['update.install'], 'the available state with a plugin manager must offer the install control');
+  assert.ok(updateRowTextOf(treeInstall).includes(enPanel['update.available'].replace('{version}', '0.2.0')), 'the installable update must render update.available');
+
+  holdInstall = true;
+  updateActionOf(treeInstall).props.onClick();
+  treeInstall = await appInstall.settle(false);
+  assert.ok(updateRowTextOf(treeInstall).includes(enPanel['update.installing'].replace('{version}', '0.2.0')), 'an in-flight install must render update.installing');
+  assert.equal(updateActionOf(treeInstall).props.disabled, true, 'the action control must disable while installing');
+  const releaseInstall = holdInstall;
+  holdInstall = null;
+  releaseInstall();
+  treeInstall = await appInstall.settle();
+  assert.ok(updateRowTextOf(treeInstall).includes(enPanel['update.current']), 'an applied install must return the row to the current state');
+  assert.ok(updateRowTextOf(treeInstall).includes('Version 0.2.0'), 'the applied install must report the new running version');
+  assert.equal(installCalls[0].spec, 'dsh-orchestrator-kit@0.2.0', 'the first install must request the name@version spec');
+  assert.ok(String(installCalls[0].requestId).startsWith(`${NS}-update-0.2.0-`), 'the install must carry the namespaced requestId');
+  assert.equal(installVm.storage.get('dsh-orchestrator-kit.update.installed'), '0.2.0', 'the applied install must remember the installed version');
+  assert.deepEqual(JSON.parse(installVm.storage.get('dsh-orchestrator-kit.update.whatsNew')), {
+    version: '0.2.0',
+    notes: 'GitHub release body',
+    url: 'https://github.com/klaus-2/dsh-orchestrator-kit/releases/tag/v0.2.0'
+  }, 'the applied install must persist the What\'s-new record');
+
+  updateActionOf(treeInstall).props.onClick();
+  treeInstall = await appInstall.settle();
+  assert.ok(updateRowTextOf(treeInstall).includes(enPanel['update.restart'].replace('{version}', '0.2.0')), 'a check whose latest equals the remembered install must render the restart state');
+
+  installFixture = { ...fixtures.available, latest: '0.3.0', url: 'https://github.com/klaus-2/dsh-orchestrator-kit/releases/tag/v0.3.0' };
+  installReplies.push({ ok: true, value: { error: { code: 'already-installed' } } }, { ok: true, value: { application: 'applied', version: '0.3.0' } });
+  updateActionOf(treeInstall).props.onClick();
+  treeInstall = await appInstall.settle();
+  assert.ok(updateRowTextOf(treeInstall).includes(enPanel['update.available'].replace('{version}', '0.3.0')), 'the next release must become installable again');
+  updateActionOf(treeInstall).props.onClick();
+  treeInstall = await appInstall.settle();
+  assert.ok(updateRowTextOf(treeInstall).includes(enPanel['update.current']), 'the tarball fallback install must return the row to the current state');
+  assert.equal(installCalls[1].spec, 'dsh-orchestrator-kit@0.3.0', 'the refused install must first try the name@version spec');
+  assert.equal(installCalls[2].spec, 'https://registry.npmjs.org/dsh-orchestrator-kit/-/dsh-orchestrator-kit-0.3.0.tgz', 'an already-installed refusal must fall back to the exact npm tarball');
+  assert.equal(installVm.storage.get('dsh-orchestrator-kit.update.installed'), '0.3.0', 'the fallback install must remember the new version');
+
+  installFixture = { ...fixtures.available, latest: '0.4.0', url: 'https://github.com/klaus-2/dsh-orchestrator-kit/releases/tag/v0.4.0' };
+  installReplies.push({ ok: true, value: { application: 'restart-required' } });
+  updateActionOf(treeInstall).props.onClick();
+  treeInstall = await appInstall.settle();
+  updateActionOf(treeInstall).props.onClick();
+  treeInstall = await appInstall.settle();
+  assert.ok(updateRowTextOf(treeInstall).includes(enPanel['update.restart'].replace('{version}', '0.4.0')), 'a restart-required install must render the restart state');
+  assert.equal(installVm.storage.get('dsh-orchestrator-kit.update.installed'), '0.4.0', 'the restart-required install must remember the version');
+
+  installFixture = { ...fixtures.available, latest: '0.5.0', url: 'https://github.com/klaus-2/dsh-orchestrator-kit/releases/tag/v0.5.0' };
+  installReplies.push({ ok: true, value: { error: { code: 'boom', diagnostic: 'pnpm went sideways\nsecond line' } } });
+  updateActionOf(treeInstall).props.onClick();
+  treeInstall = await appInstall.settle();
+  updateActionOf(treeInstall).props.onClick();
+  treeInstall = await appInstall.settle();
+  assert.ok(updateRowTextOf(treeInstall).includes(enPanel['update.failed'].replace('{error}', 'pnpm went sideways')), 'an invalid install result must render update.failed with the first diagnostic line');
+
+  installFixture = { ...fixtures.available, latest: '0.6.0', url: 'https://github.com/klaus-2/dsh-orchestrator-kit/releases/tag/v0.6.0' };
+  installReplies.push({ ok: false, error: { message: 'manager refused the bundle' } });
+  updateActionOf(treeInstall).props.onClick();
+  treeInstall = await appInstall.settle();
+  updateActionOf(treeInstall).props.onClick();
+  treeInstall = await appInstall.settle();
+  assert.ok(updateRowTextOf(treeInstall).includes(enPanel['update.failed'].replace('{error}', 'manager refused the bundle')), 'a manager refusal must render update.failed with the manager error');
+
+  installFixture = { ...fixtures.available, latest: '0.7.0-beta.1' };
+  updateActionOf(treeInstall).props.onClick();
+  treeInstall = await appInstall.settle();
+  updateActionOf(treeInstall).props.onClick();
+  treeInstall = await appInstall.settle();
+  assert.equal(installCalls.length, 6, 'a malformed latest must never reach the plugin manager');
+  assert.ok(updateRowTextOf(treeInstall).includes(enPanel['update.failed'].replace('{error}', 'malformed update info')), 'a malformed latest must render update.failed with the guard message');
+
+  installFixture = { ...fixtures.available, latest: '0.8.0', url: 'https://github.com/klaus-2/dsh-orchestrator-kit/releases/tag/v0.8.0' };
+  installReplies.push({ ok: false, error: { code: 'remote-boom', diagnostic: 'manager diag line\nsecond' } });
+  updateActionOf(treeInstall).props.onClick();
+  treeInstall = await appInstall.settle();
+  updateActionOf(treeInstall).props.onClick();
+  treeInstall = await appInstall.settle();
+  assert.ok(updateRowTextOf(treeInstall).includes(enPanel['update.failed'].replace('{error}', 'manager diag line')), 'a diagnostic-only reply error must surface its first diagnostic line');
+  assert.equal(installCalls.length, 7, 'the diagnostic-only reply must have reached the manager exactly once');
+  appInstall.unmount();
+});
+
+await test('client.js What\'s-new dialog: once-per-version seen gate, install-record consumption, host-absent restore, per-language notes with English fallback and star persistence', async () => {
+  const enPanel = localePanelOf('en');
+  const dialogModalOf = (tree) => findNodes(tree, (n) => n.type === 'vm-modal')[0];
+  const dialogNotesOf = (tree) => findNodes(tree, (n) => n.type === 'div' && n.props.className === 'dsh-ok-whatsnew')[0];
+  const dialogNotesTextOf = (tree) => {
+    const notes = dialogNotesOf(tree);
+    return notes === undefined ? undefined : collectText(notes).join('');
+  };
+  const dialogStarOf = (tree) => findNodes(tree, (n) => n.type === 'div' && n.props.className === 'dsh-ok-whatsnew-star')[0];
+  const dialogFooterButtonOf = (tree) => findNodes(dialogModalOf(tree)?.props?.footer, (n) => n.type === 'vm-button')[0];
+  const dialogFooterLinkOf = (tree) => findNodes(dialogModalOf(tree)?.props?.footer, (n) => n.type === 'a')[0];
+  const SEEN = 'dsh-orchestrator-kit.update.seen';
+  const WHATS_NEW = 'dsh-orchestrator-kit.update.whatsNew';
+  const PREFS = 'dsh-orchestrator-kit.prefs';
+  const seenSeed = () => new Map([[SEEN, '0.1.0']]);
+  const recordSeed = () => new Map([
+    [WHATS_NEW, JSON.stringify({ version: '0.2.0', notes: 'Record english body', url: 'https://github.com/klaus-2/dsh-orchestrator-kit/releases/tag/v0.2.0' })]
+  ]);
+  let currentNotes = { en: 'Dialog notes en', 'pt-BR': 'Dialog notes pt' };
+  let hostAnswers = true;
+  const dialogHandler = async (url) => {
+    if (url === `/api/${NS}.update?current=1`) {
+      if (!hostAnswers) return new Response(JSON.stringify({ ok: false, error: 'host down' }), { status: 500 });
+      return new Response(JSON.stringify({ ok: true, current: '0.2.0', notes: currentNotes }), { status: 200 });
+    }
+    if (url === `/api/${NS}.update`) return new Response(JSON.stringify({ ok: true, name: NS, current: '0.2.0', latest: '0.2.0', managed: true, newer: false }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles: [{ id: 'planner', name: 'planner', description: 'Plans the work', provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: null, disabled: false, mtimeMs: 1000 }] }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify({ ok: true, available: true, degraded: false, default: null, groups: [{ provider: EXAMPLE_HUB, name: 'Example Hub', models: [{ id: 'flash-a', name: 'Flash A' }] }] }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.efforts`)) return new Response(JSON.stringify({ ok: true, defaultEffort: 'medium', efforts: [{ id: 'high', name: 'High' }] }), { status: 200 });
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  };
+
+  const vmSeen = mountVmClient(dialogHandler, { storageMap: seenSeed() });
+  const appSeen = vmSeen.mountInstance();
+  let treeSeen = await appSeen.settle();
+  assert.ok(dialogModalOf(treeSeen), 'a newer running version over the seen one must open the What\'s-new dialog');
+  assert.equal(dialogModalOf(treeSeen).props.title, enPanel['whatsNew.title'].replace('{version}', '0.2.0'), 'the dialog must render whatsNew.title with the version');
+  assert.equal(dialogNotesTextOf(treeSeen), 'Dialog notes en', 'the dialog must render the notes for the active language');
+  assert.equal(dialogNotesOf(treeSeen).props.lang, 'en', 'the notes container must carry the resolved language');
+  assert.equal(dialogFooterLinkOf(treeSeen).props.href, 'https://github.com/klaus-2/dsh-orchestrator-kit/releases/tag/v0.2.0', 'the dialog footer must link the release tag');
+  assert.equal(vmSeen.storage.get(SEEN), '0.2.0', 'the dialog open must record the running version as seen');
+  assert.ok(dialogStarOf(treeSeen), 'an unanswered support question must render the star line');
+
+  const starLink = findNodes(dialogStarOf(treeSeen), (n) => n.type === 'a' && n.props.className === 'dsh-ok-whatsnew-link')[0];
+  assert.equal(starLink.props.href, 'https://github.com/klaus-2/dsh-orchestrator-kit', 'the star link must open the repository');
+  starLink.props.onClick();
+  assert.equal(JSON.parse(vmSeen.storage.get(PREFS)).support, 'thanked', 'the star link must persist the thanked support answer');
+  treeSeen = appSeen.renderCycle();
+  assert.ok(dialogStarOf(treeSeen), 'the star link must keep the line while the browser opens the repository');
+  const dismissButton = findNodes(treeSeen, (n) => n.type === 'button' && n.props.className === 'dsh-ok-whatsnew-dismiss')[0];
+  dismissButton.props.onClick();
+  assert.equal(JSON.parse(vmSeen.storage.get(PREFS)).support, 'dismissed', 'the dismiss control must persist the dismissed support answer');
+  treeSeen = appSeen.renderCycle();
+  assert.equal(dialogStarOf(treeSeen), undefined, 'the dismissed answer must remove the star line at once');
+
+  dialogFooterButtonOf(treeSeen).props.onClick();
+  treeSeen = appSeen.renderCycle();
+  assert.equal(dialogModalOf(treeSeen), undefined, 'closing the dialog must remove it from the render');
+  const appSeenAgain = vmSeen.mountInstance();
+  const treeSeenAgain = await appSeenAgain.settle();
+  assert.equal(dialogModalOf(treeSeenAgain), undefined, 'the same version must never reopen the dialog (once per version)');
+  appSeenAgain.unmount();
+  appSeen.unmount();
+
+  const vmRecord = mountVmClient(dialogHandler, { storageMap: recordSeed() });
+  currentNotes = { 'pt-BR': 'Dialog notes pt' };
+  const appRecord = vmRecord.mountInstance();
+  const treeRecord = await appRecord.settle();
+  assert.ok(dialogModalOf(treeRecord), 'an install-time record for the running version must open the dialog');
+  assert.equal(dialogNotesTextOf(treeRecord), 'Record english body', 'the record\'s English body must back the dialog when the running copy ships no English notes');
+  assert.equal(dialogFooterLinkOf(treeRecord).props.href, 'https://github.com/klaus-2/dsh-orchestrator-kit/releases/tag/v0.2.0', 'the record\'s url must drive the footer link');
+  assert.equal(vmRecord.storage.has(WHATS_NEW), false, 'the consumed record must leave storage');
+  appRecord.unmount();
+
+  const vmRestore = mountVmClient(dialogHandler, { storageMap: recordSeed() });
+  hostAnswers = false;
+  const appRestore = vmRestore.mountInstance();
+  const treeRestore = await appRestore.settle();
+  assert.equal(dialogModalOf(treeRestore), undefined, 'a start without a Host answer must not open the dialog');
+  assert.equal(vmRestore.storage.get(WHATS_NEW), recordSeed().get(WHATS_NEW), 'the record must be restored for the next start');
+  appRestore.unmount();
+  hostAnswers = true;
+  const vmRestoreNext = mountVmClient(dialogHandler, { storageMap: recordSeed() });
+  const appRestoreNext = vmRestoreNext.mountInstance();
+  const treeRestoreNext = await appRestoreNext.settle();
+  assert.ok(dialogModalOf(treeRestoreNext), 'the restored record must open the dialog on the next start once the Host answers');
+  assert.equal(vmRestoreNext.storage.has(WHATS_NEW), false, 'the restored record must be consumed after it shows');
+  appRestoreNext.unmount();
+
+  const vmLanguage = mountVmClient(dialogHandler, { storageMap: seenSeed() });
+  currentNotes = { en: 'Dialog notes en', 'pt-BR': 'Dialog notes pt' };
+  vmLanguage.locale.active = 'zh';
+  const appLanguage = vmLanguage.mountInstance();
+  const treeLanguage = await appLanguage.settle();
+  assert.equal(dialogNotesTextOf(treeLanguage), 'Dialog notes en', 'an unmatched UI language must fall back to the English notes');
+  assert.equal(dialogNotesOf(treeLanguage).props.lang, 'en', 'the fallback notes must carry the en language id');
+  appLanguage.unmount();
+
+  currentNotes = { 'pt-BR': 'Notas em português' };
+  const vmFirstKey = mountVmClient(dialogHandler, { storageMap: seenSeed() });
+  const appFirstKey = vmFirstKey.mountInstance();
+  const treeFirstKey = await appFirstKey.settle();
+  assert.equal(dialogNotesTextOf(treeFirstKey), 'Notas em português', 'notes without English must show the first shipped language');
+  assert.equal(dialogNotesOf(treeFirstKey).props.lang, 'pt-BR', 'the first-key fallback must carry the shipped language id');
+  appFirstKey.unmount();
+
+  currentNotes = { en: '## Fixed\n**Fast** startup now' };
+  const vmMarkdown = mountVmClient(dialogHandler, { storageMap: seenSeed() });
+  const appMarkdown = vmMarkdown.mountInstance();
+  const treeMarkdown = await appMarkdown.settle();
+  assert.equal(dialogNotesTextOf(treeMarkdown), 'Fixed\nFast startup now', 'plainNotes must strip headings and bold marks from the notes');
+  appMarkdown.unmount();
 });
 
 const PANEL_RENDERABLE_KEYS = new Set([
@@ -5043,13 +5721,13 @@ await test('new surfaces render untrusted markup as text: batch summary, event e
   app.unmount();
 });
 
-await test('npm pack: dry-run file list matches the frozen 77-entry contract and packed content passes the forbidden-token scan', () => {
+await test('npm pack: dry-run file list matches the frozen 78-entry contract and packed content passes the forbidden-token scan', () => {
   const dryRun = spawnSync('npm pack --dry-run --json', { cwd: packageDir, encoding: 'utf8', shell: true });
   assert.equal(dryRun.status, 0, `npm pack --dry-run must succeed: ${dryRun.stderr}`);
   const parsed = JSON.parse(dryRun.stdout);
   assert.equal(parsed[0].filename, `${PKG.name}-${PKG.version}.tgz`);
-  assert.equal(parsed[0].entryCount, 77);
-  assert.deepEqual(parsed[0].files.map((entry) => entry.path).sort(), [...FROZEN_PACK_FILES].sort(), 'the packed file set must match the frozen 77-entry contract');
+  assert.equal(parsed[0].entryCount, 78);
+  assert.deepEqual(parsed[0].files.map((entry) => entry.path).sort(), [...FROZEN_PACK_FILES].sort(), 'the packed file set must match the frozen 78-entry contract');
 
   const tmp = mkdtempSync(path.join(tmpdir(), 'pack-scan-'));
   try {
@@ -5069,7 +5747,7 @@ await test('npm pack: dry-run file list matches the frozen 77-entry contract and
     };
     visit(packedRoot);
     const relPaths = packedFiles.map((file) => path.relative(packedRoot, file).split(path.sep).join('/')).sort();
-    assert.deepEqual(relPaths, [...FROZEN_PACK_FILES].sort(), 'the extracted tarball content must match the frozen 77-entry contract');
+    assert.deepEqual(relPaths, [...FROZEN_PACK_FILES].sort(), 'the extracted tarball content must match the frozen 78-entry contract');
     for (const file of packedFiles) {
       const rel = path.relative(packedRoot, file).split(path.sep).join('/');
       const text = readFileSync(file, 'utf8').toLowerCase();
@@ -5382,12 +6060,12 @@ await test('coverage gate fails closed: empty directory, missing coverage root a
   }
 });
 
-await test('client.js byte budget: measured size stays under the versioned 112640-byte ceiling with no self-adjustment', () => {
+await test('client.js byte budget: measured size stays under the versioned 131072-byte ceiling with no self-adjustment', () => {
   const size = statSync(path.join(packageDir, 'client.js')).size;
-  assert.equal(size, 107774, 'client.js must stay byte-identical at the measured 107774 bytes');
-  assert.equal(CLIENT_BYTE_CEILING, 112640, 'the versioned ceiling must stay 112640 bytes (110 KiB)');
-  assert.equal(CLIENT_BYTE_CEILING - size, 4866, 'the headroom must stay 4866 bytes');
-  assert.ok(size <= CLIENT_BYTE_CEILING, `client.js is ${size} bytes; ceiling is ${CLIENT_BYTE_CEILING} (110 KiB) — bump the versioned ceiling by explicit commit or split a chunk (C17)`);
+  assert.equal(size, 127757, 'client.js must stay byte-identical at the measured 127757 bytes');
+  assert.equal(CLIENT_BYTE_CEILING, 131072, 'the versioned ceiling must stay 131072 bytes (128 KiB)');
+  assert.equal(CLIENT_BYTE_CEILING - size, 3315, 'the headroom must stay 3315 bytes');
+  assert.ok(size <= CLIENT_BYTE_CEILING, `client.js is ${size} bytes; ceiling is ${CLIENT_BYTE_CEILING} (128 KiB) — bump the versioned ceiling by explicit commit or split a chunk (C17)`);
 });
 
 await test('docs-parity.mjs: three READMEs share headings, table rows and fenced blocks; importing has no side effects', async () => {
@@ -5463,17 +6141,17 @@ await test('pass-5 docs and static markers: six reference docs carry their secti
     'docs/glossary.md': ['role', 'phase', 'harness catalog', 'reasoning effort', 'inherit', 'route', 'dispatch', 'batch', 'profile', 'audit trail', 'readonly', 'content-visibility', 'expectedMtimeMs'],
     'docs/recipes.md': ['economical', 'balanced', 'max-quality', 'provider', 'model', 'reasoning_effort', 'disabled'],
     'docs/role-card.md': ['name', 'description', 'provider', 'model', 'reasoning_effort', 'disabled', '65536', 'CRLF', 'BOM'],
-    'docs/architecture.md': ['expectedMtimeMs', 'withFileLock', 'writeFileAtomic', 'realpath', 'audit', '409', '503'],
+    'docs/architecture.md': ['expectedMtimeMs', 'withFileLock', 'writeFileAtomic', 'realpath', 'audit', '409', '503', 'update checking'],
     'docs/troubleshooting.md': ['400', '409', '503', '403', 'readonly', 'coverage', 'byte'],
-    'docs/api.md': ['roles', 'catalog', 'efforts', 'route', 'events', 'diagnostics', 'readOnly']
+    'docs/api.md': ['roles', 'catalog', 'efforts', 'route', 'events', 'diagnostics', 'update', 'readOnly']
   };
   const docSections = {
     'docs/glossary.md': ['## Localized terms', '## Code identifiers (no panel key)'],
     'docs/recipes.md': ['## 1. Economical', '## 2. Balanced', '## 3. Max quality'],
     'docs/role-card.md': ['## Fields the writer reads', '## Field rules', '## Strict parsing and limits', '## What a save changes'],
-    'docs/architecture.md': ['## Trust boundary', '## The save sequence, in execution order', '## Audit trail', '## Route surface'],
+    'docs/architecture.md': ['## Trust boundary', '## The save sequence, in execution order', '## Audit trail', '## Route surface', '## Update checking'],
     'docs/troubleshooting.md': ['## Save and validation failures', '## Batch, profile and diagnostics failures', '## Installer and verification gates'],
-    'docs/api.md': ['## Route summary', '## GET roles', '## GET catalog', '## GET efforts', '## POST route', '## GET events', '## GET diagnostics']
+    'docs/api.md': ['## Route summary', '## GET roles', '## GET catalog', '## GET efforts', '## POST route', '## GET events', '## GET diagnostics', '## GET update']
   };
   const normalize = (value) => value.toLowerCase().replace(/[-_]/g, ' ');
   for (const [rel, anchors] of Object.entries(docAnchors)) {
@@ -5509,7 +6187,7 @@ await test('pass-5 docs and static markers: six reference docs carry their secti
   assert.deepEqual(workflowBlock('publish.yml'), expectedBlock, 'publish.yml must carry the byte-identical coverage block');
 
   const testerText = readFileSync(path.join(packageDir, 'scripts', 'test.mjs'), 'utf8');
-  assert.ok(testerText.includes('112640'), 'the versioned byte budget constant must be present');
+  assert.ok(testerText.includes('131072'), 'the versioned byte budget constant must be present');
 });
 
 await test('repo hygiene: no backup artifacts and zero machine tokens in any repo file', () => {

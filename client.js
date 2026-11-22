@@ -12,6 +12,10 @@ window.__ModuleLoader__.load({
     const ROUTE_ROUTE = '/api/dsh-orchestrator-kit.route';
     const EVENTS_ROUTE = '/api/dsh-orchestrator-kit.events';
     const DIAGNOSTICS_ROUTE = '/api/dsh-orchestrator-kit.diagnostics';
+    const UPDATE_ROUTE = '/api/dsh-orchestrator-kit.update';
+    const UPDATE_INSTALLED_KEY = 'dsh-orchestrator-kit.update.installed';
+    const WHATS_NEW_KEY = 'dsh-orchestrator-kit.update.whatsNew';
+    const SEEN_KEY = 'dsh-orchestrator-kit.update.seen';
 
     const PHASE_SECTIONS = [
       { id: 'discovery', ids: ['repo-scout', 'docs-scout', 'media-analyst', 'arch-advisor'] },
@@ -157,7 +161,25 @@ window.__ModuleLoader__.load({
         'support.cta': 'Star on GitHub',
         'support.thanks': 'Thank you! Every star helps the plugin reach more people.',
         'support.close': '✕',
-        'support.dismiss': 'Dismiss'
+        'support.dismiss': 'Dismiss',
+        'update.title': 'Updates',
+        'update.checking': 'Checking for updates…',
+        'update.current': 'You have the latest version.',
+        'update.available': 'Version {version} is available.',
+        'update.installing': 'Installing {version}…',
+        'update.restart': 'Version {version} is installed. Restart the harness to finish.',
+        'update.manual': 'Version {version} is available. This copy was not installed from npm; update it from Settings → Plugins.',
+        'update.failed': 'Update check failed: {error}',
+        'update.version': 'Version {version}',
+        'update.check': 'Check for updates',
+        'update.install': 'Update now',
+        'update.notes': 'Release notes',
+        'update.whatsNew': 'What\'s new',
+        'whatsNew.title': 'What\'s new in {version}',
+        'whatsNew.close': 'Close',
+        'whatsNew.star': 'Enjoying the kit? ',
+        'whatsNew.starLink': 'Star it on GitHub',
+        'whatsNew.starDismiss': 'Don\'t ask again'
       },
       'pt-br': {
         'nav.label': 'Orchestrator',
@@ -289,7 +311,25 @@ window.__ModuleLoader__.load({
         'support.cta': 'Dar estrela no GitHub',
         'support.thanks': 'Obrigado! Cada estrela ajuda o plugin a chegar em mais pessoas.',
         'support.close': '✕',
-        'support.dismiss': 'Dispensar'
+        'support.dismiss': 'Dispensar',
+        'update.title': 'Atualizações',
+        'update.checking': 'Verificando atualizações…',
+        'update.current': 'Você já tem a versão mais recente.',
+        'update.available': 'A versão {version} está disponível.',
+        'update.installing': 'Instalando {version}…',
+        'update.restart': 'A versão {version} está instalada. Reinicie o harness para concluir.',
+        'update.manual': 'A versão {version} está disponível. Esta cópia não foi instalada pelo npm; atualize em Settings → Plugins.',
+        'update.failed': 'Falha ao verificar atualizações: {error}',
+        'update.version': 'Versão {version}',
+        'update.check': 'Verificar atualizações',
+        'update.install': 'Atualizar agora',
+        'update.notes': 'Notas da versão',
+        'update.whatsNew': 'Novidades',
+        'whatsNew.title': 'Novidades da versão {version}',
+        'whatsNew.close': 'Fechar',
+        'whatsNew.star': 'Gostando do kit? ',
+        'whatsNew.starLink': 'Deixe uma estrela no GitHub',
+        'whatsNew.starDismiss': 'Não perguntar novamente'
       },
       zh: {
         'nav.label': 'Orchestrator',
@@ -421,7 +461,25 @@ window.__ModuleLoader__.load({
         'support.cta': '去 GitHub 点 Star',
         'support.thanks': '感谢支持！每一颗 Star 都能让插件帮到更多人。',
         'support.close': '✕',
-        'support.dismiss': '关闭'
+        'support.dismiss': '关闭',
+        'update.title': '更新',
+        'update.checking': '正在检查更新…',
+        'update.current': '您已是最新版本。',
+        'update.available': '有新版本 {version} 可用。',
+        'update.installing': '正在安装 {version}…',
+        'update.restart': '{version} 已安装。重启 harness 以完成更新。',
+        'update.manual': '有新版本 {version} 可用。此副本并非通过 npm 安装；请在设置 → 插件中更新。',
+        'update.failed': '检查更新失败：{error}',
+        'update.version': '版本 {version}',
+        'update.check': '检查更新',
+        'update.install': '立即更新',
+        'update.notes': '版本说明',
+        'update.whatsNew': '新功能',
+        'whatsNew.title': '{version} 的新功能',
+        'whatsNew.close': '关闭',
+        'whatsNew.star': '喜欢这个套件吗？ ',
+        'whatsNew.starLink': '去 GitHub 点个 Star',
+        'whatsNew.starDismiss': '不再询问'
       }
     };
     PANEL_DICTS.pt = PANEL_DICTS['pt-br'];
@@ -499,6 +557,201 @@ window.__ModuleLoader__.load({
     let storedPrefs = readStoredPrefs();
 
     const SUPPORT_STYLES = '.dsh-ok-support { position: relative; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 40px 12px 14px; border: 1px solid color-mix(in srgb, var(--dsw-alias-brand-primary, #4f8cff) 38%, var(--dsw-alias-border-l1, #2a2f3a)); border-radius: 14px; background: linear-gradient(120deg, color-mix(in srgb, var(--dsw-alias-brand-primary, #4f8cff) 9%, var(--dsw-alias-bg-layer-1, #16181d)) 0%, var(--dsw-alias-bg-layer-1, #16181d) 62%); overflow: hidden; animation: dsh-ok-support-in 420ms cubic-bezier(0.22,1,0.36,1) both; }\n.dsh-ok-support-star { display: inline-flex; flex: none; font-size: 24px; line-height: 1; animation: dsh-ok-star-twinkle 2.6s ease-in-out infinite; }\n.dsh-ok-support-spark { position: absolute; font-size: 10px; line-height: 1; color: var(--dsw-alias-brand-primary, #4f8cff); pointer-events: none; animation: dsh-ok-support-spark 2.6s ease-in-out infinite; }\n.dsh-ok-support-body { min-width: 180px; flex: 1; }\n.dsh-ok-support-title { font-size: 13px; font-weight: 600; color: var(--dsw-alias-label-primary, #eee); }\n.dsh-ok-support-text { font-size: 12px; line-height: 17px; margin-top: 2px; color: var(--dsw-alias-label-secondary, #bbb); }\n.dsh-ok-support-cta { display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; font-size: 12.5px; font-weight: 600; white-space: nowrap; color: var(--dsw-alias-label-primary, #eee); background: linear-gradient(135deg, rgba(245,158,11,0.18), rgba(245,158,11,0.06)); border: 1px solid rgba(245,158,11,0.45); border-radius: 10px; cursor: pointer; text-decoration: none; transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease; }\n.dsh-ok-support-cta:hover { transform: translateY(-1px); border-color: rgba(245,158,11,0.75); box-shadow: 0 3px 14px rgba(245,158,11,0.24); }\n.dsh-ok-support-cta:active { transform: translateY(0) scale(0.98); box-shadow: none; }\n.dsh-ok-support-cta:focus-visible, .dsh-ok-support-close:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, #4f8cff); outline-offset: 1px; }\n.dsh-ok-support-close { position: absolute; top: 6px; right: 8px; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; font: inherit; font-size: 11px; line-height: 1; color: var(--dsw-alias-label-tertiary, #888); background: transparent; border: none; border-radius: 6px; cursor: pointer; transition: color 120ms ease, background 120ms ease; }\n.dsh-ok-support-close:hover { color: var(--dsw-alias-label-primary, #eee); background: var(--dsw-alias-bg-layer-2, #1d2026); }\n.dsh-ok-support-thanks { padding-top: 10px; padding-bottom: 10px; }\n.dsh-ok-support-thanks .dsh-ok-support-star { animation: dsh-ok-star-pop 700ms cubic-bezier(0.34,1.56,0.64,1) both; }\n@keyframes dsh-ok-support-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }\n@keyframes dsh-ok-star-twinkle { 0%, 100% { transform: scale(1) rotate(0deg); filter: drop-shadow(0 0 1px transparent); } 50% { transform: scale(1.18) rotate(-9deg); filter: drop-shadow(0 0 7px rgba(245,158,11,0.65)); } }\n@keyframes dsh-ok-support-spark { 0%, 100% { opacity: 0; transform: scale(0.5) rotate(0deg); } 50% { opacity: 0.85; transform: scale(1) rotate(45deg); } }\n@keyframes dsh-ok-star-pop { 0% { transform: scale(0.4) rotate(-30deg); } 62% { transform: scale(1.4) rotate(10deg); } 100% { transform: scale(1) rotate(0deg); } }\n@media (prefers-reduced-motion: reduce) { .dsh-ok-support, .dsh-ok-support-star, .dsh-ok-support-spark, .dsh-ok-support-cta, .dsh-ok-support-close { animation: none; transition: none; } }';
+
+    const RELEASE_TAG_URL = REPO_URL + '/releases/tag/v';
+    const versionOf = (text) => { const m = /^(\d{1,6})\.(\d{1,6})\.(\d{1,6})$/.exec(String(text ?? '')); return m === null ? undefined : m.slice(1).map(Number); };
+    const compareVersions = (a, b) => { for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] - b[i]; return 0; };
+    const matchLanguage = (ids, active) => {
+      const lower = String(active ?? '').toLowerCase();
+      return ids.find((x) => x.toLowerCase() === lower) ?? ids.find((x) => x.toLowerCase() === lower.split('-')[0]);
+    };
+    const notesByLanguage = (value) => (value !== null && typeof value === 'object' ? Object.fromEntries(Object.entries(value)
+      .filter(([id, text]) => /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})?$/.test(id) && typeof text === 'string' && text.trim() !== '')) : {});
+    const notesIn = (notes, active) => {
+      const id = matchLanguage(Object.keys(notes), active) ?? (Object.hasOwn(notes, 'en') ? 'en' : Object.keys(notes)[0]);
+      return { lang: id, text: notes[id] };
+    };
+    const plainNotes = (text) => String(text ?? '').replace(/^#{1,6}\s+/gm, '').replace(/\*\*([^*\n]+)\*\*/g, '$1');
+    const isGitHubUrl = (value) => typeof value === 'string' && /^https:\/\/github\.com(?:\/|$)/.test(value);
+
+    function createUpdater() {
+      let state = { status: 'idle' };
+      let busy = false;
+      const listeners = new Set();
+      const set = (next) => { state = next; for (const fn of [...listeners]) fn(); return state; };
+      const remembered = () => { try { return window.localStorage.getItem(UPDATE_INSTALLED_KEY); } catch { return null; } };
+      const updater = {
+        manager: undefined,
+        getSnapshot: () => state,
+        subscribe: (fn) => { listeners.add(fn); return () => { listeners.delete(fn); }; },
+        async check() {
+          if (busy) return state;
+          const before = state;
+          busy = true;
+          set({ ...state, status: 'checking' });
+          try {
+            const response = await fetch(UPDATE_ROUTE, { cache: 'no-store' });
+            const info = await response.json().catch(() => null);
+            if ((!response.ok || info === null) && before.status === 'restart') return set(before);
+            if (!response.ok || info === null || info.ok === false) throw new Error(info?.error ?? `HTTP ${response.status}`);
+            const installed = versionOf(info.installed);
+            const current = versionOf(info.current);
+            const installedNewer = installed !== undefined && current !== undefined && compareVersions(installed, current) > 0;
+            const status = installedNewer ? 'restart' : !info.newer ? 'current' : remembered() === info.latest ? 'restart' : info.managed ? 'available' : 'manual';
+            return set({ status, info });
+          } catch (error) {
+            if (before.status === 'restart') return set(before);
+            return set({ status: 'error', info: state.info, error: String(error?.message ?? error) });
+          }
+          finally { busy = false; }
+        },
+        async install() {
+          const { info } = state;
+          if (busy || state.status !== 'available' || updater.manager === undefined) return state;
+          if (versionOf(info?.latest) === undefined || info?.name !== NS) return set({ status: 'error', info, error: 'malformed update info' });
+          busy = true;
+          set({ status: 'installing', info });
+          try {
+            const install = async (spec) => {
+              const reply = await updater.manager.installBundle(spec, { requestId: `${NS}-update-${info.latest}-${Date.now()}` });
+              if (!reply?.ok) throw new Error(reply?.error?.message ?? reply?.error?.diagnostic?.split('\n').find((line) => line.trim() !== '') ?? reply?.error?.code ?? 'plugin manager did not answer');
+              return reply.value;
+            };
+            let result = await install(`${info.name}@${info.latest}`);
+            if (result.error?.code === 'already-installed') result = await install(`https://registry.npmjs.org/${info.name}/-/${info.name}-${info.latest}.tgz`);
+            const firstLine = () => result.error?.diagnostic?.split('\n').find((line) => line.trim() !== '') ?? result.error?.code ?? result.application;
+            const live = result.application === 'applied';
+            if (!live && result.application !== 'restart-required' && result.version !== info.latest) throw new Error(firstLine());
+            try { window.localStorage.setItem(UPDATE_INSTALLED_KEY, info.latest); } catch { /* the status below still says restart */ }
+            const notes = typeof info.notes === 'string' && info.notes !== '' ? { notes: info.notes } : {};
+            try { window.localStorage.setItem(WHATS_NEW_KEY, JSON.stringify({ version: info.latest, ...notes, url: info.url })); } catch { /* no dialog then */ }
+            return set(live ? { status: 'current', info: { ...info, current: info.latest, newer: false } } : { status: 'restart', info });
+          } catch (error) { return set({ status: 'error', info, error: String(error?.message ?? error) }); }
+          finally { busy = false; }
+        }
+      };
+      return updater;
+    }
+
+    function createWhatsNew() {
+      let note = null; // the dialog's note, or null
+      let running = null; // the running copy's notes for the row: { version, notes } or null
+      let loaded = false;
+      let refreshSeq = 0;
+      const listeners = new Set();
+      const emit = () => { for (const fn of [...listeners]) fn(); };
+      const set = (next) => { note = next; emit(); };
+      const starDue = () => storedPrefs.support !== 'dismissed' && storedPrefs.support !== 'thanked';
+      const ask = async () => {
+        try {
+          const response = await fetch(`${UPDATE_ROUTE}?current=1`, { cache: 'no-store' });
+          const answer = response.ok ? await response.json() : undefined;
+          const nums = versionOf(answer?.current);
+          return nums === undefined ? undefined : { version: answer.current, nums, notes: notesByLanguage(answer?.notes) };
+        } catch { return undefined; }
+      };
+      return {
+        getSnapshot: () => note,
+        getRunning: () => running,
+        subscribe: (fn) => { listeners.add(fn); return () => { listeners.delete(fn); }; },
+        close: () => set(null),
+        stopStar(hide) {
+          storedPrefs = { ...storedPrefs, support: hide ? 'dismissed' : 'thanked' };
+          writeStoredPrefs(storedPrefs);
+          if (hide && note !== null) set({ ...note, star: false });
+        },
+        refresh() {
+          const seq = ++refreshSeq;
+          ask().then((run) => { if (seq === refreshSeq) { running = run === undefined ? null : { version: run.version, notes: run.notes }; emit(); } });
+        },
+        show() { if (running !== null && Object.keys(running.notes).length > 0) set({ version: running.version, notes: running.notes, url: RELEASE_TAG_URL + running.version, star: starDue() }); },
+        async load() {
+          if (loaded) return;
+          loaded = true;
+          let raw = null;
+          try { raw = window.localStorage.getItem(WHATS_NEW_KEY); if (raw !== null) window.localStorage.removeItem(WHATS_NEW_KEY); } catch { return; }
+          const keep = () => { try { if (window.localStorage.getItem(WHATS_NEW_KEY) === null) window.localStorage.setItem(WHATS_NEW_KEY, raw); } catch { /* shown at no start then */ } };
+          const run = await ask();
+          running = run === undefined ? null : { version: run.version, notes: run.notes }; emit();
+          let record;
+          if (raw !== null) {
+            let saved; try { saved = JSON.parse(raw); } catch { saved = undefined; }
+            const version = versionOf(saved?.version);
+            if (version !== undefined) {
+              if (run === undefined) { keep(); return; } // the Host did not answer: try again at the next start
+              const order = compareVersions(run.nums, version);
+              if (order < 0) { keep(); return; } // the harness still runs the older copy until it restarts
+              if (order === 0) record = { version: saved.version, notes: { ...(typeof saved.notes === 'string' && saved.notes.trim() !== '' ? { en: saved.notes } : {}), ...run.notes },
+                url: isGitHubUrl(saved.url) ? saved.url : undefined };
+            } // a broken record or one for an older version goes; the seen version decides
+          }
+          if (run === undefined) return; // the Host did not answer: the seen version stays
+          let seen; try { seen = versionOf(window.localStorage.getItem(SEEN_KEY)); } catch { return; }
+          if (seen !== undefined && compareVersions(run.nums, seen) <= 0) return; // this version showed (or ran) already
+          try { window.localStorage.setItem(SEEN_KEY, run.version); } catch { /* it can show again at the next start */ }
+          const shown = record ?? (seen === undefined ? undefined : { version: run.version, notes: run.notes, url: RELEASE_TAG_URL + run.version });
+          if (shown !== undefined && Object.keys(shown.notes).length > 0) set({ ...shown, star: starDue() });
+        }
+      };
+    }
+
+    const UPDATE_STYLES = '.dsh-ok-update { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 14px; border: 1px solid var(--dsw-alias-border-l1, #2a2f3a); border-radius: 14px; background: var(--dsw-alias-bg-layer-1, #16181d); }\n.dsh-ok-update-title { font-size: 13px; font-weight: 600; color: var(--dsw-alias-label-primary, #eee); }\n.dsh-ok-update-status { display: flex; flex: 1; min-width: 180px; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 12px; line-height: 17px; color: var(--dsw-alias-label-secondary, #bbb); }\n.dsh-ok-update-link { color: var(--dsw-alias-label-primary, #eee); text-decoration: underline; text-underline-offset: 2px; }\n.dsh-ok-update-open { padding: 0; font: inherit; color: var(--dsw-alias-label-secondary, #bbb); background: none; border: none; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }\n.dsh-ok-update-open:hover { color: var(--dsw-alias-label-primary, #eee); }\n.dsh-ok-update-action { flex: none; padding: 7px 14px; font-size: 12.5px; font-weight: 600; white-space: nowrap; color: var(--dsw-alias-label-primary, #eee); background: var(--dsw-alias-bg-layer-2, #1d2026); border: 1px solid var(--dsw-alias-border-l1, #2a2f3a); border-radius: 10px; cursor: pointer; transition: border-color 160ms ease; }\n.dsh-ok-update-action:hover { border-color: var(--dsw-alias-brand-primary, #4f8cff); }\n.dsh-ok-update-action:disabled { opacity: 0.5; cursor: default; }\n.dsh-ok-update-action:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, #4f8cff); outline-offset: 1px; }\n.dsh-ok-whatsnew { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 55vh; overflow-y: auto; font-size: 13px; line-height: 20px; color: var(--dsw-alias-label-primary, #eee); }\n.dsh-ok-whatsnew-star { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--dsw-alias-border-l1, #2a2f3a); font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-secondary, #bbb); }\n.dsh-ok-whatsnew-link { color: var(--dsw-alias-label-primary, #eee); white-space: nowrap; text-decoration: none; }\n.dsh-ok-whatsnew-link:hover { text-decoration: underline; }\n.dsh-ok-whatsnew-dismiss { padding: 0; font: inherit; font-size: 12px; color: inherit; background: none; border: none; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }\n@media (prefers-reduced-motion: reduce) { .dsh-ok-update-action { transition: none; } }';
+
+    let primitives;
+    try { primitives = require('@deepseek-ai/dsh-client-ui-primitives'); } catch { primitives = undefined; }
+
+    function UpdateSettings({ updater, whatsNew, t }) {
+      const state = React.useSyncExternalStore(updater.subscribe, updater.getSnapshot);
+      const running = React.useSyncExternalStore(whatsNew.subscribe, whatsNew.getRunning);
+      React.useEffect(() => { if (updater.getSnapshot().status === 'idle') updater.check(); }, []);
+      React.useEffect(() => { whatsNew.refresh(); }, [whatsNew]);
+      const { status, info } = state;
+      const latest = status === 'restart' && versionOf(info?.installed) !== undefined ? info.installed : info?.latest;
+      const text = status === 'checking' || status === 'idle' ? t('update.checking')
+        : status === 'error' ? t('update.failed', { error: state.error })
+        : t('update.' + status, { version: latest });
+      const canInstall = status === 'available' && updater.manager !== undefined;
+      return h('div', { className: 'dsh-ok-update' },
+        h('div', { className: 'dsh-ok-update-title' }, t('update.title')),
+        h('div', { className: 'dsh-ok-update-status', role: 'status' },
+          info?.current ? h('span', {}, t('update.version', { version: info.current })) : null,
+          text,
+          info?.url && status !== 'current' ? h('a', { className: 'dsh-ok-update-link', href: info.url, target: '_blank', rel: 'noopener noreferrer' }, t('update.notes')) : null,
+          running !== null && primitives?.Modal !== undefined && Object.keys(running.notes).length > 0 ? h('button', { type: 'button', className: 'dsh-ok-update-open', onClick: () => whatsNew.show() }, t('update.whatsNew')) : null),
+        h('button', {
+          type: 'button',
+          className: 'dsh-ok-update-action',
+          disabled: status === 'checking' || status === 'installing',
+          onClick: () => (canInstall ? updater.install() : updater.check())
+        }, canInstall ? t('update.install') : t('update.check')));
+    }
+
+    function createWhatsNewDialog(ctx, whatsNew) {
+      return function WhatsNewDialog() {
+        const note = React.useSyncExternalStore(whatsNew.subscribe, whatsNew.getSnapshot);
+        const [, setLocaleTick] = React.useState(0);
+        React.useEffect(() => ctx.locale.subscribe(() => setLocaleTick((n) => n + 1)), []);
+        const t = localeOverride === null ? ctx.locale.bind(NS) : makeT(localeOverride);
+        const active = localeOverride ?? ctx.locale?.getSnapshot?.()?.active ?? 'en';
+        if (note === null || primitives?.Modal === undefined) return null;
+        const shown = notesIn(note.notes, active);
+        return h(primitives.Modal, {
+          open: true,
+          onClose: whatsNew.close,
+          closeLabel: t('whatsNew.close'),
+          title: t('whatsNew.title', { version: note.version }),
+          footer: h(React.Fragment, null,
+            note.url === undefined ? null : h('a', { className: 'dsh-ok-whatsnew-link', href: note.url, target: '_blank', rel: 'noopener noreferrer' }, t('update.notes')),
+            h(primitives.Button, { variant: 'outline', onClick: whatsNew.close }, t('whatsNew.close')))
+        },
+          h('div', { className: 'dsh-ok-whatsnew', lang: shown.lang, tabIndex: 0 }, plainNotes(shown.text)),
+          note.star ? h('div', { className: 'dsh-ok-whatsnew-star' },
+            t('whatsNew.star'),
+            h('a', { className: 'dsh-ok-whatsnew-link', href: REPO_URL, target: '_blank', rel: 'noopener noreferrer', onClick: () => whatsNew.stopStar(false) },
+              h('span', { 'aria-hidden': 'true' }, t('support.star')), t('whatsNew.starLink')),
+            h('button', { type: 'button', className: 'dsh-ok-whatsnew-dismiss', onClick: () => whatsNew.stopStar(true) }, t('whatsNew.starDismiss'))) : null);
+      };
+    }
 
     const SURFACE_TINT = 'rgba(127,127,127,0.08)';
     const controlStyle = { background: 'var(--dsw-alias-bg-base)', color: 'var(--dsw-alias-label-primary)', border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 8, padding: 8, fontSize: 13, width: '100%', minWidth: 0 };
@@ -1616,7 +1869,7 @@ window.__ModuleLoader__.load({
         };
 
         return h('div', { 'data-dsh-orchestrator-kit-settings': '', style: { display: 'flex', flexDirection: 'column', gap: 16 }, onKeyDown: onPanelKeyDown },
-          h('style', null, SUPPORT_STYLES),
+          h('style', null, SUPPORT_STYLES + '\n' + UPDATE_STYLES),
           h('div', { style: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 } },
             h('div', { style: { minWidth: 0 } },
               h('div', { style: { fontSize: 14, fontWeight: 600, color: 'var(--dsw-alias-label-primary)' } }, t('header.title')),
@@ -1641,6 +1894,7 @@ window.__ModuleLoader__.load({
               'aria-label': t('refresh.aria')
             }, refreshing ? t('refresh.busy') : t('refresh'))),
           supportBanner,
+          UpdateSettings({ updater, whatsNew, t }),
           messages.__load ? h('div', { style: bannerStyle('error') }, messageText(messages.__load)) : null,
           readonlyMode ? h('div', { style: bannerStyle('warning') },
             h('div', { style: { fontWeight: 600 } }, t('readonly.title')),
@@ -1779,9 +2033,17 @@ window.__ModuleLoader__.load({
       };
     }
 
+    const updater = createUpdater();
+    const whatsNew = createWhatsNew();
+
     return {
       inject: ['slots', 'locale'],
       apply(ctx) {
+        const injectScope = (deps, setup) => {
+          if (ctx.inject === undefined) return [];
+          const fiber = ctx.inject(deps, setup);
+          return [() => fiber.dispose()];
+        };
         const addLanguageOnce = () => {
           try {
             return ctx.locale.addLanguage({ id: 'pt-BR', label: 'Português (BR)', fallback: 'en' });
@@ -1799,6 +2061,16 @@ window.__ModuleLoader__.load({
           ];
           return () => { for (const dispose of disposers) { if (dispose) dispose(); } };
         }, 'locale: panel dictionaries');
+        for (const off of injectScope(['remote.pluginManager'], (scope) => {
+          updater.manager = scope.remote?.pluginManager;
+          scope.effect(() => () => { updater.manager = undefined; }, 'update: manager binding');
+        })) ctx.effect(() => off, 'update: plugin manager scope');
+        ctx.effect(() => {
+          const timerId = window.setTimeout(() => { updater.check(); }, 15000);
+          timerId.unref?.(); // Node test runs only; a browser timer is a number
+          whatsNew.load();
+          return () => window.clearTimeout(timerId);
+        }, 'update: auto-check');
         ctx.slots.inject('settings.section', () => ctx.slots.register({
           name: 'settings.section',
           id: NS,
@@ -1806,6 +2078,11 @@ window.__ModuleLoader__.load({
           label: () => ctx.locale.bind(NS)('nav.label'),
           locale: NS
         }, createSettings(ctx)));
+        ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+          name: 'shell.overlay',
+          id: 'whats-new',
+          locale: NS
+        }, createWhatsNewDialog(ctx, whatsNew)));
       }
     };
   }

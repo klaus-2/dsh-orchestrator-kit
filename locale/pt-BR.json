@@ -134,6 +134,24 @@
     "support.cta": "Dar estrela no GitHub",
     "support.thanks": "Obrigado! Cada estrela ajuda o plugin a chegar em mais pessoas.",
     "support.close": "✕",
-    "support.dismiss": "Dispensar"
+    "support.dismiss": "Dispensar",
+    "update.title": "Atualizações",
+    "update.checking": "Verificando atualizações…",
+    "update.current": "Você já tem a versão mais recente.",
+    "update.available": "A versão {version} está disponível.",
+    "update.installing": "Instalando {version}…",
+    "update.restart": "A versão {version} está instalada. Reinicie o harness para concluir.",
+    "update.manual": "A versão {version} está disponível. Esta cópia não foi instalada pelo npm; atualize em Settings → Plugins.",
+    "update.failed": "Falha ao verificar atualizações: {error}",
+    "update.version": "Versão {version}",
+    "update.check": "Verificar atualizações",
+    "update.install": "Atualizar agora",
+    "update.notes": "Notas da versão",
+    "update.whatsNew": "Novidades",
+    "whatsNew.title": "Novidades da versão {version}",
+    "whatsNew.close": "Fechar",
+    "whatsNew.star": "Gostando do kit? ",
+    "whatsNew.starLink": "Deixe uma estrela no GitHub",
+    "whatsNew.starDismiss": "Não perguntar novamente"
   }
 }

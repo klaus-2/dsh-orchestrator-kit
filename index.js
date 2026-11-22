@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { appendFile, lstat, readFile, readdir, realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
@@ -17,6 +18,18 @@ const MAX_ROUTE_BODY_BYTES = 65536;
 const CARD_READ_CONCURRENCY = 8;
 const ROUTE_BODY_FIELDS = new Set(['id', 'provider', 'model', 'disabled', 'reasoningEffort', 'expectedMtimeMs']);
 const LOCK_TIMEOUT_PREFIX = 'atomic-write: timed out waiting for the writer lock';
+const RELEASES_URL = 'https://api.github.com/repos/klaus-2/dsh-orchestrator-kit/releases/latest';
+const NPM_NAME = 'dsh-orchestrator-kit';
+const NOTES_LANG_RE = /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})?$/;
+const NOTES_MAX = 20000;
+const PACKAGE = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
+const SHIPPED_NOTES = (() => {
+  try {
+    return JSON.parse(readFileSync(new URL('./release-notes.json', import.meta.url), 'utf8'));
+  } catch {
+    return undefined;
+  }
+})();
 
 function agentsRootOf(env = process.env) {
   const configured = env.DSH_AGENTS_HOME;
@@ -458,6 +471,90 @@ function toRoleSummary(id, card, mtimeMs) {
   };
 }
 
+function parseVersion(value) {
+  if (typeof value !== 'string') return undefined;
+  const match = /^v?(\d{1,6})\.(\d{1,6})\.(\d{1,6})$/.exec(value);
+  if (match === null) return undefined;
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
+}
+
+function newer(candidate, base) {
+  const left = parseVersion(candidate);
+  const right = parseVersion(base);
+  if (left === undefined || right === undefined) return false;
+  for (let index = 0; index < 3; index += 1) {
+    if (left[index] !== right[index]) return left[index] > right[index];
+  }
+  return false;
+}
+
+function isGitHubUrl(value) {
+  if (typeof value !== 'string') return false;
+  try { return new URL(value).origin === 'https://github.com'; } catch { return false; }
+}
+
+function releaseNotes(body) {
+  if (typeof body !== 'string') return undefined;
+  const cut = body.indexOf('## Install');
+  const notes = cut === -1 ? body : body.slice(0, cut);
+  return notes.length > NOTES_MAX ? notes.slice(0, NOTES_MAX) : notes;
+}
+
+function shippedNotes(data = SHIPPED_NOTES) {
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) return undefined;
+  if (data.version !== PACKAGE.version || data.notes === null || typeof data.notes !== 'object' || Array.isArray(data.notes)) return undefined;
+  const notes = {};
+  for (const [language, text] of Object.entries(data.notes)) {
+    if (!NOTES_LANG_RE.test(language) || typeof text !== 'string') continue;
+    notes[language] = text;
+  }
+  return Object.keys(notes).length > 0 ? notes : undefined;
+}
+
+function installedUpdate() {
+  let disk;
+  try {
+    disk = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
+  } catch {
+    return undefined;
+  }
+  const version = typeof disk?.version === 'string' ? disk.version : undefined;
+  return newer(version, PACKAGE.version) ? version : undefined;
+}
+
+async function checkUpdate(fetchImpl = fetch, pkg = PACKAGE, signal) {
+  const current = typeof pkg?.version === 'string' ? pkg.version : undefined;
+  const timeout = AbortSignal.timeout(10000);
+  const composed = signal === undefined ? timeout : AbortSignal.any([signal, timeout]);
+  const releaseResponse = await fetchImpl(RELEASES_URL, {
+    signal: composed,
+    headers: { accept: 'application/vnd.github+json', 'user-agent': NPM_NAME }
+  });
+  if (!releaseResponse.ok) throw new Error(`the GitHub releases API answered ${releaseResponse.status} for the latest release`);
+  const release = await releaseResponse.json();
+  const tag = release?.tag_name;
+  if (typeof tag !== 'string' || parseVersion(tag) === undefined) {
+    throw new Error('the latest GitHub release has no usable x.y.z tag');
+  }
+  const latest = tag.replace(/^v/, '');
+  let npmOk = false;
+  try {
+    npmOk = (await fetchImpl(`https://registry.npmjs.org/${NPM_NAME}/${latest}`, { signal: composed })).ok;
+  } catch {
+    npmOk = false;
+  }
+  const notes = releaseNotes(release?.body);
+  return {
+    ...(typeof pkg?.name === 'string' ? { name: pkg.name } : {}),
+    ...(current !== undefined ? { current } : {}),
+    latest,
+    managed: pkg?.name === NPM_NAME && current !== undefined,
+    newer: npmOk && newer(latest, current),
+    ...(isGitHubUrl(release?.html_url) ? { url: release.html_url } : {}),
+    ...(notes !== undefined ? { notes } : {})
+  };
+}
+
 async function apply(ctx, config = {}) {
   const json = (value, status = 200, timing = []) => new Response(JSON.stringify(value), {
     status,
@@ -694,6 +791,27 @@ async function apply(ctx, config = {}) {
       }
       report.outsideCatalog.sort();
       return json({ ok: true, ...report }, 200, [['catalog', performance.now() - started]]);
+    }
+  });
+
+  ctx.connection?.fetch?.register({
+    path: '/api/dsh-orchestrator-kit.update',
+    methods: ['GET'],
+    requestBody: 'buffered',
+    fetch: async (request) => {
+      try {
+        const url = new URL(request.url, 'http://localhost');
+        if (url.searchParams.get('current') === '1') {
+          const notes = shippedNotes();
+          return json({ ok: true, current: PACKAGE.version, ...(notes === undefined ? {} : { notes }) });
+        }
+        const info = await checkUpdate(fetch, PACKAGE, request.signal);
+        const installed = installedUpdate();
+        return json({ ok: true, ...info, ...(installed !== undefined ? { installed } : {}) });
+      } catch (error) {
+        console.warn(redactText(`${name}: the update check failed:`), safeErrorText(error));
+        return json({ ok: false, error: safeErrorText(error) }, 502);
+      }
     }
   });
 
@@ -954,4 +1072,4 @@ async function apply(ctx, config = {}) {
   });
 }
 
-export { name, inject, apply, agentsRootOf, isEntryName, cardPathOf, parseRoleCard, applyRouteToCard, applyCardSettings, redactText };
+export { name, inject, apply, agentsRootOf, isEntryName, cardPathOf, parseRoleCard, applyRouteToCard, applyCardSettings, redactText, parseVersion, newer, releaseNotes, shippedNotes, installedUpdate, checkUpdate };

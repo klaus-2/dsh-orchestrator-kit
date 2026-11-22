@@ -1,0 +1,115 @@
+diff-reviewer — update-system diff (uncommitted working tree), 2nd attempt, 2026-11-21
+
+Scope: git diff (16 files: index.js, client.js, package.json, scripts/test.mjs, locale x3,
+docs/api.md, docs/architecture.md, docs/troubleshooting.md, SECURITY.md, CHANGELOG.md,
+CONTRIBUTING.md, README x3) + new release-notes.json, reviewed against the frozen plan
+.devflow/plans/update-system.md (contracts C1-C4). Read-only review; the only file written
+is this log. No source file touched.
+
+Score: 8/10 — Merge Verdict: READY (bar met: >= 8/10, zero Critical, zero Important)
+
+REVIEW SUMMARY
+- Contracts C1-C4 all implemented as frozen: seventh route with the exact envelope and 502
+  shape, exports, module constants, storage keys, 18 locale keys verbatim in all three
+  languages + dictionaries, manifest inject/files, route placement after diagnostics,
+  byte budget re-measured (not self-adjusted).
+- Post-security-gate hardening verified in final code: index.js isGitHubUrl (origin check)
+  used in checkUpdate; client.js anchored-regex isGitHubUrl on the whats-new record; F2
+  install() guard (versionOf(info.latest) + info.name === NS) before any manager call;
+  regression tests cover all three; error-audit RJ-1 (catch preserves restart on rejected
+  re-check) and RJ-4 (row What's-new button gated on primitives?.Modal) also fixed with
+  regression tests during this review window.
+- Suite verified fresh on the final bytes: 3 consecutive runs of node scripts/test.mjs,
+  exit 0 each, 88 ok / ALL TESTS PASSED, tracked-file mtimes identical before and after
+  the runs (client.js 133163 bytes == the byte-budget assertion == client-size.txt).
+- One earlier run during this review exited 1 ("bridge gone" in the updater test): a
+  transient mid-edit state while error-audit fixes landed concurrently; superseded by the
+  3 stable green runs above.
+- Findings: 0 Critical / 0 Important / 3 Minor / 4 Nit / 3 Info.
+
+STRENGTHS (verified)
+- index.js:500-504 isGitHubUrl origin gate + use at index.js:570; client.js:573-575
+  anchored regex with an honest sandbox-safe comment; unit test rejects the userinfo URL.
+- client.js:632-634 install guard fails closed on malformed latest/name; VM test pins
+  installCalls at 6 with a 0.7.0-beta.1 fixture (zero manager calls).
+- checkUpdate unit block (scripts/test.mjs:1214-1445): full-envelope deepEqual, GitHub
+  headers, npm bare-version URL, both npm failure modes, GitHub 500 / bad / pre-release /
+  missing tag, foreign + userinfo html_url omitted, unmanaged copies, abort propagation.
+- New HTTP integration test for the update route: default envelope deepEqual (installed
+  absent on equal disk version), zero-network ?current=1, exact 502 envelope, signal relay.
+- installedUpdate tested against a real sandbox copy (equal/newer/older/corrupt) with
+  cleanup; deterministic held-promise async throughout; no sleeps; sentinel gate proves
+  all 18 new keys render through t; npm-pack 78-entry contract updated in both counts.
+- Docs substance accurate: SECURITY.md trust-surface rewording, README Updates sections
+  in parity, CHANGELOG budget numbers coherent with the re-measured size.
+
+FINDINGS
+
+MINOR
+M1. Docs Source anchors stale (mechanical re-anchor pass needed).
+    docs/api.md:14 (`index.js:575-582` helper) vs actual index.js:582-590; docs/api.md:26
+    and docs/architecture.md:61 route paths (`596,650,668,837,700,735,814`) vs actual
+    index.js:603/657/675/707/742/821/844 (uniform -7, the post-D1 hardening edits);
+    docs/api.md:290 + docs/architecture.md:67 (`index.js:813-834`, `540-572`, `525-534`,
+    `511-520`, `501-506`, `client.js:587-729`, `client.js:587-650`) vs actual index.js:820,
+    547, 532, 518, 508 and client.js:590-741; docs/architecture.md:61 + api.md route-surface
+    anchor `scripts/test.mjs:1988-1993` vs actual scripts/test.mjs:2198-2202 (~210 off).
+    Additionally this diff's ~120-line insertion invalidated pre-existing anchors it did
+    not touch (e.g. docs/api.md:172, 205, 232; docs/architecture.md:11, 37, 41, 47 now
+    point ~120-150 lines off). No behavioral impact; docs gates do not assert line anchors.
+    Fix: one re-anchor pass over both files.
+M2. docs/api.md:261 describes the pre-hardening gate: "kept only when it starts with
+    https://github.com/" — the code now requires the https://github.com origin
+    (index.js:500-504). Update the wording (also covers the port-normalized case).
+M3. Evidence log staleness (process): .devflow/evidence/update-system/run-1..3.txt belong
+    to the superseded 132516-byte revision (pre RJ-1/RJ-4 fixes, pre re-measurement);
+    client-size.txt is current (133163). The plan's anti-flake gate (3 consecutive green
+    runs logged to evidence) is factually satisfied on the final bytes (this reviewer ran
+    3 stable green runs) but not yet re-logged. Fix: log fresh run outputs before commit.
+
+NIT
+N1. index.js:499-500 comment: "a string prefix check alone would accept
+    https://github.com@evil.example/..." — the plan-frozen prefix check (trailing slash)
+    would NOT accept that URL; only a slash-less prefix would. Reword the example.
+N2. client.js install() reply handling: `reply?.error?.message ?? 'plugin manager did not
+    answer'` drops code/diagnostic when the reply error carries only those (error-auditor
+    RJ-3; reply shape unverifiable from this repo).
+N3. client.js load(): if the SEEN_KEY read throws after the record was consumed
+    (order === 0 path), the record is lost without showing (error-auditor RJ-5; nearly
+    unreachable — storage worked earlier in the same flow).
+N4. client.js load() comment claims "of two windows that start together only one shows
+    it"; the cross-window read-then-write on SEEN_KEY is not atomic — a benign duplicate
+    dialog is possible. Comment over-claims slightly.
+
+INFO
+I1. index.js:840 502 body echoes String(error?.message ?? error) without safeErrorText —
+    the only unredacted error body in the repo, but the expression is contract-frozen by
+    plan C1 and the error sources are credential-free authored constants (error-auditor
+    RJ-2). Optional polish.
+I2. Two zero-network ?current=1 calls per startup (whatsNew.load() from the apply effect
+    plus UpdateSettings mount refresh()) — harmless local duplicate.
+I3. npm-outage false-success ("You have the latest version." when GitHub is up and the
+    registry is blocked) — contract-frozen npm.ok double-gate, documented in code and
+    docs (error-auditor JE-1 caveat, retained).
+
+REFUTATION ADJUDICATION (requested)
+The security-auditor's F1 exploit example is technically FALSE as stated: the string
+https://github.com@evil.example/path does NOT start with "https://github.com/" (the @
+occupies the position where the prefix demands the slash), and any string that does start
+with that prefix necessarily parses with host github.com (the authority ends at the first
+slash, leaving no room for userinfo). The lead's refutation is confirmed. Caveats: a
+slash-less prefix check would have been bypassable by that exact URL, and the new
+index.js:499-500 comment still cites the example as if it defeated the actual old check
+(N1). The applied origin hardening is nonetheless sound defense-in-depth (normalizes
+case/port, rejects nothing legitimate) and is pinned by regression tests. Verdict: the
+hardening is kept on merit; it was not an exploitable-bug fix.
+
+EVIDENCE CROSS-CHECK & LIMITATIONS
+- run-1..3.txt (earlier revision) reviewed: green, exit 0, but superseded by the final
+  bytes; fresh 3x green verification performed by this reviewer (see M3).
+- security-gate.txt (F1/F2) and error-audit.txt (RJ-1..RJ-5, JE-1..JE-6) read in full;
+  RJ-1 and RJ-4 now fixed with tests; F2 fixed with test; F1 refuted + hardened.
+- test-audit.txt gap 1 (no HTTP integration test) addressed by the new route test.
+- Not executed by this reviewer: npm pack dry-run was exercised by the suite itself;
+  no live GitHub/npm traffic (all probes mocked); no browser-level check of the real
+  webview host (VM harness only).

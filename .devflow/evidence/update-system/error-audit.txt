@@ -1,0 +1,165 @@
+error-auditor — update-system diff (uncommitted), read-only audit
+Scope: index.js (route + helpers), client.js (updater / whats-new / wiring), package.json, release-notes.json
+Plan: .devflow/plans/update-system.md (contracts C1/C2 read as upper-boundary evidence)
+
+COUNTS: 0 CONFIRMED DEFECT / 5 REQUIRES JUSTIFICATION / 6 JUSTIFIED EXCEPTION
+VERDICT: CLEAN (0 confirmed defects; justifications below need lead sign-off)
+
+FINDINGS — REQUIRES JUSTIFICATION
+[RJ-1] MEDIUM — client.js:618 + client.js:610 — fetch REJECTION while status === 'restart'
+  Pattern: the restart-preservation guard covers response-level failures only
+  (`(!response.ok || info === null) && before.status === 'restart'`); a rejected
+  fetch (bridge teardown/unload window) falls into the generic catch and sets
+  status 'error'. From 'error', a later 404 never restores 'restart' (the guard
+  requires before.status === 'restart'), so the "Restart the harness to finish"
+  guidance is lost until a check succeeds. Host bridge behavior for an unloaded
+  plugin route (404 vs rejection) is not verifiable from this repo. Trigger:
+  install -> 'restart' -> 15 s auto-check fires while the route fetch rejects ->
+  panel shows "Update check failed: ..." instead of the restart instruction.
+  Smallest fix: in the catch, restore `before` when `before.status === 'restart'`,
+  matching the documented intent ("a pending restart state stands").
+
+[RJ-2] LOW — index.js:838 — 502 error body skips safeErrorText
+  Pattern: response body uses String(error?.message ?? error); every other error
+  response in this repo redacts via safeErrorText (index.js:614, 692, 695, 698,
+  700, 719). safeErrorText is exactly that expression plus redactText
+  (index.js:177-179), so the new route is the only one returning unredacted error
+  text. Current error sources (authored constants, undici "fetch failed",
+  JSON.parse fragments of the GitHub HTTPS response) carry no secrets or paths,
+  so no provable leak today; it is a zero-cost convention deviation.
+
+[RJ-3] LOW — client.js:633 — reply-level error code/diagnostic discarded
+  Pattern: `reply?.error?.message ?? 'plugin manager did not answer'`. If the
+  remote error object carries only { code, diagnostic } (the shape result.error
+  uses at client.js:639-640), message is undefined and the user sees "plugin
+  manager did not answer" although the manager answered with an error whose
+  code/diagnostic are dropped. Remote reply shape is not verifiable from this
+  repo. Smallest fix: append code/diagnostic to the thrown message.
+
+[RJ-4] LOW-MEDIUM — client.js:739-741, 773 + 761 — primitives-less host leaves a dead "What's new" button
+  Pattern: primitives degrade to undefined (frozen, plan C2: "no dialog"), and
+  WhatsNewDialog returns null when primitives?.Modal is undefined — but the row
+  renders its "What's new" button from `running` regardless of primitives. In a
+  host without the base module, clicking it calls show() -> set(note) -> dialog
+  renders null: a visible control with zero feedback. Degradation goes beyond
+  the frozen "no dialog". Smallest fix: gate the row button on
+  primitives?.Modal !== undefined.
+
+[RJ-5] LOW — client.js:727 — SEEN_KEY read throw permanently drops the consumed record
+  Pattern: load() removes WHATS_NEW_KEY before ask() (client.js:706) and keep()
+  restores it on the Host-unanswered / older-copy paths (716, 718), but not on
+  the record-consumed path: if window.localStorage.getItem(SEEN_KEY) throws at
+  727 after the record was consumed (order === 0), load() returns and the record
+  is gone without the dialog ever being shown. Storage worked at 706 in the same
+  flow, so the window is nearly unreachable; consequence is silent permanent
+  loss of one What's-new record.
+
+AUDITED JUSTIFIED EXCEPTIONS
+[JE-1] index.js:563-568 — npm probe failure closes the `newer` gate (npmOk = false)
+  Suppressed failure: any npm fetch error/timeout swallowed -> newer:false ->
+  client shows "You have the latest version." (client.js:616) even though GitHub
+  advertised a newer release. Justification: contract C1 frozen in the plan
+  ("newer: npm.ok double-gate", plan line 36) and documented in the code comment
+  (index.js:543-546): an unpublished release must never be advertised as
+  installable. Caveat retained for the lead: during an npm outage (GitHub up,
+  registry blocked — common behind proxies) the panel makes a false-success
+  claim and the update is invisible until a manual re-check; the panel cannot
+  distinguish "verified current" from "npm gate inconclusive".
+
+[JE-2] index.js:532-541 — installedUpdate() returns undefined on corrupt/missing package.json
+  Documented best-effort auxiliary probe; contract C1 makes `installed` optional;
+  degradation is "installed omitted", never a false state. Positive contrast:
+  PACKAGE (index.js:28) intentionally fails loud at import.
+
+[JE-3] client.js:644, 648 — install-time localStorage setItem best-effort
+  Swallow commented in-code; the row status still reports restart/current, and a
+  lost UPDATE_INSTALLED_KEY only risks a harmless idempotent reinstall offer.
+  Matches the repo persistence pattern (readStoredPrefs/writeStoredPrefs,
+  client.js:533-556) required by the plan invariant.
+
+[JE-4] client.js:675-682, 716, 724 — whatsNew ask()/load() degrade silently (catch -> undefined)
+  Contract-frozen (plan line 53: "degrades silently on 404/storage failure");
+  the dialog is a nicety while the update row has its own surfaced error path;
+  keep() restores the install-time record on the Host-unanswered path, so the
+  main degradation loses nothing.
+
+[JE-5] client.js:739-741 — require of @deepseek-ai/dsh-client-ui-primitives in try/catch
+  Contract C2 frozen ("degrade to no dialog"); the row still checks and installs.
+  Dead-button consequence tracked separately as RJ-4.
+
+[JE-6] index.js:29-35 — SHIPPED_NOTES IIFE try/catch -> undefined
+  Missing/broken release-notes.json disables only the What's-new payload
+  (`notes` omitted per contract C1); documented in the comment; shippedNotes()
+  itself never throws for plain-object input, so the ?current=1 branch cannot
+  502 in practice.
+
+CONFIRMED-SAFE ERROR PATHS (positive findings)
++ index.js:836-839 — route catch: fail-closed 502 { ok:false, error } on every
+  throw; console.warn(redactText(prefix), safeErrorText(error)) matches the repo
+  logging convention exactly (cf. index.js:389, 406, 414).
++ index.js:555, 558-560 — checkUpdate throws explicit, authored errors on GitHub
+  non-OK and unusable tags: a permanently non-x.y.z release tag surfaces as a
+  persistent, diagnosable 502 rather than a fake "no update".
++ index.js:549-550 — 10 s AbortSignal.timeout combined with request.signal via
+  AbortSignal.any across both outbound GETs; no retry loops exist anywhere in
+  the update path, so no retry-exhaustion or timer accumulation surface; the
+  already-installed fallback (client.js:639) is a single-protocol retry that
+  ends in an explicit thrown diagnostic first line.
++ client.js:626 — malformed-spec guard: install() refuses to build a manager
+  spec unless versionOf(info.latest) parses and info.name === NS; the tarball
+  fallback spec is built only from those vetted values.
++ client.js:601, 623, 619, 651 — busy reentrancy flag shared by check/install,
+  reset in finally; double-click install cannot interleave (second click no-ops;
+  button disabled during installing).
++ client.js:2114-2119 — single 15 s timer per apply, cleanup clearTimeout,
+  timerId.unref?.() safe on browser numbers; floating check()/load() promises
+  cannot reject (all paths caught) so no unhandled-rejection surface.
++ client.js:618, 650 — error states preserve previous info and carry the thrown
+  message; the row offers a re-check recovery path from 'error'.
++ client.js:706/716/718 — WHATS_NEW record is removed before the Host call and
+  restored (keep) whenever the Host did not answer or the harness still runs the
+  older copy: no record loss on the two realistic degradation paths.
++ client.js:729-732 — SEEN_KEY written before the dialog opens; setItem failure
+  degrades to a possible re-show, commented.
++ releaseNotes/shippedNotes return undefined (never throw) on corrupt shipped
+  data while checkUpdate throws on corrupt remote data: primary query fails
+  loud, auxiliary probes degrade — deliberate, documented split, consistent with
+  contract C1.
++ Client version downgrade impossible: parseVersion strictness (index.js:479-484)
+  means a malformed tag can never rank as newer.
+
+OBSERVATIONS (not counted)
+- client.js:611 — a 200 response with unparseable JSON yields error text
+  "HTTP 200" (truthful-ish but odd); failure still surfaced.
+- client.js:642-643 — contract-sanctioned acceptance: application 'applied' or
+  result.version === info.latest counts as success even when result.error is
+  present (documented: failed start still needs only a restart).
+- client.js:662-664 — the "only one window shows it" comment can be defeated by
+  a two-window race on SEEN_KEY (both read before either writes); outcome is a
+  benign duplicate dialog, no data corruption.
+- client.js:639-643 — reply.value undefined would raise a raw TypeError caught
+  into the error state (fail-closed, ugly but diagnosable); host contract
+  guarantees { ok, value }.
+
+Method: full uncommitted diff read; all quoted blocks re-read at final working
+lines (index.js:21-35, 169-179, 476-579, 820-841; client.js:559-735, 737-800,
+2079-2131). No files modified. No builds/tests executed.
+
+---
+LEAD SIGN-OFF (post-audit; delta-scoped fixes applied + suite green x3)
+- RJ-1 FIXED: client.js check() catch now restores the previous state when before.status === 'restart'
+  (a rejected re-check no longer erases the restart guidance). VM test added: reject-mode handler
+  preserves restart; a successful re-check resolves it.
+- RJ-2 FIXED: index.js update route 502 body now uses safeErrorText(error) like every other route.
+- RJ-3 FIXED: client.js install() reply-level error now surfaces first diagnostic line, then code,
+  before the generic message. VM test added: diagnostic-only reply renders its first line.
+- RJ-4 FIXED: client.js row gates the What's-new button on primitives?.Modal !== undefined.
+  Harness option primitives:false added; VM tests assert no button without primitives and the
+  button with them.
+- RJ-5 ACCEPTED AS JUSTIFIED: the SEEN_KEY-throw window is unreachable in practice (storage read
+  succeeded one step earlier in the same flow); fixing it would reorder the delicate
+  once-per-version sequencing for a near-zero-probability path.
+- Harness note: settle() now uses Promise.allSettled so a client-handled fetch rejection no longer
+  throws the settle wait (first rejection scenario in the harness).
+- JE-1 caveat carried to the delivery report: during an npm-only outage the panel claims
+  "latest version" (contract-frozen double gate).

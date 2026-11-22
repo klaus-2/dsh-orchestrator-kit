@@ -44,6 +44,10 @@ Requirements: **Node.js >= 22** and a **DSH instance with Agent Teams** enabled.
 2. In DSH, open **Plugins → Add plugin** and point it at the downloaded folder, **or** install it with `install_bundle`.
 3. The Orchestrator persona and the 20-role dev-flow pipeline ship inside the preset — nothing else to wire up.
 
+### Updates
+
+The panel keeps the plugin current. About 15 seconds after every startup it checks GitHub releases for a newer version — a read-only check, no credentials — and shows the result in an Updates row on the settings page. Nothing installs automatically: the update runs through the harness plugin manager only when you press the row's update button, and the row tells you when the harness needs a restart to finish. After a version is installed, a What's-new dialog shows its release notes in the panel language, once per version. Copies that were not installed from npm (renamed or linked folders) are manual-update-only: the row reports the new version, but updating goes through Settings → Plugins.
+
 ## The Craft pipeline bundle
 
 `craft/` ships the pipeline as plain, portable files:
@@ -72,7 +76,7 @@ Saving settings identical to the card's current ones is a no-op: the panel answe
 
 Every edit is protected against losing work. Changing a card marks it unsaved — the card gains an amber border and the role name gains the “ (unsaved)” suffix — and leaving the page with unsaved edits triggers the browser's leave confirmation. Ctrl+S / Cmd+S saves the focused card (a no-op when nothing is focused). Unsaved drafts survive switching tabs and reopening the settings section: they are kept while the card's server state still matches the state the draft was based on, and an external change on disk discards the stale draft. The plain Refresh button resets drafts; the conflict action below is the draft-preserving path. Every save offers Undo: one level per card, for the browser session only, never persisted — it restores the settings from before that save. When a save or undo fails with `409` because the card changed underneath, the message offers “Reload saved state, keep edits”, which re-reads the saved state and reapplies the draft without ever resending the stale `mtimeMs`; a `409` on a save that set a reasoning effort also points to the Reasoning effort select. A polite live region announces the last save or undo outcome, and a saved card keeps a green border until the next change.
 
-The panel talks to six routes: `GET /api/dsh-orchestrator-kit.roles`, `GET /api/dsh-orchestrator-kit.catalog`, `GET /api/dsh-orchestrator-kit.efforts`, `GET /api/dsh-orchestrator-kit.events`, `GET /api/dsh-orchestrator-kit.diagnostics` and `POST /api/dsh-orchestrator-kit.route`. Successful responses carry a `Server-Timing` header (durations only) when a timing metric was measured — roles reads, catalog reads, route validation and writes; an unchanged save that ran no route validation carries none. The legend shows the last load timings.
+The panel talks to seven routes: `GET /api/dsh-orchestrator-kit.roles`, `GET /api/dsh-orchestrator-kit.catalog`, `GET /api/dsh-orchestrator-kit.efforts`, `GET /api/dsh-orchestrator-kit.events`, `GET /api/dsh-orchestrator-kit.diagnostics`, `GET /api/dsh-orchestrator-kit.update` and `POST /api/dsh-orchestrator-kit.route`. Successful responses carry a `Server-Timing` header (durations only) when a timing metric was measured — roles reads, catalog reads, route validation and writes; an unchanged save that ran no route validation carries none. The legend shows the last load timings.
 
 Every save is protected end to end:
 
@@ -198,7 +202,7 @@ Both coverage directories must stay OUTSIDE the checkout: the hygiene walker sca
 
 ## Security
 
-No remote-execution surface: the kit only serves local HTTP routes and writes role-card frontmatter. The audit log records role ids and route values only — never secrets, absolute paths or card contents — and the read-only mode plus the install script are documented in [SECURITY.md](SECURITY.md). Report issues privately per [SECURITY.md](SECURITY.md).
+No remote-execution surface: the kit serves local HTTP routes, writes role-card frontmatter, and its only outbound traffic is the read-only update check against GitHub and npm — no credentials; installing runs through the harness plugin manager. The audit log records role ids and route values only — never secrets, absolute paths or card contents — and the read-only mode plus the install script are documented in [SECURITY.md](SECURITY.md). Report issues privately per [SECURITY.md](SECURITY.md).
 
 ## License
 

@@ -44,6 +44,10 @@ Requisitos: **Node.js >= 22** e uma **instância DSH com Agent Teams** ativado.
 2. No DSH, abra **Plugins → Add plugin** e aponte para a pasta baixada, **ou** instale com `install_bundle`.
 3. A persona Orchestrator e o pipeline dev-flow de 20 papéis já vêm no preset — nada mais para configurar.
 
+### Atualizações
+
+O painel mantém o plugin atualizado. Cerca de 15 segundos após cada inicialização, ele verifica as releases do GitHub em busca de uma versão mais nova — uma verificação somente leitura, sem credenciais — e mostra o resultado em uma linha de atualizações na página de configurações. Nada é instalado automaticamente: a atualização passa pelo gerenciador de plugins do harness apenas quando você pressiona o botão de atualizar da linha, e a linha avisa quando o harness precisa ser reiniciado para terminar. Depois que uma versão é instalada, um diálogo de novidades mostra as notas de release no idioma do painel, uma vez por versão. Cópias que não foram instaladas pelo npm (pastas renomeadas ou vinculadas) aceitam apenas atualização manual: a linha informa a nova versão, mas a atualização é feita por Configurações → Plugins.
+
 ## Bundle do pipeline Craft
 
 `craft/` entrega o pipeline como arquivos simples e portáteis:
@@ -72,7 +76,7 @@ Salvar configurações idênticas às que já estão no card é um no-op: o pain
 
 Toda edição é protegida contra perda de trabalho. Alterar um card o marca como não salvo — o card ganha uma borda âmbar e o nome do papel ganha o sufixo “ (não salvo)” — e sair da página com edições não salvas dispara a confirmação de saída do navegador. Ctrl+S / Cmd+S salva o card em foco (no-op quando nada está em foco). Rascunhos não salvos sobrevivem à troca de abas e à reabertura da seção de configurações: eles são mantidos enquanto o estado do card no servidor ainda corresponde ao estado em que o rascunho se baseou, e uma mudança externa no disco descarta o rascunho obsoleto. O botão Refresh comum reseta os rascunhos; a ação de conflito abaixo é o caminho que preserva rascunhos. Cada salvamento oferece Desfazer: um nível por card, apenas para a sessão do navegador, nunca persistido — ele restaura as configurações anteriores àquele salvamento. Quando um salvamento ou desfazer falha com `409` porque o card mudou por baixo, a mensagem oferece “Recarregar estado salvo, manter edições”, que relê o estado salvo e reaplica o rascunho sem jamais reenviar o `mtimeMs` obsoleto; um `409` em um salvamento que definiu um esforço de raciocínio também aponta para o select de Esforço de raciocínio. Uma região aria-live polite anuncia o resultado do último salvamento ou desfazer, e um card salvo mantém uma borda verde até a próxima alteração.
 
-O painel fala com seis rotas: `GET /api/dsh-orchestrator-kit.roles`, `GET /api/dsh-orchestrator-kit.catalog`, `GET /api/dsh-orchestrator-kit.efforts`, `GET /api/dsh-orchestrator-kit.events`, `GET /api/dsh-orchestrator-kit.diagnostics` e `POST /api/dsh-orchestrator-kit.route`. Respostas bem-sucedidas trazem um cabeçalho `Server-Timing` (apenas durações) quando uma métrica de tempo foi medida — leituras de roles, leituras de catalog, validação de rota e escritas; um salvamento sem alteração que não executou validação de rota não traz nenhum. A legenda mostra os tempos do último carregamento.
+O painel fala com sete rotas: `GET /api/dsh-orchestrator-kit.roles`, `GET /api/dsh-orchestrator-kit.catalog`, `GET /api/dsh-orchestrator-kit.efforts`, `GET /api/dsh-orchestrator-kit.events`, `GET /api/dsh-orchestrator-kit.diagnostics`, `GET /api/dsh-orchestrator-kit.update` e `POST /api/dsh-orchestrator-kit.route`. Respostas bem-sucedidas trazem um cabeçalho `Server-Timing` (apenas durações) quando uma métrica de tempo foi medida — leituras de roles, leituras de catalog, validação de rota e escritas; um salvamento sem alteração que não executou validação de rota não traz nenhum. A legenda mostra os tempos do último carregamento.
 
 Cada salvamento é protegido de ponta a ponta:
 
@@ -198,7 +202,7 @@ Ambos os diretórios de cobertura devem ficar FORA do checkout: o verificador de
 
 ## Segurança
 
-Sem superfície de execução remota: o kit só serve rotas HTTP locais e escreve frontmatter de cards de papel. O histórico de alterações registra apenas ids de papéis e valores de rota — nunca segredos, caminhos absolutos ou conteúdo dos cards — e o modo somente leitura e o script de instalação estão documentados em [SECURITY.md](SECURITY.md). Reporte vulnerabilidades em privado conforme [SECURITY.md](SECURITY.md).
+Sem superfície de execução remota: o kit serve rotas HTTP locais, escreve frontmatter de cards de papel, e seu único tráfego de saída é a verificação de atualização somente leitura contra GitHub e npm — sem credenciais; a instalação passa pelo gerenciador de plugins do harness. O histórico de alterações registra apenas ids de papéis e valores de rota — nunca segredos, caminhos absolutos ou conteúdo dos cards — e o modo somente leitura e o script de instalação estão documentados em [SECURITY.md](SECURITY.md). Reporte vulnerabilidades em privado conforme [SECURITY.md](SECURITY.md).
 
 ## Licença
 

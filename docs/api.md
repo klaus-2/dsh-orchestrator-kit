@@ -1,8 +1,8 @@
 # API reference
 
-The plugin registers six routes on the host connection. All responses are JSON with `content-type: application/json; charset=utf-8` and `cache-control: no-store`; successful reads may also carry a `server-timing` header with `reads`, `catalog` or `write` metrics. Every response is an object with an `ok` boolean. Errors set `ok: false` and include a human-readable `error` string; some errors also include a machine-readable `code`.
+The plugin registers seven routes on the host connection. All responses are JSON with `content-type: application/json; charset=utf-8` and `cache-control: no-store`; successful reads may also carry a `server-timing` header with `reads`, `catalog` or `write` metrics. Every response is an object with an `ok` boolean. Errors set `ok: false` and include a human-readable `error` string; some errors also include a machine-readable `code`.
 
-Source: `index.js:462-469` (response helper), `index.js:482-954` (route registration), `client.js:8-13` (client route constants).
+Source: `index.js:582-590` (response helper), `index.js:603-1100` (route registration), `client.js:9-20` (client route constants).
 
 ## Route summary
 
@@ -14,8 +14,9 @@ Source: `index.js:462-469` (response helper), `index.js:482-954` (route registra
 | `/api/dsh-orchestrator-kit.route` | POST | [Route](#post-route) |
 | `/api/dsh-orchestrator-kit.events` | GET | [Events](#get-events) |
 | `/api/dsh-orchestrator-kit.diagnostics` | GET | [Diagnostics](#get-diagnostics) |
+| `/api/dsh-orchestrator-kit.update` | GET | [Update](#get-update) |
 
-Source: `index.js:483`, `index.js:537`, `index.js:555`, `index.js:701`, `index.js:587`, `index.js:622`.
+Source: `index.js:603`, `index.js:657`, `index.js:675`, `index.js:844`, `index.js:707`, `index.js:742`, `index.js:821`.
 
 ## GET roles
 
@@ -56,7 +57,7 @@ Lists installed role cards. No query parameters and no request body.
 
 If the roles directory does not exist, the route still returns 200 with empty `roles` and `invalid` arrays. If it exists but cannot be read, the route returns 500 with `ok: false` and an error. Unreadable or unparsable individual cards go into `invalid[]` rather than failing the request.
 
-Source: `index.js:482-534` (handler), `index.js:448-459` (role summary shape), `index.js:492` and `index.js:532` (envelope), `client.js:769-781` (client consumption).
+Source: `index.js:603-655` (handler), `index.js:464-475` (role summary shape), `index.js:613` and `index.js:653` (envelope), `client.js:1130-1142` (client consumption).
 
 ## GET catalog
 
@@ -90,7 +91,7 @@ Reports the live provider/model inventory. No query parameters.
 
 The route always returns 200; availability is reported in the body, not in the status code. If the adapter cannot provide listing functions, `available` is `false`, `degraded` is `true` and `groups` is empty.
 
-Source: `index.js:536-552` (handler), `index.js:387-446` (catalog construction).
+Source: `index.js:657-673` (handler), `index.js:403-462` (catalog construction).
 
 ## GET efforts
 
@@ -124,7 +125,7 @@ Request query parameters: `provider` and `model`, both non-empty.
 | 504 | Model-info resolution timed out. |
 | 409 | The route is unknown or unresolvable. |
 
-Source: `index.js:554-584` (handler and statuses), `index.js:331-385` (effort normalization), `client.js:885-897` (client query construction).
+Source: `index.js:675-705` (handler and statuses), `index.js:347-401` (effort normalization), `client.js:1254-1258` (client query construction).
 
 ## POST route
 
@@ -168,7 +169,7 @@ Success responses:
 
 **Read-only rule.** Read-only mode is checked first in this handler and returns 403 before the body is parsed. No other route returns that 403; the roles response instead reports the same state as `readOnly: true`, and the panel uses that field to present the controls as read-only. Read-only mode is enabled by `DSH_ORCHESTRATOR_READONLY` set to `1` or `true`.
 
-Source: `index.js:18` (allowed body fields), `index.js:700-762` (validation), `index.js:764-798` (path, read, strict parse), `index.js:805-841` (catalog, effort, patch), `index.js:845-952` (write path and responses), `index.js:27-32` and `index.js:705-707` (read-only), `client.js:540-548` and `client.js:769-773` (client handling).
+Source: `index.js:19` (allowed body fields), `index.js:844-905` (validation), `index.js:907-941` (path, read, strict parse), `index.js:948-984` (catalog, effort, patch), `index.js:988-1095` (write path and responses), `index.js:43-47` and `index.js:848-850` (read-only), `client.js:870-879` and `client.js:1358-1360` (client handling).
 
 ## GET events
 
@@ -201,7 +202,7 @@ Reads the audit trail. No query parameters.
 
 At most the last 50 non-empty lines are parsed. If the audit file does not exist, the route returns 200 with `events: []` and `skipped: 0`. If it exists but cannot be read, the route returns 500.
 
-Source: `index.js:586-619` (handler), `index.js:471` (audit file path), `index.js:592` and `index.js:601-616` (cap and projection), `client.js:1236-1248` (client consumption).
+Source: `index.js:707-740` (handler), `index.js:591` (audit file path), `index.js:713` and `index.js:722-737` (cap and projection), `client.js:1605-1619` (client consumption).
 
 ## GET diagnostics
 
@@ -228,4 +229,62 @@ Compares installed cards with the bundled sources and the live catalog. No query
 
 `craftAvailable` starts as `false`. It becomes `true` only when the source directory resolves and can be read; if reading it fails, it is set back to `false` and drift checking is skipped. `outsideCatalog` is only populated when the catalog reports `available: true`. An unreadable roles directory returns 500; a missing one is treated as empty.
 
-Source: `index.js:621-698` (handler), `index.js:627` (initial report), `index.js:654-680` (craft checks), `index.js:682-695` (catalog cross-check), `client.js:1251-1266` (client consumption).
+Source: `index.js:742-819` (handler), `index.js:748` (initial report), `index.js:775-801` (craft checks), `index.js:803-816` (catalog cross-check), `client.js:1620-1636` (client consumption).
+
+## GET update
+
+Compares the running version with the latest GitHub release and reports whether an installable update exists. This is the only route that talks to the network: two read-only outbound GETs, the GitHub releases API for the latest release and the npm registry as the installability gate, each on a 10-second timeout and neither carrying credentials. The check reads nothing the read-only flag protects, so it runs regardless of `DSH_ORCHESTRATOR_READONLY`.
+
+Default shape, no query parameters:
+
+```json
+{
+  "ok": true,
+  "name": "dsh-orchestrator-kit",
+  "current": "0.1.0",
+  "latest": "0.2.0",
+  "managed": true,
+  "newer": true,
+  "url": "https://github.com/klaus-2/dsh-orchestrator-kit/releases/tag/v0.2.0",
+  "notes": "Summary text taken from the release body.",
+  "installed": "0.2.0"
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `name` | Package name of the running plugin; omitted when it has none. |
+| `current` | Running version; omitted when unknown. |
+| `latest` | Latest release tag without its `v` prefix; only strict `x.y.z` tags are accepted, anything else fails the check. |
+| `managed` | `true` when the running package is the npm-published `dsh-orchestrator-kit` with a known version, i.e. installable through the host plugin manager. |
+| `newer` | Double gate: `true` only when the local version parses as `x.y.z`, is strictly older than `latest`, and the npm registry confirms the release is published. A malformed tag can never push a downgrade. |
+| `url` | Release page URL, kept only when it parses to the `https://github.com` origin. |
+| `notes` | Human-readable part of the release body: everything before the `## Install` heading, capped at 20000 characters. |
+| `installed` | Present only when the package on disk is strictly newer than the running one — the package was updated without restarting the harness. |
+
+Any failure of the GitHub probe — a non-OK answer, a release without a usable `x.y.z` tag, a network or timeout error — is answered as:
+
+```json
+{ "ok": false, "error": "the GitHub releases API answered 404 for the latest release" }
+```
+
+with status `502`. An npm failure does not fail the route; it only closes the `newer` gate, so an unpublished release is never advertised as installable.
+
+`?current=1` is the zero-network mode the What's-new dialog uses — the running version plus the shipped per-language notes, no GitHub/npm traffic:
+
+```json
+{
+  "ok": true,
+  "current": "0.1.0",
+  "notes": { "en": "…", "pt-BR": "…", "zh": "…" }
+}
+```
+
+`notes` comes from the shipped `release-notes.json` and is omitted when the file is missing or corrupt, or its `version` does not match the running package version. Language keys are filtered to BCP-47 shapes, which also blocks `__proto`-style keys before they reach client-side object handling.
+
+| Status | Condition |
+| --- | --- |
+| 200 | The check succeeded (default shape) or the shipped-notes mode answered. |
+| 502 | The GitHub releases probe failed; body is `{ ok: false, error }`. |
+
+Source: `index.js:821-841` (handler), `index.js:547-579` (GitHub/npm probe), `index.js:532-541` (newer-on-disk check), `index.js:518-529` (shipped notes), `index.js:508-514` (release body cut), `client.js:590-759` (updater and What's-new stores).

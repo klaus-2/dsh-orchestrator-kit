@@ -44,6 +44,10 @@ graph TD
 2. 在 DSH 中打开 **插件 → 添加插件**，指向下载的文件夹，**或**使用 `install_bundle` 安装。
 3. Orchestrator 人设与 20 角色 dev-flow 流水线已随预设提供 — 无需额外配置。
 
+### 更新
+
+面板会让插件保持最新。每次启动约 15 秒后，它会检查 GitHub releases 是否有更新版本 — 只读检查，无需凭据 — 并在设置页面的更新行中显示结果。不会自动安装任何东西：只有当你按下更新行的更新按钮时，安装才会通过 harness 的插件管理器进行；需要重启 harness 才能完成时，更新行会给出提示。某个版本安装完成后，“新增内容”对话框会以面板语言显示该版本的发布说明，每个版本只显示一次。未通过 npm 安装的副本（重命名或链接的目录）只能手动更新：更新行会报告新版本，但更新需通过 设置 → 插件 进行。
+
 ## Craft 流水线捆绑包
 
 `craft/` 以简单、可移植的文件形式提供流水线：
@@ -72,7 +76,7 @@ graph TD
 
 每次编辑都有防丢失保护。修改一张卡片会将其标记为未保存 — 卡片获得琥珀色边框，角色名称获得 “（未保存）” 后缀 — 且在存在未保存修改时离开页面会触发浏览器的离开确认。Ctrl+S / Cmd+S 保存获得焦点的卡片（无焦点时空操作）。未保存的草稿在切换标签与重新打开设置分区后仍然保留：只要卡片在服务器上的状态仍与草稿所基于的状态一致就会保留，磁盘上的外部变更会丢弃过期的草稿。普通 Refresh 按钮会重置草稿；下方的冲突操作才是保留草稿的路径。每次保存都提供撤销：每张卡片一个层级，仅限当前浏览器会话，绝不持久化 — 它恢复该次保存之前的设置。当保存或撤销因卡片在底层被更改而以 `409` 失败时，消息会提供 “重新加载已保存状态，保留修改”，它会重新读取已保存状态并重新应用草稿，绝不重新发送过期的 `mtimeMs`；设置了推理力度的保存出现 `409` 时还会指向推理力度下拉框。一个 aria-live polite 实时区域会播报最近一次保存或撤销的结果，已保存的卡片保持绿色边框直到下一次更改。
 
-面板使用六条路由：`GET /api/dsh-orchestrator-kit.roles`、`GET /api/dsh-orchestrator-kit.catalog`、`GET /api/dsh-orchestrator-kit.efforts`、`GET /api/dsh-orchestrator-kit.events`、`GET /api/dsh-orchestrator-kit.diagnostics` 和 `POST /api/dsh-orchestrator-kit.route`。成功的响应在实际测量到耗时指标时才带有 `Server-Timing` 头（仅含耗时）——roles 读取、catalog 读取、路由校验与写入；未执行路由校验的无变更保存不带该头。图例显示最近一次加载的耗时。
+面板使用七条路由：`GET /api/dsh-orchestrator-kit.roles`、`GET /api/dsh-orchestrator-kit.catalog`、`GET /api/dsh-orchestrator-kit.efforts`、`GET /api/dsh-orchestrator-kit.events`、`GET /api/dsh-orchestrator-kit.diagnostics`、`GET /api/dsh-orchestrator-kit.update` 和 `POST /api/dsh-orchestrator-kit.route`。成功的响应在实际测量到耗时指标时才带有 `Server-Timing` 头（仅含耗时）——roles 读取、catalog 读取、路由校验与写入；未执行路由校验的无变更保存不带该头。图例显示最近一次加载的耗时。
 
 每次保存都有端到端保护：
 
@@ -198,7 +202,7 @@ NODE_V8_COVERAGE=$(node -p "require('node:os').tmpdir()")/dsh-coverage-report no
 
 ## 安全
 
-没有远程执行面：本套件只提供本地 HTTP 路由并写入角色卡片 frontmatter。更改日志只记录角色 id 与路由值 — 绝不记录密钥、绝对路径或卡片内容 — 只读模式与安装脚本见 [SECURITY.md](SECURITY.md)。请按 [SECURITY.md](SECURITY.md) 私密上报。
+没有远程执行面：本套件提供本地 HTTP 路由、写入角色卡片 frontmatter，其唯一的对外流量是针对 GitHub 与 npm 的只读更新检查 — 无需凭据；安装通过 harness 的插件管理器进行。更改日志只记录角色 id 与路由值 — 绝不记录密钥、绝对路径或卡片内容 — 只读模式与安装脚本见 [SECURITY.md](SECURITY.md)。请按 [SECURITY.md](SECURITY.md) 私密上报。
 
 ## 许可证
 
