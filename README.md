@@ -63,6 +63,7 @@ The panel keeps the plugin current. About 15 seconds after every startup it chec
 - `craft/skills/dev-flow` → installed to `~/.agents/skills/dev-flow` — the dev-flow skill with its playbooks.
 
 Installation is skip-existing: files you already have (or edited) stay untouched, and the panel's installed-card diagnostics report any role still missing or drifted from the bundle. To manage the bundle by hand instead — or to re-run it after deleting files — use `node scripts/install-craft.js [--dry-run]`, which applies the same never-overwrite rule. Set `autoInstallCraft: false` in the plugin's config row to disable the automatic install entirely. Unconfigured roles use `model: inherit` — they follow the chat's routing. Override only the roles you actually want pinned to a fixed model.
+The dev-flow skill is also mirrored at `skills/dev-flow/` for the Agent Skills ecosystem: `npx skills add klaus-2/dsh-orchestrator-kit` installs it into Claude Code, Cursor, Codex and other compatible agents.
 
 ## Configure per role
 

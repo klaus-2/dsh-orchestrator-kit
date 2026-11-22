@@ -63,6 +63,7 @@ graph TD
 - `craft/skills/dev-flow` → 安装到 `~/.agents/skills/dev-flow` — dev-flow 技能及其 playbook。
 
 安装采用跳过已存在文件的策略：你已有（或编辑过）的文件保持原样，面板的已安装卡片诊断会报告任何仍缺失或与捆绑包偏离的角色。改为手动管理捆绑包 — 或删除文件后重新安装 — 请使用 `node scripts/install-craft.js [--dry-run]`，它遵循同样的绝不覆盖规则。在插件的配置行设置 `autoInstallCraft: false` 可完全关闭自动安装。未配置的角色使用 `model: inherit` — 跟随会话的路由。只覆盖你真正想固定到某个模型的角色。
+dev-flow 技能同时镜像在 `skills/dev-flow/`，供 Agent Skills 生态使用：`npx skills add klaus-2/dsh-orchestrator-kit` 可将其安装到 Claude Code、Cursor、Codex 及其他兼容代理。
 
 ## 按角色配置
 

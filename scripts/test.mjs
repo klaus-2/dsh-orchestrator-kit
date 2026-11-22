@@ -2521,7 +2521,8 @@ await test('package.json: public npm contract (name, exports, files, dsh manifes
     'cordis.patch.yml',
     'locale/',
     'docs/',
-    'icon.svg',
+    'skills/',
+  'icon.svg',
     'craft/',
     'release-notes.json',
     'scripts/',
@@ -3441,6 +3442,37 @@ const PANEL_KEYS = [
 ];
 
 const FROZEN_PACK_FILES = [
+  'skills/dev-flow/SKILL.md',
+  'skills/dev-flow/agents/arch-advisor.md',
+  'skills/dev-flow/agents/browser-qa.md',
+  'skills/dev-flow/agents/debt-auditor.md',
+  'skills/dev-flow/agents/debugger.md',
+  'skills/dev-flow/agents/diff-reviewer.md',
+  'skills/dev-flow/agents/docs-scout.md',
+  'skills/dev-flow/agents/docs-sync.md',
+  'skills/dev-flow/agents/error-auditor.md',
+  'skills/dev-flow/agents/implementer.md',
+  'skills/dev-flow/agents/media-analyst.md',
+  'skills/dev-flow/agents/perf-auditor.md',
+  'skills/dev-flow/agents/plan-auditor.md',
+  'skills/dev-flow/agents/planner.md',
+  'skills/dev-flow/agents/repo-scout.md',
+  'skills/dev-flow/agents/run-conductor.md',
+  'skills/dev-flow/agents/scope-analyst.md',
+  'skills/dev-flow/agents/security-auditor.md',
+  'skills/dev-flow/agents/tech-writer.md',
+  'skills/dev-flow/agents/test-auditor.md',
+  'skills/dev-flow/agents/test-writer.md',
+  'skills/dev-flow/playbooks/ai-estimates.md',
+  'skills/dev-flow/playbooks/clonedeps.md',
+  'skills/dev-flow/playbooks/codemap/scripts/codemap.mjs',
+  'skills/dev-flow/playbooks/codemap.md',
+  'skills/dev-flow/playbooks/deanchor.md',
+  'skills/dev-flow/playbooks/deepwork.md',
+  'skills/dev-flow/playbooks/reflect.md',
+  'skills/dev-flow/playbooks/simplify.md',
+  'skills/dev-flow/playbooks/step-back.md',
+  'skills/dev-flow/playbooks/verification-planning.md',
   'CHANGELOG.md',
   'client.js',
   'cordis.patch.yml',
@@ -6102,13 +6134,13 @@ await test('new surfaces render untrusted markup as text: batch summary, event e
   app.unmount();
 });
 
-await test('npm pack: dry-run file list matches the frozen 78-entry contract and packed content passes the forbidden-token scan', () => {
+await test('npm pack: dry-run file list matches the frozen 109-entry contract and packed content passes the forbidden-token scan', () => {
   const dryRun = spawnSync('npm pack --dry-run --json', { cwd: packageDir, encoding: 'utf8', shell: true });
   assert.equal(dryRun.status, 0, `npm pack --dry-run must succeed: ${dryRun.stderr}`);
   const parsed = JSON.parse(dryRun.stdout);
   assert.equal(parsed[0].filename, `${PKG.name}-${PKG.version}.tgz`);
-  assert.equal(parsed[0].entryCount, 78);
-  assert.deepEqual(parsed[0].files.map((entry) => entry.path).sort(), [...FROZEN_PACK_FILES].sort(), 'the packed file set must match the frozen 78-entry contract');
+  assert.equal(parsed[0].entryCount, 109);
+  assert.deepEqual(parsed[0].files.map((entry) => entry.path).sort(), [...FROZEN_PACK_FILES].sort(), 'the packed file set must match the frozen 109-entry contract');
 
   const tmp = mkdtempSync(path.join(tmpdir(), 'pack-scan-'));
   try {
@@ -6128,7 +6160,7 @@ await test('npm pack: dry-run file list matches the frozen 78-entry contract and
     };
     visit(packedRoot);
     const relPaths = packedFiles.map((file) => path.relative(packedRoot, file).split(path.sep).join('/')).sort();
-    assert.deepEqual(relPaths, [...FROZEN_PACK_FILES].sort(), 'the extracted tarball content must match the frozen 78-entry contract');
+    assert.deepEqual(relPaths, [...FROZEN_PACK_FILES].sort(), 'the extracted tarball content must match the frozen 109-entry contract');
     for (const file of packedFiles) {
       const rel = path.relative(packedRoot, file).split(path.sep).join('/');
       const text = readFileSync(file, 'utf8').toLowerCase();
@@ -6285,6 +6317,30 @@ await test('craft-repo: 20 Craft role cards ship clean frontmatter, model: inher
 await test('craft-repo: craft/agents and craft/skills/dev-flow/agents mirror bodies byte-identically (20 roles)', () => {
   assert.ok(existsSync(craftMirrorDir), 'craft/skills/dev-flow/agents must exist; the suite requires the complete craft/ tree');
   validateCraftParity(craftAgentsDir, craftMirrorDir);
+});
+
+await test('craft-repo: the skills.sh container skills/dev-flow mirrors craft/skills/dev-flow byte-identically', () => {
+  const skillsDevflowDir = path.join(packageDir, 'skills', 'dev-flow');
+  const walk = (dir, prefix) => {
+    const files = [];
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) files.push(...walk(path.join(dir, entry.name), rel));
+      else files.push(rel);
+    }
+    return files;
+  };
+  assert.ok(existsSync(skillsDevflowDir), 'skills/dev-flow must exist: the skills.sh CLI only discovers SKILL.md inside its container directories');
+  const source = walk(craftDevflowDir).sort();
+  const mirror = walk(skillsDevflowDir).sort();
+  assert.deepEqual(mirror, source, 'the skills.sh container must carry exactly the craft skill file set');
+  for (const rel of source) {
+    assert.deepEqual(
+      readFileSync(path.join(skillsDevflowDir, rel)),
+      readFileSync(path.join(craftDevflowDir, rel)),
+      `skills/dev-flow/${rel} must stay byte-identical to craft/skills/dev-flow/${rel}`
+    );
+  }
 });
 
 await test('craft-repo: dev-flow SKILL.md frontmatter and the exact 9 playbooks, zero leaks', () => {

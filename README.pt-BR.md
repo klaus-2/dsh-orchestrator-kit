@@ -63,6 +63,7 @@ O painel mantém o plugin atualizado. Cerca de 15 segundos após cada inicializa
 - `craft/skills/dev-flow` → instalado em `~/.agents/skills/dev-flow` — a skill dev-flow com seus playbooks.
 
 A instalação é skip-existing: arquivos que você já tem (ou editou) ficam intocados, e o diagnóstico de cards instalados do painel reporta qualquer papel ainda ausente ou divergente do bundle. Para gerenciar o bundle manualmente — ou rodar de novo após apagar arquivos — use `node scripts/install-craft.js [--dry-run]`, que aplica a mesma regra de nunca sobrescrever. Defina `autoInstallCraft: false` na linha de config do plugin para desativar a instalação automática. Papéis não configurados usam `model: inherit` — seguem o roteamento do chat. Sobrescreva apenas os papéis que você realmente quer fixar em um modelo.
+A skill dev-flow também é espelhada em `skills/dev-flow/` para o ecossistema Agent Skills: `npx skills add klaus-2/dsh-orchestrator-kit` a instala no Claude Code, Cursor, Codex e outros agentes compatíveis.
 
 ## Configurar por papel
 
