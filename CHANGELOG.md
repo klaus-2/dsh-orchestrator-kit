@@ -11,6 +11,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-22
+
 ### Added
 
 - Zero-step install: plugin activation now installs the Craft bundle automatically — the 20 role cards into the agents directory and the dev-flow skill with its playbooks into `<agents home>/skills/dev-flow/` — with skip-existing semantics (user edits and pre-existing files are never overwritten), per-file locked atomic writes, fail-closed readonly-mode skipping, and an opt-out via `autoInstallCraft: false` in the plugin config row. The manual `node scripts/install-craft.js` keeps the same never-overwrite rule for recovery runs.
@@ -76,5 +78,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - CI workflow and trusted-publishing release workflow.
 - Animated showcase (`docs/showcase.svg`).
 
-[Unreleased]: https://github.com/klaus-2/dsh-orchestrator-kit/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/klaus-2/dsh-orchestrator-kit/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/klaus-2/dsh-orchestrator-kit/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/klaus-2/dsh-orchestrator-kit/tree/v0.1.0

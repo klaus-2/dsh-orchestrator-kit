@@ -1,8 +1,8 @@
 {
-  "version": "0.1.0",
+  "version": "0.2.0",
   "notes": {
-    "en": "Initial release of the Orchestrator kit.\nTurns Settings into a control panel for AI agent teams: route provider, model and reasoning effort for each of the 20 Craft dev-flow roles.\nFail-closed validation against the live provider catalog, atomic locked writes and per-role inherit defaults.\nShips the Orchestrator preset persona, 20 craft role cards and the dev-flow skill.",
-    "pt-BR": "Primeira versão do Orchestrator kit.\nTransforma as configurações em um painel de controle para times de agentes de IA: roteie provider, model e reasoning effort para cada um dos 20 papéis dev-flow Craft.\nValidação fail-closed contra o catálogo de providers ao vivo, escritas atômicas com lock e padrões de herança por papel.\nInclui a persona de preset Orchestrator, 20 cartões de papéis craft e a skill dev-flow.",
-    "zh": "Orchestrator 套件首个版本。\n将设置变为 AI 智能体团队的控制面板：为 20 角色 Craft dev-flow 流水线的每个角色配置 provider、model 与 reasoning effort 路由。\n基于实时 provider 目录进行 fail-closed 校验，写入原子化并带锁，支持按角色继承默认值。\n随附 Orchestrator 预设 persona、20 张 craft 角色卡与 dev-flow skill。"
+    "en": "New in 0.2.0: the panel updates itself (release checks plus a What's-new dialog) and speaks English, Português (BR) and 简体中文.\nPer-role fallback routes retry once on quota exhaustion or outages, falling back to the session default.\nZero-step install: the 20 role cards and the dev-flow skill install automatically on activation.\nGetting-started section: make Orchestrator the new-chat default and start sessions in Agent Teams mode by default.",
+    "pt-BR": "Novidades na 0.2.0: o painel se atualiza sozinho (checagem de releases e diálogo de novidades) e fala English, Português (BR) e 简体中文.\nRotas de fallback por papel repetem uma vez em quota esgotada ou indisponibilidade, caindo para o default da sessão.\nInstalação em zero passos: os 20 cards de papel e a skill dev-flow instalam-se automaticamente na ativação.\nSeção de primeiros passos: torne o Orchestrator o default de novos chats e inicie sessões em modo Agent Teams por padrão.",
+    "zh": "0.2.0 新增：面板可自行更新（发布检查与新增内容对话框），并提供 English、Português (BR)、简体中文 三语界面。\n按角色后备路由在配额耗尽或故障时一次性重试，未配置则回退会话默认。\n零步骤安装：激活时自动安装 20 张角色卡与 dev-flow 技能。\n入门分区：将 Orchestrator 设为新聊天默认，并可让新会话默认以 Agent Teams 模式启动。"
   }
 }
