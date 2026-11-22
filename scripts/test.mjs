@@ -36,7 +36,7 @@ const PKG = JSON.parse(readFileSync(path.join(packageDir, 'package.json'), 'utf8
 
 const COVERAGE_STATEMENT_FLOOR = 0.70;
 const COVERAGE_FUNCTION_FLOOR = 0.60;
-const CLIENT_BYTE_CEILING = 135168;
+const CLIENT_BYTE_CEILING = 139264;
 const coverageDirArg = process.argv.find((arg) => arg.startsWith('--coverage-dir='));
 const isCoverageReport = process.argv.includes('--coverage-report');
 const coverageRoot = coverageDirArg ? coverageDirArg.slice('--coverage-dir='.length) : null;
@@ -267,38 +267,49 @@ function parseRouteText(text) {
   return doc.toJS();
 }
 
-async function withMockHost({ agentsHome, llm, defaultSelection, config = {} }, run) {
+async function withMockHost({ agentsHome, llm, defaultSelection, agentTeams, config = {} }, run) {
   const previousHome = process.env.DSH_AGENTS_HOME;
   process.env.DSH_AGENTS_HOME = agentsHome;
   const routes = new Map();
+  const listeners = new Map();
   const ctx = {
     get(service) {
       if (service === 'llm') return llm;
+      if (service === 'agentTeams') return agentTeams;
       if (service === 'agentDefaultModel') return defaultSelection ? { currentSelection: () => defaultSelection } : undefined;
       return undefined;
+    },
+    on(event, listener) {
+      if (!listeners.has(event)) listeners.set(event, []);
+      listeners.get(event).push(listener);
     },
     connection: {
       fetch: {
         register(spec) {
-          routes.set(spec.path, spec);
+          if (!routes.has(spec.path)) routes.set(spec.path, []);
+          routes.get(spec.path).push(spec);
         }
       }
     }
   };
   try {
-    await apply(ctx, config);
+    await apply(ctx, { autoInstallCraft: false, ...config });
+    const emit = async (event, payload) => {
+      for (const listener of listeners.get(event) ?? []) await listener(payload);
+    };
     const call = async (routePath, options = {}) => {
       const url = new URL(routePath, 'http://localhost');
-      const spec = routes.get(url.pathname);
-      assert.ok(spec, `route ${url.pathname} must be registered`);
+      const specs = routes.get(url.pathname);
+      assert.ok(specs, `route ${url.pathname} must be registered`);
       const method = options.method ?? 'GET';
-      assert.ok(spec.methods.includes(method), `route ${url.pathname} must allow ${method}`);
+      const spec = specs.find((candidate) => candidate.methods.includes(method));
+      assert.ok(spec, `route ${url.pathname} must allow ${method}`);
       const request = new Request(url.toString(), options);
       const response = await spec.fetch(request);
       const data = await response.json();
       return { status: response.status, data };
     };
-    return await run({ call, routes });
+    return await run({ call, routes, emit, listeners });
   } finally {
     if (previousHome === undefined) delete process.env.DSH_AGENTS_HOME;
     else process.env.DSH_AGENTS_HOME = previousHome;
@@ -1159,6 +1170,180 @@ await test('HTTP API: POST .route fallback set/reset validates against the live 
   }
 });
 
+await test('HTTP API: settings GET/POST roundtrip, validation, readonly and corrupt-file defaults', async () => {
+  const tmpHome = mkdtempSync(path.join(tmpdir(), 'map-http-settings-'));
+  try {
+    const dir = path.join(tmpHome, 'agents');
+    mkdirSync(dir, { recursive: true });
+    const settingsFile = path.join(dir, '.orchestrator-settings.json');
+
+    await withMockHost({ agentsHome: tmpHome }, async ({ call, routes }) => {
+      const settingsSpecs = routes.get(`/api/${NS}.settings`);
+      assert.equal(settingsSpecs.length, 1, 'a path must never register twice: the real connection.fetch registry throws on duplicates and the plugin would be rolled back');
+      assert.deepEqual([...settingsSpecs[0].methods].sort(), ['GET', 'POST'], 'the settings registration must serve both verbs');
+      for (const [routePath, specs] of routes.entries()) {
+        assert.equal(specs.length, 1, `route ${routePath} must be registered exactly once`);
+      }
+
+      const absent = await call(`/api/${NS}.settings`);
+      assert.equal(absent.status, 200);
+      assert.deepEqual(absent.data.settings, { teamModeDefault: false }, 'a missing settings file answers the defaults');
+      assert.equal(absent.data.readOnly, false);
+
+      const notBoolean = await call(`/api/${NS}.settings`, { method: 'POST', body: JSON.stringify({ teamModeDefault: 'yes' }) });
+      assert.equal(notBoolean.status, 400);
+      const unknownField = await call(`/api/${NS}.settings`, { method: 'POST', body: JSON.stringify({ teamModeDefault: true, extra: 1 }) });
+      assert.equal(unknownField.status, 400);
+      const malformed = await call(`/api/${NS}.settings`, { method: 'POST', body: 'not json' });
+      assert.equal(malformed.status, 400);
+      const arrayBody = await call(`/api/${NS}.settings`, { method: 'POST', body: '[]' });
+      assert.equal(arrayBody.status, 400);
+
+      const on = await call(`/api/${NS}.settings`, { method: 'POST', body: JSON.stringify({ teamModeDefault: true }) });
+      assert.equal(on.status, 200);
+      assert.deepEqual(on.data.settings, { teamModeDefault: true });
+      assert.deepEqual(JSON.parse(readFileSync(settingsFile, 'utf8')), { version: 1, teamModeDefault: true }, 'the settings file must carry the versioned shape');
+
+      const read = await call(`/api/${NS}.settings`);
+      assert.deepEqual(read.data.settings, { teamModeDefault: true }, 'the saved toggle must answer on the next GET');
+      const off = await call(`/api/${NS}.settings`, { method: 'POST', body: JSON.stringify({ teamModeDefault: false }) });
+      assert.equal(off.status, 200);
+      assert.deepEqual(off.data.settings, { teamModeDefault: false });
+    });
+
+    writeFileSync(settingsFile, '{corrupt', 'utf8');
+    const prevWarn = console.warn;
+    const warns = [];
+    console.warn = (...args) => warns.push(args.join(' '));
+    try {
+      await withMockHost({ agentsHome: tmpHome }, async ({ call }) => {
+        const degraded = await call(`/api/${NS}.settings`);
+        assert.equal(degraded.status, 200);
+        assert.deepEqual(degraded.data.settings, { teamModeDefault: false }, 'a corrupt settings file degrades to the defaults');
+        assert.ok(warns.join('\n').includes('settings file is unreadable'), 'the corrupt settings file must warn');
+      });
+    } finally {
+      console.warn = prevWarn;
+    }
+
+    const prevEnv = process.env.DSH_ORCHESTRATOR_READONLY;
+    process.env.DSH_ORCHESTRATOR_READONLY = '1';
+    try {
+      await withMockHost({ agentsHome: tmpHome }, async ({ call }) => {
+        const denied = await call(`/api/${NS}.settings`, { method: 'POST', body: JSON.stringify({ teamModeDefault: true }) });
+        assert.equal(denied.status, 403);
+        assert.equal(denied.data.code, 'readonly', 'readonly mode must refuse the settings save');
+        const envelope = await call(`/api/${NS}.settings`);
+        assert.equal(envelope.data.readOnly, true, 'the GET envelope must mirror the readonly flag');
+      });
+    } finally {
+      if (prevEnv === undefined) delete process.env.DSH_ORCHESTRATOR_READONLY;
+      else process.env.DSH_ORCHESTRATOR_READONLY = prevEnv;
+    }
+  } finally {
+    rmSync(tmpHome, { recursive: true, force: true });
+  }
+});
+
+await test('agent/created listener: the panel team default mirrors the stock defaultEnabled semantics', async () => {
+  const tmpHome = mkdtempSync(path.join(tmpdir(), 'map-team-default-'));
+  try {
+    mkdirSync(path.join(tmpHome, 'agents'), { recursive: true });
+    const settingsFile = path.join(tmpHome, 'agents', '.orchestrator-settings.json');
+    const rootAgent = { session: { header: { origin: 'root' } } };
+    const makeTeams = (selection) => {
+      const calls = [];
+      return {
+        calls,
+        projection: { stateOf: () => (selection === undefined ? { inheritedEventCount: 4 } : { inheritedEventCount: 4, enabled: selection }) },
+        setEnabled: async (agent, enabled, signal) => { calls.push({ agent, enabled, signal }); }
+      };
+    };
+
+    let teams = makeTeams(undefined);
+    await withMockHost({ agentsHome: tmpHome, agentTeams: teams }, async ({ emit }) => {
+      await emit('agent/created', {});
+      await emit('agent/created', { agent: { session: { header: { origin: 'subagent' } } }, source: 'startup' });
+      await emit('agent/created', { agent: rootAgent, source: 'resume' });
+      await emit('agent/created', { agent: rootAgent, source: 'startup' });
+    });
+    assert.deepEqual(teams.calls, [], 'the default-off host must never flip Team mode');
+    assert.ok(!existsSync(settingsFile), 'the default-off host must never create the settings file');
+
+    writeFileSync(settingsFile, JSON.stringify({ version: 1, teamModeDefault: true }), 'utf8');
+    teams = makeTeams(undefined);
+    await withMockHost({ agentsHome: tmpHome, agentTeams: teams }, async ({ emit }) => {
+      await emit('agent/created', {});
+      await emit('agent/created', { agent: { session: { header: { origin: 'subagent' } } }, source: 'startup' });
+      await emit('agent/created', { agent: rootAgent, source: 'resume' });
+      await emit('agent/created', { agent: rootAgent, source: 'startup', signal: 'SIG' });
+    });
+    assert.deepEqual(teams.calls, [{ agent: rootAgent, enabled: true, signal: 'SIG' }], 'an eligible startup root with no saved selection must be enabled exactly once');
+
+    teams = makeTeams(false);
+    await withMockHost({ agentsHome: tmpHome, agentTeams: teams }, async ({ emit }) => {
+      await emit('agent/created', { agent: rootAgent, source: 'startup' });
+    });
+    assert.deepEqual(teams.calls, [], 'an existing explicit OFF selection must never be overridden');
+
+    const brokenTeams = { calls: [], setEnabled: async () => { brokenTeams.calls.push('enabled'); } };
+    await withMockHost({ agentsHome: tmpHome, agentTeams: brokenTeams }, async ({ emit }) => {
+      await emit('agent/created', { agent: rootAgent, source: 'startup' });
+    });
+    assert.deepEqual(brokenTeams.calls, [], 'an unusable projection must fail closed instead of flipping the mode');
+
+    let threw = false;
+    try {
+      await withMockHost({ agentsHome: tmpHome }, async ({ emit }) => {
+        await emit('agent/created', { agent: rootAgent, source: 'startup' });
+      });
+    } catch {
+      threw = true;
+    }
+    assert.equal(threw, false, 'an absent Agent Teams service must degrade to a no-op');
+  } finally {
+    rmSync(tmpHome, { recursive: true, force: true });
+  }
+});
+
+await test('craft bundle auto-install: first activation creates cards and the skill tree, later activations skip existing files', async () => {
+  const tmpHome = mkdtempSync(path.join(tmpdir(), 'map-auto-install-'));
+  try {
+    const prevWarn = console.warn;
+    const warns = [];
+    console.warn = (...args) => warns.push(args.join(' '));
+    try {
+      await withMockHost({ agentsHome: tmpHome, config: { autoInstallCraft: true } }, async () => {});
+    } finally {
+      console.warn = prevWarn;
+    }
+    const cardsDir = path.join(tmpHome, 'agents');
+    for (const role of CRAFT_ROLES) {
+      assert.ok(existsSync(path.join(cardsDir, `${role}.md`)), `the auto-install must create ${role}.md`);
+    }
+    assert.ok(existsSync(path.join(tmpHome, 'skills', 'dev-flow', 'SKILL.md')), 'the auto-install must create the dev-flow skill');
+    assert.ok(existsSync(path.join(tmpHome, 'skills', 'dev-flow', 'agents', 'planner.md')), 'the auto-install must copy the skill agent mirrors');
+    assert.ok(existsSync(path.join(tmpHome, 'skills', 'dev-flow', 'playbooks')), 'the auto-install must copy the playbooks tree');
+    assert.equal(warns.join('\n').includes('craft bundle install finished with failures'), false, 'a clean install must not warn');
+
+    const planner = path.join(cardsDir, 'planner.md');
+    writeFileSync(planner, `---\nname: planner\nprovider: example-hub\nmodel: flash-a\n---\n\nedited body\n`, 'utf8');
+    await withMockHost({ agentsHome: tmpHome, config: { autoInstallCraft: true } }, async () => {});
+    assert.ok(readFileSync(planner, 'utf8').includes('edited body'), 'skip-existing must never overwrite an installed card');
+
+    const disabledHome = mkdtempSync(path.join(tmpdir(), 'map-auto-install-off-'));
+    try {
+      await withMockHost({ agentsHome: disabledHome, config: { autoInstallCraft: false } }, async () => {});
+      assert.equal(existsSync(path.join(disabledHome, 'agents', 'planner.md')), false, 'autoInstallCraft: false must skip the install');
+      assert.equal(existsSync(path.join(disabledHome, 'skills', 'dev-flow')), false, 'autoInstallCraft: false must skip the skill tree');
+    } finally {
+      rmSync(disabledHome, { recursive: true, force: true });
+    }
+  } finally {
+    rmSync(tmpHome, { recursive: true, force: true });
+  }
+});
+
 await test('strict frontmatter: parseRoleCard strict mode rejects anchors, aliases, explicit tags, deep nesting and oversized blocks; lenient mode unchanged', () => {
   const anchorCard = '---\nname: anchored\nprovider: &p example-hub\nmodel: flash-a\n---\n\nBody\n';
   const aliasCard = '---\nname: aliased\nmodel: *p\n---\n\nBody\n';
@@ -1638,7 +1823,7 @@ await test('HTTP API: POST .route enforces the 65536-byte body cap and rejects u
 
     await withMockHost({ agentsHome: tmpHome, llm: undefined }, async ({ routes }) => {
       const before = readFileSync(cardFile, 'utf8');
-      const res = await routes.get(`/api/${NS}.route`).fetch(new Request(`http://localhost/api/${NS}.route`, {
+      const res = await routes.get(`/api/${NS}.route`).at(-1).fetch(new Request(`http://localhost/api/${NS}.route`, {
         method: 'POST',
         body: JSON.stringify({ id: 'planner', disabled: true }),
         headers: { 'content-type': 'application/json', 'content-length': '70000' }
@@ -1792,9 +1977,9 @@ await test('HTTP API: Server-Timing on roles/catalog/route success carries durat
     await withMockHost({ agentsHome: tmpHome, llm: flashCatalogLlm() }, async ({ routes }) => {
       const rawGet = (routePath) => {
         const url = new URL(routePath, 'http://localhost');
-        return routes.get(url.pathname).fetch(new Request(url.toString()));
+        return routes.get(url.pathname).at(-1).fetch(new Request(url.toString()));
       };
-      const rawPost = (payload) => routes.get(`/api/${NS}.route`).fetch(new Request(`http://localhost/api/${NS}.route`, {
+      const rawPost = (payload) => routes.get(`/api/${NS}.route`).at(-1).fetch(new Request(`http://localhost/api/${NS}.route`, {
         method: 'POST',
         body: JSON.stringify(payload),
         headers: { 'content-type': 'application/json' }
@@ -2305,10 +2490,10 @@ await test('client.js registers under the exact package name (web-boot row id)',
 });
 
 await test('server and client agree on the /api/<name>.* route surface', () => {
-  const routeRe = /\/api\/dsh-orchestrator-kit\.(roles|catalog|efforts|route|events|diagnostics|update)/g;
-  const serverRoutes = [...readFileSync(path.join(packageDir, 'index.js'), 'utf8').matchAll(routeRe)].map((m) => m[0]).sort();
-  const clientRoutes = [...readFileSync(path.join(packageDir, 'client.js'), 'utf8').matchAll(routeRe)].map((m) => m[0]).sort();
-  assert.equal(serverRoutes.length, 7, 'index.js must register exactly the 7 namespaced routes');
+  const routeRe = /\/api\/dsh-orchestrator-kit\.(roles|catalog|efforts|route|events|settings|diagnostics|update)/g;
+  const serverRoutes = [...new Set([...readFileSync(path.join(packageDir, 'index.js'), 'utf8').matchAll(routeRe)].map((m) => m[0]))].sort();
+  const clientRoutes = [...new Set([...readFileSync(path.join(packageDir, 'client.js'), 'utf8').matchAll(routeRe)].map((m) => m[0]))].sort();
+  assert.equal(serverRoutes.length, 8, 'index.js must register exactly the 8 namespaced routes');
   assert.deepEqual(serverRoutes, clientRoutes, 'client.js must call exactly the routes index.js registers');
 });
 
@@ -2647,7 +2832,7 @@ const statusBadgeOf = (card) => findNodes(card, (n) => n.type === 'span' && type
 const rootOf = (tree) => findNodes(tree, (n) => n.type === 'div' && n.props['data-dsh-orchestrator-kit-settings'] === '')[0];
 const fieldHelpOf = (card) => findNodes(card, (n) => n.type === 'div' && n.props.style?.fontSize === 11 && n.props.style?.marginTop === 4);
 const undoButtonsOf = (card) => findNodes(card, (n) => n.type === 'button' && (n.children[0] === 'Undo' || n.children[0] === 'Undoing…'));
-const visibleIds = (tree) => findNodes(tree, (n) => n.type === 'input' && n.props.type === 'checkbox').map((n) => n.props['aria-label'].replace('Disable ', ''));
+const visibleIds = (tree) => findNodes(tree, (n) => n.type === 'input' && n.props.type === 'checkbox' && typeof n.props['aria-label'] === 'string' && n.props['aria-label'].startsWith('Disable ')).map((n) => n.props['aria-label'].replace('Disable ', ''));
 const routePostsOf = (vm) => vm.fetchCalls.filter((c) => c.url === `/api/${NS}.route`);
 const clickTab = (tree, app, label) => { tabByLabel(tree, label).props.onClick(); return app.renderCycle(); };
 
@@ -2745,7 +2930,7 @@ await test('client.js: runtime module registration, phase grouping, save, 409, r
   assert.equal(effortCalls.length, uniquePairs.size, 'exactly one .efforts fetch per unique routed (provider, model) pair must be issued');
   assert.ok(texts.includes('High (high)'), 'rendered effort select must include resolved effort option High (high)');
   assert.ok(texts.includes('Default (medium)'), 'rendered effort select must include defaultEffort label');
-  assert.equal(findNodes(tree, (n) => n.type === 'input' && n.props.type === 'checkbox').length, 22);
+  assert.equal(findNodes(tree, (n) => n.type === 'input' && n.props.type === 'checkbox' && typeof n.props['aria-label'] === 'string' && n.props['aria-label'].startsWith('Disable ')).length, 22);
 
   const secProviderSelect = findNodes(tree, (n) => n.type === 'select' && n.props['aria-label'] === 'Provider for security-auditor')[0];
   secProviderSelect.props.onChange({ target: { value: '' } });
@@ -2793,14 +2978,14 @@ await test('client.js: runtime module registration, phase grouping, save, 409, r
   refreshBtn.props.onClick();
   tree = await app1.settle();
   assert.ok(collectText(tree).some((t) => t.includes('roles boom')));
-  assert.equal(findNodes(tree, (n) => n.type === 'input' && n.props.type === 'checkbox').length, 22, 'failed refresh must keep all 22 rows');
+  assert.equal(findNodes(tree, (n) => n.type === 'input' && n.props.type === 'checkbox' && typeof n.props['aria-label'] === 'string' && n.props['aria-label'].startsWith('Disable ')).length, 22, 'failed refresh must keep all 22 rows');
 
   failRolesNext = false;
   invalidJsonRolesNext = true;
   findNodes(tree, (n) => n.type === 'button' && n.props['aria-label'] === 'Refresh roles and catalog')[0].props.onClick();
   tree = await app1.settle();
   assert.ok(collectText(tree).some((t) => t.includes('Invalid JSON response (HTTP 200)')));
-  assert.equal(findNodes(tree, (n) => n.type === 'input' && n.props.type === 'checkbox').length, 22);
+  assert.equal(findNodes(tree, (n) => n.type === 'input' && n.props.type === 'checkbox' && typeof n.props['aria-label'] === 'string' && n.props['aria-label'].startsWith('Disable ')).length, 22);
   invalidJsonRolesNext = false;
 
   const zetaCheckbox = findNodes(tree, (n) => n.type === 'input' && n.props['aria-label'] === 'Disable zeta-custom')[0];
@@ -2808,7 +2993,7 @@ await test('client.js: runtime module registration, phase grouping, save, 409, r
   tree = app1.renderCycle();
   await findNodes(tree, (n) => n.type === 'button' && n.props['aria-label'] === 'Save zeta-custom settings')[0].props.onClick();
   tree = app1.renderCycle();
-  assert.equal(findNodes(tree, (n) => n.type === 'input' && n.props.type === 'checkbox').length, 22, 'save after failed refresh must preserve all 22 rows');
+  assert.equal(findNodes(tree, (n) => n.type === 'input' && n.props.type === 'checkbox' && typeof n.props['aria-label'] === 'string' && n.props['aria-label'].startsWith('Disable ')).length, 22, 'save after failed refresh must preserve all 22 rows');
 
   holdRolesResolver = true;
   findNodes(tree, (n) => n.type === 'input' && n.props['aria-label'] === 'Disable zeta-custom')[0].props.onChange({ target: { checked: false } });
@@ -2946,7 +3131,7 @@ await test('client.js: runtime module registration, phase grouping, save, 409, r
   const app4 = vm4.mountInstance();
   let tree4 = await app4.settle();
   const tabButtons = () => findNodes(tree4, (n) => n.type === 'button' && n.props.role === 'tab');
-  const checkboxNames = (tree) => findNodes(tree, (n) => n.type === 'input' && n.props.type === 'checkbox').map((n) => n.props['aria-label'].replace('Disable ', ''));
+  const checkboxNames = (tree) => findNodes(tree, (n) => n.type === 'input' && n.props.type === 'checkbox' && typeof n.props['aria-label'] === 'string' && n.props['aria-label'].startsWith('Disable ')).map((n) => n.props['aria-label'].replace('Disable ', ''));
   assert.ok(collectText(tree4).includes('What these settings do'), 'legend must explain what each setting does');
   assert.ok(collectText(tree4).includes('Members created with plain subagent always inherit the Lead.'), 'legend must keep the plain-subagent inherit fact');
   assert.ok(collectText(tree4).includes('Routed'), 'routed status badge must render');
@@ -3103,6 +3288,12 @@ const PANEL_KEYS = [
   'refresh',
   'refresh.busy',
   'refresh.aria',
+  'team.defaultLabel',
+  'team.defaultAria',
+  'team.saved',
+  'onboard.presetHint',
+  'onboard.teamHint',
+  'onboard.rolesHint',
   'tab.all',
   'phase.discovery',
   'phase.planning',
@@ -3506,6 +3697,13 @@ await test('i18n structural gate: every panel string renders through t (sentinel
       if (routeMode === 'unchanged') return new Response(JSON.stringify({ ok: true, unchanged: true, role: { ...base, disabled: payload.disabled ?? base.disabled } }), { status: 200 });
       return new Response(JSON.stringify({ ok: true, role: { ...base, disabled: payload.disabled ?? base.disabled, mtimeMs: base.mtimeMs + 10 } }), { status: 200 });
     }
+    if (url === `/api/${NS}.settings`) {
+      if (opts?.method === 'POST') {
+        const payload = JSON.parse(opts.body);
+        return new Response(JSON.stringify({ ok: true, settings: { teamModeDefault: payload.teamModeDefault === true } }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ ok: true, settings: { teamModeDefault: false }, readOnly: false }), { status: 200 });
+    }
     return new Response(JSON.stringify({ ok: false }), { status: 404 });
   };
 
@@ -3523,6 +3721,15 @@ await test('i18n structural gate: every panel string renders through t (sentinel
   scanTree(tree1);
   assert.ok(collectText(tree1).join('').includes('⟦support.thanks⟧'), 'a starred banner must render support.thanks through t');
   assert.equal(JSON.parse(vm1.storage.get('dsh-orchestrator-kit.prefs')).support, 'thanked', 'the starred answer must persist in the panel prefs');
+
+  const teamCheckbox = findNodes(tree1, (n) => n.type === 'input' && n.props['aria-label'] === '⟦team.defaultAria⟧')[0];
+  assert.ok(teamCheckbox, 'the getting-started section must render the team default checkbox through t');
+  assert.equal(teamCheckbox.props.checked, false, 'the settings bootstrap must drive the team default state');
+  teamCheckbox.props.onChange({ target: { checked: true } });
+  tree1 = await app1.settle();
+  scanTree(tree1);
+  assert.ok(collectText(tree1).join('').includes('⟦team.saved⟧'), 'a team default save must render team.saved through t');
+  assert.equal(findNodes(tree1, (n) => n.type === 'input' && n.props['aria-label'] === '⟦team.defaultAria⟧')[0].props.checked, true, 'the saved team default must feed back into the checkbox');
 
   checkboxOf(cardOf(tree1, 'zeta-custom')).props.onChange({ target: { checked: true } });
   tree1 = app1.renderCycle();
@@ -6234,12 +6441,12 @@ await test('coverage gate fails closed: empty directory, missing coverage root a
   }
 });
 
-await test('client.js byte budget: measured size stays under the versioned 135168-byte ceiling with no self-adjustment', () => {
+await test('client.js byte budget: measured size stays under the versioned 139264-byte ceiling with no self-adjustment', () => {
   const size = statSync(path.join(packageDir, 'client.js')).size;
-  assert.equal(size, 133773, 'client.js must stay byte-identical at the measured 133773 bytes');
-  assert.equal(CLIENT_BYTE_CEILING, 135168, 'the versioned ceiling must stay 135168 bytes (132 KiB)');
-  assert.equal(CLIENT_BYTE_CEILING - size, 1395, 'the headroom must stay 1395 bytes');
-  assert.ok(size <= CLIENT_BYTE_CEILING, `client.js is ${size} bytes; ceiling is ${CLIENT_BYTE_CEILING} (132 KiB) — bump the versioned ceiling by explicit commit or split a chunk (C17)`);
+  assert.equal(size, 138853, 'client.js must stay byte-identical at the measured 138853 bytes');
+  assert.equal(CLIENT_BYTE_CEILING, 139264, 'the versioned ceiling must stay 139264 bytes (136 KiB)');
+  assert.equal(CLIENT_BYTE_CEILING - size, 411, 'the headroom must stay 411 bytes');
+  assert.ok(size <= CLIENT_BYTE_CEILING, `client.js is ${size} bytes; ceiling is ${CLIENT_BYTE_CEILING} (136 KiB) — bump the versioned ceiling by explicit commit or split a chunk (C17)`);
 });
 
 await test('docs-parity.mjs: three READMEs share headings, table rows and fenced blocks; importing has no side effects', async () => {
@@ -6361,7 +6568,7 @@ await test('pass-5 docs and static markers: six reference docs carry their secti
   assert.deepEqual(workflowBlock('publish.yml'), expectedBlock, 'publish.yml must carry the byte-identical coverage block');
 
   const testerText = readFileSync(path.join(packageDir, 'scripts', 'test.mjs'), 'utf8');
-  assert.ok(testerText.includes('135168'), 'the versioned byte budget constant must be present');
+  assert.ok(testerText.includes('139264'), 'the versioned byte budget constant must be present');
 });
 
 await test('repo hygiene: no backup artifacts and zero machine tokens in any repo file', () => {

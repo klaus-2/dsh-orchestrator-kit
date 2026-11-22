@@ -16,6 +16,7 @@
 
 ## 为什么使用
 
+- **零步骤安装** — 激活时自动安装 20 张角色卡和 dev-flow 技能（绝不覆盖），设置页面承载仅有的两个一次性选择：默认 preset 与新会话的 Agent Teams 默认值。
 - **按角色路由** — Craft dev-flow 流水线（发现、规划、执行、验证）中的每个角色都可以使用自己的 provider、模型和推理力度。
 - **配额弹性调度** — 为每个角色配置后备路由；当固定模型配额耗尽、被限流或故障时，Lead 会在后备路由上重试一次 — 未配置则使用会话默认 — 而不是丢失这次调度。
 - **成本与质量调优** — 只在真正划算的地方（架构、计划评审）投入深度推理能力，让检索类角色跑在更便宜的路由上。
@@ -39,11 +40,16 @@ graph TD
 
 ## 安装（DSH）
 
-要求：**Node.js >= 22**，以及启用 Agent Teams 的 **DSH 实例**。
+要求：**Node.js >= 22**，以及启用 Agent Teams 的 **DSH 实例**。通过 `subagent_role` 工具调度 Craft 角色，还需要提供该工具的插件（例如 Agent Teams 插件市场的软件包）；没有它时，流水线会自动降级为普通 subagent 调度并携带每个角色卡的正文 — 不会静默跳过任何关卡。
 
 1. 克隆或下载本仓库（已以 `dsh-orchestrator-kit` v0.1.0 发布到 npm — 无需全局安装）。
 2. 在 DSH 中打开 **插件 → 添加插件**，指向下载的文件夹，**或**使用 `install_bundle` 安装。
-3. Orchestrator 人设与 20 角色 dev-flow 流水线已随预设提供 — 无需额外配置。
+3. 完成。激活时插件会安装带预设的 Orchestrator 人设，把 20 张角色卡复制到 `~/.agents/agents/`（设置了 `$DSH_AGENTS_HOME` 时为该路径下的 `agents/`），并把 dev-flow 技能及其 playbook 复制到 `~/.agents/skills/dev-flow/` — 始终跳过已存在的文件，因此你自己的编辑和已有文件绝不会被覆盖。
+
+还有两个一次性选择属于你，设置页面会提醒这两项：
+
+- **让 Orchestrator 成为新聊天的默认** — 在任意聊天的模型菜单（或 Agent presets 设置）中选择 **Orchestrator**，然后按 **Set as new task default**。插件绝不会替你更改这个选择。
+- **新会话的 Team 模式** — 设置页面提供一个复选框，让每个新会话以 Agent Teams 模式启动（默认关闭，与 harness 一致）。模型菜单中的 **Use Agent Teams** 开关仍可按会话覆盖，已有会话保持其保存的模式。
 
 ### 更新
 
@@ -51,12 +57,12 @@ graph TD
 
 ## Craft 流水线捆绑包
 
-`craft/` 以简单、可移植的文件形式提供流水线：
+`craft/` 以简单、可移植的文件形式提供流水线，在插件激活时自动安装：
 
-- `craft/agents/*` → 复制到 `~/.agents/agents/`（设置了 `$DSH_AGENTS_HOME` 时为 `$DSH_AGENTS_HOME/agents/`）— 20 张角色卡片。
-- `craft/skills/dev-flow` → 复制到 `~/.agents/skills/dev-flow` — dev-flow 技能及其 playbook。
+- `craft/agents/*` → 安装到 `~/.agents/agents/`（设置了 `$DSH_AGENTS_HOME` 时为该路径下的 `agents/`）— 20 张角色卡片。
+- `craft/skills/dev-flow` → 安装到 `~/.agents/skills/dev-flow` — dev-flow 技能及其 playbook。
 
-未配置的角色使用 `model: inherit` — 跟随会话的路由。只覆盖你真正想固定到某个模型的角色。
+安装采用跳过已存在文件的策略：你已有（或编辑过）的文件保持原样，面板的已安装卡片诊断会报告任何仍缺失或与捆绑包偏离的角色。改为手动管理捆绑包 — 或删除文件后重新安装 — 请使用 `node scripts/install-craft.js [--dry-run]`，它遵循同样的绝不覆盖规则。在插件的配置行设置 `autoInstallCraft: false` 可完全关闭自动安装。未配置的角色使用 `model: inherit` — 跟随会话的路由。只覆盖你真正想固定到某个模型的角色。
 
 ## 按角色配置
 
@@ -78,7 +84,7 @@ graph TD
 
 每次编辑都有防丢失保护。修改一张卡片会将其标记为未保存 — 卡片获得琥珀色边框，角色名称获得 “（未保存）” 后缀 — 且在存在未保存修改时离开页面会触发浏览器的离开确认。Ctrl+S / Cmd+S 保存获得焦点的卡片（无焦点时空操作）。未保存的草稿在切换标签与重新打开设置分区后仍然保留：只要卡片在服务器上的状态仍与草稿所基于的状态一致就会保留，磁盘上的外部变更会丢弃过期的草稿。普通 Refresh 按钮会重置草稿；下方的冲突操作才是保留草稿的路径。每次保存都提供撤销：每张卡片一个层级，仅限当前浏览器会话，绝不持久化 — 它恢复该次保存之前的设置。当保存或撤销因卡片在底层被更改而以 `409` 失败时，消息会提供 “重新加载已保存状态，保留修改”，它会重新读取已保存状态并重新应用草稿，绝不重新发送过期的 `mtimeMs`；设置了推理力度的保存出现 `409` 时还会指向推理力度下拉框。一个 aria-live polite 实时区域会播报最近一次保存或撤销的结果，已保存的卡片保持绿色边框直到下一次更改。
 
-面板使用七条路由：`GET /api/dsh-orchestrator-kit.roles`、`GET /api/dsh-orchestrator-kit.catalog`、`GET /api/dsh-orchestrator-kit.efforts`、`GET /api/dsh-orchestrator-kit.events`、`GET /api/dsh-orchestrator-kit.diagnostics`、`GET /api/dsh-orchestrator-kit.update` 和 `POST /api/dsh-orchestrator-kit.route`。成功的响应在实际测量到耗时指标时才带有 `Server-Timing` 头（仅含耗时）——roles 读取、catalog 读取、路由校验与写入；未执行路由校验的无变更保存不带该头。图例显示最近一次加载的耗时。
+面板使用八条路由：`GET /api/dsh-orchestrator-kit.roles`、`GET /api/dsh-orchestrator-kit.catalog`、`GET /api/dsh-orchestrator-kit.efforts`、`GET /api/dsh-orchestrator-kit.events`、`GET /api/dsh-orchestrator-kit.settings`、`GET /api/dsh-orchestrator-kit.diagnostics`、`GET /api/dsh-orchestrator-kit.update` 和 `POST /api/dsh-orchestrator-kit.route`。成功的响应在实际测量到耗时指标时才带有 `Server-Timing` 头（仅含耗时）——roles 读取、catalog 读取、路由校验与写入；未执行路由校验的无变更保存不带该头。图例显示最近一次加载的耗时。
 
 每次保存都有端到端保护：
 

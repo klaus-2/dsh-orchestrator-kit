@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { appendFile, lstat, readFile, readdir, realpath, stat } from 'node:fs/promises';
+import { appendFile, lstat, mkdir, readFile, readdir, realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,6 +17,9 @@ const FRONTMATTER_MAX_PATH = 24;
 const MAX_ROUTE_BODY_BYTES = 65536;
 const CARD_READ_CONCURRENCY = 8;
 const ROUTE_BODY_FIELDS = new Set(['id', 'provider', 'model', 'disabled', 'reasoningEffort', 'expectedMtimeMs', 'fallback']);
+const SETTINGS_FILE_NAME = '.orchestrator-settings.json';
+const SETTINGS_BODY_FIELDS = new Set(['teamModeDefault']);
+const SETTINGS_BODY_BYTES = 4096;
 const LOCK_TIMEOUT_PREFIX = 'atomic-write: timed out waiting for the writer lock';
 const RELEASES_URL = 'https://api.github.com/repos/klaus-2/dsh-orchestrator-kit/releases/latest';
 const NPM_NAME = 'dsh-orchestrator-kit';
@@ -136,6 +139,115 @@ function craftAgentsDirOf() {
   } catch {
     return null;
   }
+}
+
+function craftSkillsDirOf() {
+  try {
+    return fileURLToPath(new URL('./craft/skills/dev-flow/', import.meta.url));
+  } catch {
+    return null;
+  }
+}
+
+function defaultSettings() {
+  return { teamModeDefault: false };
+}
+
+async function readSettings(settingsFile) {
+  try {
+    const doc = JSON.parse(await readFile(settingsFile, 'utf8'));
+    if (doc === null || typeof doc !== 'object' || Array.isArray(doc)) return defaultSettings();
+    return { teamModeDefault: doc.teamModeDefault === true };
+  } catch (error) {
+    if (error?.code !== 'ENOENT') {
+      console.warn(redactText(`${name}: the settings file is unreadable, defaults apply:`), safeErrorText(error));
+    }
+    return defaultSettings();
+  }
+}
+
+const assertContainedRelative = (root, target) => {
+  const relative = path.relative(root, target);
+  if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error(`target escapes the agents root: ${path.basename(target)}`);
+  }
+  return relative.split(path.sep).join('/');
+};
+
+async function collectCraftTargets(craftDir, targetDir, targets) {
+  const entries = await readdir(craftDir, { withFileTypes: true });
+  for (const entry of entries) {
+    const source = path.join(craftDir, entry.name);
+    const target = path.join(targetDir, entry.name);
+    if (entry.isDirectory()) {
+      await collectCraftTargets(source, target, targets);
+      continue;
+    }
+    if (!entry.isFile()) continue;
+    targets.push({ source, target });
+  }
+}
+
+async function installCraftBundle(cardsDir) {
+  const counts = { created: 0, skipped: 0, failed: 0 };
+  if (readOnlyMode()) return counts;
+  const agentsRoot = agentsRootOf();
+  const plans = [];
+  try {
+    const craftAgentsDir = craftAgentsDirOf();
+    if (craftAgentsDir !== null) {
+      const entries = await readdir(craftAgentsDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isFile() || !entry.name.endsWith('.md')) continue;
+        const id = entry.name.slice(0, -3);
+        if (!isEntryName(id)) continue;
+        plans.push({ source: path.join(craftAgentsDir, entry.name), target: cardPathOf(cardsDir, id) });
+      }
+    }
+    const craftSkillsDir = craftSkillsDirOf();
+    if (craftSkillsDir !== null) {
+      await collectCraftTargets(craftSkillsDir, path.join(agentsRoot, 'skills', 'dev-flow'), plans);
+    }
+  } catch (error) {
+    if (error?.code !== 'ENOENT') console.warn(redactText(`${name}: reading the craft sources failed:`), safeErrorText(error));
+    counts.failed += 1;
+    return counts;
+  }
+  plans.sort((left, right) => (left.target < right.target ? -1 : left.target > right.target ? 1 : 0));
+  for (const plan of plans) {
+    try {
+      const relative = assertContainedRelative(agentsRoot, plan.target);
+      let exists = false;
+      try {
+        await stat(plan.target);
+        exists = true;
+      } catch (error) {
+        if (error?.code !== 'ENOENT') throw error;
+      }
+      if (exists) {
+        counts.skipped += 1;
+        continue;
+      }
+      const bytes = await readFile(plan.source);
+      await mkdir(path.dirname(plan.target), { recursive: true });
+      await withFileLock(plan.target, async () => {
+        let appeared = false;
+        try {
+          await stat(plan.target);
+          appeared = true;
+        } catch (error) {
+          if (error?.code !== 'ENOENT') throw error;
+        }
+        if (appeared) throw new Error(`target appeared after the skip check: ${relative}`);
+        await writeFileAtomic(plan.target, bytes, { mode: 0o644, dirMode: 0o700 });
+      });
+      counts.created += 1;
+    } catch (error) {
+      counts.failed += 1;
+      console.warn(redactText(`${name}: installing the craft bundle failed for ${path.relative(agentsRoot, plan.target).split(path.sep).join('/')}:`), safeErrorText(error));
+    }
+  }
+  return counts;
 }
 
 function optionalScalar(meta, key, basename) {
@@ -608,6 +720,7 @@ async function apply(ctx, config = {}) {
   });
   const cardsDir = () => path.join(agentsRootOf(), 'agents');
   const auditFileOf = () => path.join(cardsDir(), '.orchestrator-audit.jsonl');
+  const settingsFileOf = () => path.join(cardsDir(), SETTINGS_FILE_NAME);
   const timeoutMs = typeof config?.catalogTimeoutMs === 'number' && Number.isFinite(config.catalogTimeoutMs) && config.catalogTimeoutMs > 0
     ? config.catalogTimeoutMs
     : CATALOG_TIMEOUT_MS;
@@ -754,6 +867,52 @@ async function apply(ctx, config = {}) {
         } catch { skipped += 1; }
       }
       return json({ ok: true, events, skipped }, 200, [['reads', performance.now() - started]]);
+    }
+  });
+
+  ctx.connection?.fetch?.register({
+    path: '/api/dsh-orchestrator-kit.settings',
+    methods: ['GET', 'POST'],
+    requestBody: 'buffered',
+    fetch: async (request) => {
+      if (request.method === 'GET') {
+        const started = performance.now();
+        const settings = await readSettings(settingsFileOf());
+        return json({ ok: true, settings, readOnly: readOnlyMode() }, 200, [['reads', performance.now() - started]]);
+      }
+      if (readOnlyMode()) {
+        return json({ ok: false, code: 'readonly', error: 'the panel is in read-only mode: saving is disabled by the server configuration' }, 403);
+      }
+      const contentLength = Number(request.headers.get('content-length'));
+      if (Number.isFinite(contentLength) && contentLength > SETTINGS_BODY_BYTES) {
+        return json({ ok: false, error: `the request body exceeds the ${SETTINGS_BODY_BYTES}-byte limit` }, 413);
+      }
+      let raw;
+      try { raw = await request.text(); } catch { return json({ ok: false, error: 'the body is not valid JSON' }, 400); }
+      if (Buffer.byteLength(raw, 'utf8') > SETTINGS_BODY_BYTES) {
+        return json({ ok: false, error: `the request body exceeds the ${SETTINGS_BODY_BYTES}-byte limit` }, 413);
+      }
+      let body;
+      try { body = JSON.parse(raw); } catch { return json({ ok: false, error: 'the body is not valid JSON' }, 400); }
+      if (body === null || typeof body !== 'object' || Array.isArray(body)) return json({ ok: false, error: 'the body must be a JSON object' }, 400);
+      const unknown = Object.keys(body).find((key) => !SETTINGS_BODY_FIELDS.has(key));
+      if (unknown !== undefined) return json({ ok: false, error: `the request contains an unknown field: ${redactText(String(unknown))}` }, 400);
+      if (typeof body.teamModeDefault !== 'boolean') {
+        return json({ ok: false, error: 'teamModeDefault must be a boolean' }, 400);
+      }
+      const settingsFile = settingsFileOf();
+      try {
+        await withFileLock(settingsFile, async () => {
+          await writeFileAtomic(settingsFile, `${JSON.stringify({ version: 1, teamModeDefault: body.teamModeDefault })}\n`, { mode: 0o644, dirMode: 0o700 });
+        });
+      } catch (error) {
+        if (typeof error?.message === 'string' && error.message.startsWith(LOCK_TIMEOUT_PREFIX)) {
+          return json({ ok: false, code: 'lock-timeout', error: 'the settings file is busy: another writer holds its lock. Retry in a moment; if the lock is orphaned (owner crashed), an operator must remove that lock file manually.' }, 503);
+        }
+        console.warn(redactText(`${name}: writing the settings file failed:`), safeErrorText(error));
+        return json({ ok: false, error: `writing the settings failed: ${safeErrorText(error)}` }, 500);
+      }
+      return json({ ok: true, settings: { teamModeDefault: body.teamModeDefault } }, 200);
     }
   });
 
@@ -1145,6 +1304,38 @@ async function apply(ctx, config = {}) {
       return json({ ok: true, role }, 200, [...(catalogMs === null ? [] : [['catalog', catalogMs]]), ['write', writeMs]]);
     }
   });
+
+  if (typeof ctx.on === 'function') {
+    ctx.on('agent/created', async ({ agent, source, signal } = {}) => {
+      try {
+        if (source !== 'startup') return;
+        if (agent === null || typeof agent !== 'object' || agent.session?.header?.origin === 'subagent') return;
+        const settings = await readSettings(settingsFileOf());
+        if (settings.teamModeDefault !== true) return;
+        const teams = getService('agentTeams');
+        if (teams === null || typeof teams.setEnabled !== 'function') return;
+        const projection = teams.projection;
+        const state = projection !== null && typeof projection === 'object' && typeof projection.stateOf === 'function'
+          ? projection.stateOf(agent.session)
+          : undefined;
+        if (state === null || typeof state !== 'object' || state.enabled !== undefined) return;
+        await teams.setEnabled(agent, true, signal);
+      } catch (error) {
+        console.warn(redactText(`${name}: applying the default Agent Teams mode failed:`), safeErrorText(error));
+      }
+    });
+  }
+
+  if (config?.autoInstallCraft !== false) {
+    try {
+      const install = await installCraftBundle(cardsDir());
+      if (install.failed > 0) {
+        console.warn(redactText(`${name}: the craft bundle install finished with failures (created ${install.created}, skipped ${install.skipped}, failed ${install.failed})`));
+      }
+    } catch (error) {
+      console.warn(redactText(`${name}: the craft bundle install failed:`), safeErrorText(error));
+    }
+  }
 }
 
 export { name, inject, apply, agentsRootOf, isEntryName, cardPathOf, parseRoleCard, applyRouteToCard, applyCardSettings, redactText, parseVersion, newer, releaseNotes, shippedNotes, installedUpdate, checkUpdate };

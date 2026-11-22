@@ -16,6 +16,7 @@ Model routing control panel for AI agent teams — assign provider, model and re
 
 ## Why use this
 
+- **Zero-step setup** — activation installs the 20 role cards and the dev-flow skill automatically (skip-existing), and the settings page carries the two one-time picks: the default preset and the Agent Teams default for new sessions.
 - **Per-role routing** — every role of the Craft dev-flow pipeline (discovery, planning, execution, verification) can run on its own provider, model and reasoning effort.
 - **Quota-resilient dispatch** — configure a per-role fallback route; when the pinned model hits quota exhaustion, rate limits or an outage, the Lead retries the role once on the fallback — or on the session default when none is configured — instead of losing the dispatch.
 - **Cost and quality tuning** — spend deep-reasoning capacity only where it pays off (architecture, plan review) and let search-style roles run on cheaper routes.
@@ -39,11 +40,16 @@ The settings page **Settings → Orchestrator** shows the 20 pipeline roles grou
 
 ## Install (DSH)
 
-Requirements: **Node.js >= 22** and a **DSH instance with Agent Teams** enabled.
+Requirements: **Node.js >= 22** and a **DSH instance with Agent Teams** enabled. Dispatching Craft roles through a `subagent_role` tool additionally needs the plugin that provides it (for example the Agent Teams plugin marketplace package); without it, the pipeline degrades automatically to plain-subagent dispatch carrying each role card's body — no gate is skipped silently.
 
 1. Clone or download this repository (published on npm as `dsh-orchestrator-kit` v0.1.0 — no global install needed).
 2. In DSH, open **Plugins → Add plugin** and point it at the downloaded folder, **or** install it with `install_bundle`.
-3. The Orchestrator persona and the 20-role dev-flow pipeline ship inside the preset — nothing else to wire up.
+3. Done. On activation the plugin installs the Orchestrator persona with the preset, copies the 20 role cards into `~/.agents/agents/` (or `$DSH_AGENTS_HOME/agents/`) and the dev-flow skill with its playbooks into `~/.agents/skills/dev-flow/` — always skip-existing, so your own edits and pre-existing files are never overwritten.
+
+Two one-time picks remain yours, and the settings page reminds you of both:
+
+- **Make Orchestrator the default for new chats** — in any chat's model menu (or the Agent presets settings), pick **Orchestrator** and press **Set as new task default**. The plugin never changes this choice for you.
+- **Team mode for new sessions** — the settings page carries a checkbox that starts every new session in Agent Teams mode (off by default, matching the harness). The per-session **Use Agent Teams** toggle in the model menu still overrides it, and existing sessions keep their saved mode.
 
 ### Updates
 
@@ -51,12 +57,12 @@ The panel keeps the plugin current. About 15 seconds after every startup it chec
 
 ## The Craft pipeline bundle
 
-`craft/` ships the pipeline as plain, portable files:
+`craft/` ships the pipeline as plain, portable files, installed automatically at plugin activation:
 
-- `craft/agents/*` → copy to `~/.agents/agents/` (or `$DSH_AGENTS_HOME/agents/` when that variable is set) — the 20 role cards.
-- `craft/skills/dev-flow` → copy to `~/.agents/skills/dev-flow` — the dev-flow skill with its playbooks.
+- `craft/agents/*` → installed to `~/.agents/agents/` (or `$DSH_AGENTS_HOME/agents/` when that variable is set) — the 20 role cards.
+- `craft/skills/dev-flow` → installed to `~/.agents/skills/dev-flow` — the dev-flow skill with its playbooks.
 
-Unconfigured roles use `model: inherit` — they follow the chat's routing. Override only the roles you actually want pinned to a fixed model.
+Installation is skip-existing: files you already have (or edited) stay untouched, and the panel's installed-card diagnostics report any role still missing or drifted from the bundle. To manage the bundle by hand instead — or to re-run it after deleting files — use `node scripts/install-craft.js [--dry-run]`, which applies the same never-overwrite rule. Set `autoInstallCraft: false` in the plugin's config row to disable the automatic install entirely. Unconfigured roles use `model: inherit` — they follow the chat's routing. Override only the roles you actually want pinned to a fixed model.
 
 ## Configure per role
 
@@ -78,7 +84,7 @@ Saving settings identical to the card's current ones is a no-op: the panel answe
 
 Every edit is protected against losing work. Changing a card marks it unsaved — the card gains an amber border and the role name gains the “ (unsaved)” suffix — and leaving the page with unsaved edits triggers the browser's leave confirmation. Ctrl+S / Cmd+S saves the focused card (a no-op when nothing is focused). Unsaved drafts survive switching tabs and reopening the settings section: they are kept while the card's server state still matches the state the draft was based on, and an external change on disk discards the stale draft. The plain Refresh button resets drafts; the conflict action below is the draft-preserving path. Every save offers Undo: one level per card, for the browser session only, never persisted — it restores the settings from before that save. When a save or undo fails with `409` because the card changed underneath, the message offers “Reload saved state, keep edits”, which re-reads the saved state and reapplies the draft without ever resending the stale `mtimeMs`; a `409` on a save that set a reasoning effort also points to the Reasoning effort select. A polite live region announces the last save or undo outcome, and a saved card keeps a green border until the next change.
 
-The panel talks to seven routes: `GET /api/dsh-orchestrator-kit.roles`, `GET /api/dsh-orchestrator-kit.catalog`, `GET /api/dsh-orchestrator-kit.efforts`, `GET /api/dsh-orchestrator-kit.events`, `GET /api/dsh-orchestrator-kit.diagnostics`, `GET /api/dsh-orchestrator-kit.update` and `POST /api/dsh-orchestrator-kit.route`. Successful responses carry a `Server-Timing` header (durations only) when a timing metric was measured — roles reads, catalog reads, route validation and writes; an unchanged save that ran no route validation carries none. The legend shows the last load timings.
+The panel talks to eight routes: `GET /api/dsh-orchestrator-kit.roles`, `GET /api/dsh-orchestrator-kit.catalog`, `GET /api/dsh-orchestrator-kit.efforts`, `GET /api/dsh-orchestrator-kit.events`, `GET /api/dsh-orchestrator-kit.settings`, `GET /api/dsh-orchestrator-kit.diagnostics`, `GET /api/dsh-orchestrator-kit.update` and `POST /api/dsh-orchestrator-kit.route`. Successful responses carry a `Server-Timing` header (durations only) when a timing metric was measured — roles reads, catalog reads, route validation and writes; an unchanged save that ran no route validation carries none. The legend shows the last load timings.
 
 Every save is protected end to end:
 

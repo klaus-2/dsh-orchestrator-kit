@@ -1,8 +1,8 @@
 # API reference
 
-The plugin registers seven routes on the host connection. All responses are JSON with `content-type: application/json; charset=utf-8` and `cache-control: no-store`; successful reads may also carry a `server-timing` header with `reads`, `catalog` or `write` metrics. Every response is an object with an `ok` boolean. Errors set `ok: false` and include a human-readable `error` string; some errors also include a machine-readable `code`.
+The plugin registers eight routes on the host connection (the settings route answers GET and POST). All responses are JSON with `content-type: application/json; charset=utf-8` and `cache-control: no-store`; successful reads may also carry a `server-timing` header with `reads`, `catalog` or `write` metrics. Every response is an object with an `ok` boolean. Errors set `ok: false` and include a human-readable `error` string; some errors also include a machine-readable `code`.
 
-Source: `index.js:582-590` (response helper), `index.js:603-1100` (route registration), `client.js:9-20` (client route constants).
+Source: `index.js:652-680` (response helper), `index.js:685-1360` (route registration), `client.js:9-21` (client route constants).
 
 ## Route summary
 
@@ -13,6 +13,7 @@ Source: `index.js:582-590` (response helper), `index.js:603-1100` (route registr
 | `/api/dsh-orchestrator-kit.efforts` | GET | [Efforts](#get-efforts) |
 | `/api/dsh-orchestrator-kit.route` | POST | [Route](#post-route) |
 | `/api/dsh-orchestrator-kit.events` | GET | [Events](#get-events) |
+| `/api/dsh-orchestrator-kit.settings` | GET, POST | [Settings](#settings) |
 | `/api/dsh-orchestrator-kit.diagnostics` | GET | [Diagnostics](#get-diagnostics) |
 | `/api/dsh-orchestrator-kit.update` | GET | [Update](#get-update) |
 
@@ -208,6 +209,36 @@ Reads the audit trail. No query parameters.
 At most the last 50 non-empty lines are parsed. If the audit file does not exist, the route returns 200 with `events: []` and `skipped: 0`. If it exists but cannot be read, the route returns 500.
 
 Source: `index.js:707-740` (handler), `index.js:591` (audit file path), `index.js:713` and `index.js:722-737` (cap and projection), `client.js:1605-1619` (client consumption).
+
+## Settings
+
+Reads and writes the plugin's server-side preferences, stored as `.orchestrator-settings.json` beside the change log. No query parameters.
+
+`GET` answers:
+
+```json
+{ "ok": true, "settings": { "teamModeDefault": false }, "readOnly": false }
+```
+
+| Field | Meaning |
+| --- | --- |
+| `settings.teamModeDefault` | Whether new root sessions start in Agent Teams mode. The server applies it on `agent/created` and only when the session carries no saved mode selection, so an explicit per-session choice always wins. |
+| `readOnly` | Mirrors the server's read-only flag. |
+
+`POST` takes `{ "teamModeDefault": boolean }` — the only accepted field — and rewrites the file atomically under the writer lock; the body echoes the stored settings on success.
+
+| Status | Condition |
+| --- | --- |
+| 200 | Saved. |
+| 403 | Read-only mode; body is `{ ok: false, code: "readonly", error }`. |
+| 413 | Body exceeds 4096 bytes, by declared length or measured byte length. |
+| 400 | Invalid JSON, non-object body, unknown field, or `teamModeDefault` is not a boolean. |
+| 503 | Writer lock timeout with `code: "lock-timeout"`. |
+| 500 | Write failure. |
+
+A missing settings file answers the defaults; a corrupt one degrades to the defaults with a server warning.
+
+Source: `index.js:152-168` (defaults and reader), `index.js:874-930` (GET and POST handlers), `client.js` (settings bootstrap and the team default toggle).
 
 ## GET diagnostics
 

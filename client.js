@@ -11,6 +11,7 @@ window.__ModuleLoader__.load({
     const EFFORTS_ROUTE = '/api/dsh-orchestrator-kit.efforts';
     const ROUTE_ROUTE = '/api/dsh-orchestrator-kit.route';
     const EVENTS_ROUTE = '/api/dsh-orchestrator-kit.events';
+    const SETTINGS_ROUTE = '/api/dsh-orchestrator-kit.settings';
     const DIAGNOSTICS_ROUTE = '/api/dsh-orchestrator-kit.diagnostics';
     const UPDATE_ROUTE = '/api/dsh-orchestrator-kit.update';
     const UPDATE_INSTALLED_KEY = 'dsh-orchestrator-kit.update.installed';
@@ -42,6 +43,12 @@ window.__ModuleLoader__.load({
         'refresh': 'Refresh',
         'refresh.busy': 'Refreshing…',
         'refresh.aria': 'Refresh roles and catalog',
+        'team.defaultLabel': 'Start new sessions in Agent Teams mode',
+        'team.defaultAria': 'Agent Teams default for new sessions',
+        'team.saved': 'Saved — applies to sessions created from now on.',
+        'onboard.presetHint': 'New chats load the preset set as default: in a chat model menu or the Agent presets settings, pick Orchestrator and press "Set as new task default".',
+        'onboard.teamHint': 'The checkbox above defaults new sessions to Agent Teams; the model menu toggle (Use Agent Teams) still overrides per session, and existing sessions keep their mode.',
+        'onboard.rolesHint': 'The 20 role cards and the dev-flow skill install automatically beside your agents home when this plugin starts.',
         'tab.all': 'All roles',
         'phase.discovery': 'Discovery & Advisory',
         'phase.planning': 'Planning & Execution',
@@ -265,6 +272,12 @@ window.__ModuleLoader__.load({
         'empty.noGroup': 'Ainda não há papéis neste grupo. Adicione cartões de papel ao diretório de papéis do agente para preenchê-lo.',
         'locale.auto': 'Automático (idioma do host)',
         'locale.aria': 'Idioma do painel',
+        'team.defaultLabel': 'Iniciar novas sessões em modo Agent Teams',
+        'team.defaultAria': 'Padrão do Agent Teams para novas sessões',
+        'team.saved': 'Salvo — vale para as sessões criadas de agora em diante.',
+        'onboard.presetHint': 'Novos chats carregam o preset definido como default: no menu de modelos de um chat ou nas configurações de Agent presets, escolha Orchestrator e pressione "Set as new task default".',
+        'onboard.teamHint': 'A caixa acima torna novas sessões Agent Teams por padrão; o toggle do menu de modelos (Use Agent Teams) continua valendo por sessão, e sessões existentes mantêm o modo.',
+        'onboard.rolesHint': 'Os 20 cards de papel e a skill dev-flow instalam-se automaticamente ao lado do seu agents home quando este plugin inicia.',
         'search.aria': 'Pesquisar papéis',
         'search.placeholder': 'Filtrar por nome ou descrição',
         'empty.noMatch': 'Nenhum papel corresponde à busca ou ao filtro atual.',
@@ -421,6 +434,12 @@ window.__ModuleLoader__.load({
         'empty.noGroup': '此分组暂无角色。向代理角色目录添加角色卡以填充。',
         'locale.auto': '自动（宿主语言）',
         'locale.aria': '面板语言',
+        'team.defaultLabel': '新会话以 Agent Teams 模式启动',
+        'team.defaultAria': '新会话的 Agent Teams 默认值',
+        'team.saved': '已保存 — 对此后创建的会话生效。',
+        'onboard.presetHint': '新聊天会加载设为默认的 preset：在聊天模型菜单或 Agent presets 设置中选择 Orchestrator，然后按“Set as new task default”。',
+        'onboard.teamHint': '上方复选框让新会话默认启用 Agent Teams；模型菜单中的开关（Use Agent Teams）仍可按会话覆盖，已有会话保持原模式。',
+        'onboard.rolesHint': '插件启动时，20 张角色卡和 dev-flow 技能会自动安装到你的 agents 主目录旁。',
         'search.aria': '搜索角色',
         'search.placeholder': '按名称或描述筛选',
         'empty.noMatch': '没有符合当前搜索或筛选条件的角色。',
@@ -846,6 +865,15 @@ window.__ModuleLoader__.load({
       return { role: data.role, unchanged: data.unchanged === true };
     }
 
+    async function postJson(url, payload) {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      return parseApiResponse(response, true);
+    }
+
     const isEntryNameLike = (value) => typeof value === 'string' && /^[a-z][a-z0-9_-]*(?:\/[a-z][a-z0-9_-]*)*$/.test(value);
 
     const eventSummaryOf = (record) => {
@@ -1036,6 +1064,8 @@ window.__ModuleLoader__.load({
         const [messages, setMessages] = React.useState({});
         const [savingId, setSavingId] = React.useState(null);
         const [refreshing, setRefreshing] = React.useState(false);
+        const [teamDefault, setTeamDefault] = React.useState(null);
+        const [savingTeamDefault, setSavingTeamDefault] = React.useState(false);
         const [loadTick, setLoadTick] = React.useState(0);
         const [activeTabState, setActiveTabState] = React.useState(storedPrefs.tab ?? 'all');
         const [lastNotice, setLastNotice] = React.useState(null);
@@ -1195,6 +1225,17 @@ window.__ModuleLoader__.load({
         }, [loadTick]);
 
         React.useEffect(() => {
+          let alive = true;
+          fetchJson(SETTINGS_ROUTE)
+            .then((reply) => {
+              if (!alive || reply?.ok !== true || typeof reply?.settings?.teamModeDefault !== 'boolean') return;
+              setTeamDefault(reply.settings.teamModeDefault);
+            })
+            .catch(() => {});
+          return () => { alive = false; };
+        }, [loadTick]);
+
+        React.useEffect(() => {
           if (typeof window.addEventListener !== 'function') return undefined;
           const handler = (event) => {
             const dirtyNow = roles !== null && drafts !== null && Object.entries(drafts).some(([id, draft]) => {
@@ -1271,6 +1312,22 @@ window.__ModuleLoader__.load({
           setMessages({});
           setHighlightId(null);
           setLoadTick((n) => n + 1);
+        };
+
+        const saveTeamDefault = async (next) => {
+          if (readonlyMode || teamDefault === null || savingTeamDefault) return;
+          setSavingTeamDefault(true);
+          try {
+            const reply = await postJson(SETTINGS_ROUTE, { teamModeDefault: next });
+            if (reply?.ok === true && typeof reply?.settings?.teamModeDefault === 'boolean') {
+              setTeamDefault(reply.settings.teamModeDefault);
+              setLastNotice({ kind: 'ok', key: 'team.saved' });
+            }
+          } catch (error) {
+            setLastNotice({ kind: 'error', key: 'error.raw', params: { detail: String(error?.message ?? error) } });
+          } finally {
+            setSavingTeamDefault(false);
+          }
         };
 
         const groups = catalog?.groups ?? [];
@@ -1919,6 +1976,14 @@ window.__ModuleLoader__.load({
               saveButton));
         };
 
+        const onboardSection = h('div', { style: { border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 12, padding: '12px 16px', background: 'var(--dsw-alias-bg-base)', display: 'flex', flexDirection: 'column', gap: 8 } },
+          h('label', { style: { display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--dsw-alias-label-secondary)', cursor: teamDefault === null || savingTeamDefault || readonlyMode ? 'default' : 'pointer' } },
+            h('input', { type: 'checkbox', checked: teamDefault === true, disabled: teamDefault === null || savingTeamDefault || readonlyMode, 'aria-label': t('team.defaultAria'), onChange: (event) => saveTeamDefault(event.target.checked) }),
+            t('team.defaultLabel')),
+          h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-tertiary)', lineHeight: '18px' } }, t('onboard.presetHint')),
+          h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-tertiary)', lineHeight: '18px' } }, t('onboard.teamHint')),
+          h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-tertiary)', lineHeight: '18px' } }, t('onboard.rolesHint')));
+
         const tabs = [
           { id: 'all', labelKey: 'tab.all', count: total },
           ...PHASE_SECTIONS.map((phase) => ({ id: phase.id, labelKey: 'phase.' + phase.id, count: countOf(phase.id) })),
@@ -1963,6 +2028,7 @@ window.__ModuleLoader__.load({
               style: { ...buttonStyle, flex: 'none', opacity: refreshing || savingId !== null ? 0.5 : 1 },
               'aria-label': t('refresh.aria')
             }, refreshing ? t('refresh.busy') : t('refresh'))),
+          onboardSection,
           supportBanner,
           UpdateSettings({ updater, whatsNew, t }),
           messages.__load ? h('div', { style: bannerStyle('error') }, messageText(messages.__load)) : null,

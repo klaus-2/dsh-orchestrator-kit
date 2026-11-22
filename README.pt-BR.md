@@ -16,6 +16,7 @@ Painel de controle de roteamento de modelos para times de agentes de IA — atri
 
 ## Por que usar
 
+- **Configuração em zero passos** — a ativação instala os 20 cards de papel e a skill dev-flow automaticamente (sem sobrescrever), e a página de configurações traz as duas únicas escolhas pontuais: o preset default e o padrão do Agent Teams para novas sessões.
 - **Roteamento por papel** — cada papel do pipeline dev-flow Craft (descoberta, planejamento, execução, verificação) pode rodar em seu próprio provider, modelo e esforço de raciocínio.
 - **Despacho resiliente a quota** — configure uma rota de fallback por papel; quando o modelo fixado esgota quota, sofre rate limits ou fica indisponível, o Lead repete o papel uma vez no fallback — ou no default da sessão quando nada está configurado — em vez de perder o despacho.
 - **Ajuste de custo e qualidade** — gaste capacidade de raciocínio profundo só onde compensa (arquitetura, revisão de plano) e deixe papéis de busca rodarem em rotas mais baratas.
@@ -39,11 +40,16 @@ A página **Configurações → Orchestrator** mostra os 20 papéis do pipeline 
 
 ## Instalação (DSH)
 
-Requisitos: **Node.js >= 22** e uma **instância DSH com Agent Teams** ativado.
+Requisitos: **Node.js >= 22** e uma **instância DSH com Agent Teams** ativado. Despachar papéis Craft por uma ferramenta `subagent_role` exige também o plugin que a fornece (por exemplo o pacote de marketplace de plugins de Agent Teams); sem ela, o pipeline degrada automaticamente para despacho por subagent simples carregando o corpo do card de cada papel — nenhum gate é pulado em silêncio.
 
 1. Clone ou baixe este repositório (publicado no npm como `dsh-orchestrator-kit` v0.1.0 — sem instalação global).
 2. No DSH, abra **Plugins → Add plugin** e aponte para a pasta baixada, **ou** instale com `install_bundle`.
-3. A persona Orchestrator e o pipeline dev-flow de 20 papéis já vêm no preset — nada mais para configurar.
+3. Pronto. Na ativação, o plugin instala a persona Orchestrator com o preset, copia os 20 cards de papel para `~/.agents/agents/` (ou `$DSH_AGENTS_HOME/agents/`) e a skill dev-flow com seus playbooks para `~/.agents/skills/dev-flow/` — sempre sem sobrescrever, então suas edições e arquivos pré-existentes nunca são substituídos.
+
+Duas escolhas pontuais continuam suas, e a página de configurações lembra as duas:
+
+- **Tornar o Orchestrator o default de novos chats** — no menu de modelos de qualquer chat (ou nas configurações de Agent presets), escolha **Orchestrator** e pressione **Set as new task default**. O plugin nunca muda essa escolha por você.
+- **Modo Team para novas sessões** — a página de configurações traz um checkbox que inicia toda nova sessão em modo Agent Teams (desligado por padrão, igual ao harness). O toggle **Use Agent Teams** do menu de modelos continua valendo por sessão, e sessões existentes mantêm o modo salvo.
 
 ### Atualizações
 
@@ -51,12 +57,12 @@ O painel mantém o plugin atualizado. Cerca de 15 segundos após cada inicializa
 
 ## Bundle do pipeline Craft
 
-`craft/` entrega o pipeline como arquivos simples e portáteis:
+`craft/` entrega o pipeline como arquivos simples e portáteis, instalados automaticamente na ativação do plugin:
 
-- `craft/agents/*` → copie para `~/.agents/agents/` (ou `$DSH_AGENTS_HOME/agents/` quando a variável estiver definida) — os 20 cards de papel.
-- `craft/skills/dev-flow` → copie para `~/.agents/skills/dev-flow` — a skill dev-flow com seus playbooks.
+- `craft/agents/*` → instalados em `~/.agents/agents/` (ou `$DSH_AGENTS_HOME/agents/` quando a variável estiver definida) — os 20 cards de papel.
+- `craft/skills/dev-flow` → instalado em `~/.agents/skills/dev-flow` — a skill dev-flow com seus playbooks.
 
-Papéis não configurados usam `model: inherit` — seguem o roteamento do chat. Sobrescreva apenas os papéis que você realmente quer fixar em um modelo.
+A instalação é skip-existing: arquivos que você já tem (ou editou) ficam intocados, e o diagnóstico de cards instalados do painel reporta qualquer papel ainda ausente ou divergente do bundle. Para gerenciar o bundle manualmente — ou rodar de novo após apagar arquivos — use `node scripts/install-craft.js [--dry-run]`, que aplica a mesma regra de nunca sobrescrever. Defina `autoInstallCraft: false` na linha de config do plugin para desativar a instalação automática. Papéis não configurados usam `model: inherit` — seguem o roteamento do chat. Sobrescreva apenas os papéis que você realmente quer fixar em um modelo.
 
 ## Configurar por papel
 
@@ -78,7 +84,7 @@ Salvar configurações idênticas às que já estão no card é um no-op: o pain
 
 Toda edição é protegida contra perda de trabalho. Alterar um card o marca como não salvo — o card ganha uma borda âmbar e o nome do papel ganha o sufixo “ (não salvo)” — e sair da página com edições não salvas dispara a confirmação de saída do navegador. Ctrl+S / Cmd+S salva o card em foco (no-op quando nada está em foco). Rascunhos não salvos sobrevivem à troca de abas e à reabertura da seção de configurações: eles são mantidos enquanto o estado do card no servidor ainda corresponde ao estado em que o rascunho se baseou, e uma mudança externa no disco descarta o rascunho obsoleto. O botão Refresh comum reseta os rascunhos; a ação de conflito abaixo é o caminho que preserva rascunhos. Cada salvamento oferece Desfazer: um nível por card, apenas para a sessão do navegador, nunca persistido — ele restaura as configurações anteriores àquele salvamento. Quando um salvamento ou desfazer falha com `409` porque o card mudou por baixo, a mensagem oferece “Recarregar estado salvo, manter edições”, que relê o estado salvo e reaplica o rascunho sem jamais reenviar o `mtimeMs` obsoleto; um `409` em um salvamento que definiu um esforço de raciocínio também aponta para o select de Esforço de raciocínio. Uma região aria-live polite anuncia o resultado do último salvamento ou desfazer, e um card salvo mantém uma borda verde até a próxima alteração.
 
-O painel fala com sete rotas: `GET /api/dsh-orchestrator-kit.roles`, `GET /api/dsh-orchestrator-kit.catalog`, `GET /api/dsh-orchestrator-kit.efforts`, `GET /api/dsh-orchestrator-kit.events`, `GET /api/dsh-orchestrator-kit.diagnostics`, `GET /api/dsh-orchestrator-kit.update` e `POST /api/dsh-orchestrator-kit.route`. Respostas bem-sucedidas trazem um cabeçalho `Server-Timing` (apenas durações) quando uma métrica de tempo foi medida — leituras de roles, leituras de catalog, validação de rota e escritas; um salvamento sem alteração que não executou validação de rota não traz nenhum. A legenda mostra os tempos do último carregamento.
+O painel fala com oito rotas: `GET /api/dsh-orchestrator-kit.roles`, `GET /api/dsh-orchestrator-kit.catalog`, `GET /api/dsh-orchestrator-kit.efforts`, `GET /api/dsh-orchestrator-kit.events`, `GET /api/dsh-orchestrator-kit.settings`, `GET /api/dsh-orchestrator-kit.diagnostics`, `GET /api/dsh-orchestrator-kit.update` e `POST /api/dsh-orchestrator-kit.route`. Respostas bem-sucedidas trazem um cabeçalho `Server-Timing` (apenas durações) quando uma métrica de tempo foi medida — leituras de roles, leituras de catalog, validação de rota e escritas; um salvamento sem alteração que não executou validação de rota não traz nenhum. A legenda mostra os tempos do último carregamento.
 
 Cada salvamento é protegido de ponta a ponta:
 
