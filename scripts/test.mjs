@@ -5695,8 +5695,8 @@ await test('audit trail: append inside the write lock, relative-only records wit
 
       await withMockHost({ agentsHome: tmpHome, llm: undefined }, async ({ call }) => {
         const rolesStable = await call(`/api/${NS}.roles`);
-        const stableMtime = rolesStable.data.roles.find((role) => role.id === 'planner').mtimeMs;
-        const unchanged = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'planner', expectedMtimeMs: stableMtime, disabled: false }) });
+        const stable = rolesStable.data.roles.find((role) => role.id === 'planner');
+        const unchanged = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'planner', expectedMtimeMs: stable.mtimeMs, disabled: stable.disabled }) });
         assert.equal(unchanged.status, 200, 'the unchanged no-op save must answer 200');
         assert.equal(unchanged.data.unchanged, true, 'the no-op must answer unchanged:true');
         const lines = readFileSync(auditFile, 'utf8').split('\n').filter((line) => line.trim() !== '');
