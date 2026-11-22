@@ -61,6 +61,11 @@ window.__ModuleLoader__.load({
         'field.effort': 'Reasoning effort',
         'field.effortHelp': 'How long the model thinks before answering.',
         'field.effortAria': 'Reasoning effort for {name}',
+        'field.fallback': 'Fallback route',
+        'field.fallbackHelp': 'One-shot retry route when the role route hits quota, rate limits or an outage. Empty retries on the session default.',
+        'field.fallbackProviderAria': 'Fallback provider for {name}',
+        'field.fallbackModelAria': 'Fallback model for {name}',
+        'fallback.none': 'None — session default',
         'inherit.label': 'Chat default (inherit)',
         'effort.auto': 'Auto (model default)',
         'effort.loading': 'Loading levels…',
@@ -149,6 +154,7 @@ window.__ModuleLoader__.load({
         'diagnostics.missing': 'Missing roles: {ids}',
         'diagnostics.invalid': 'Cards with invalid frontmatter: {ids}',
         'diagnostics.outsideCatalog': 'Routes outside the live catalog: {ids}',
+        'diagnostics.fallbackOutsideCatalog': 'Fallback routes outside the live catalog: {ids}',
         'diagnostics.drift': 'Body differs from the craft source: {ids}',
         'diagnostics.craftMissing': 'craft/ sources are unavailable; drift checking was skipped.',
         'diagnostics.loadError': 'Failed to load diagnostics: {error}',
@@ -211,6 +217,11 @@ window.__ModuleLoader__.load({
         'field.effort': 'Esforço de raciocínio',
         'field.effortHelp': 'Quanto tempo o modelo pensa antes de responder.',
         'field.effortAria': 'Esforço de raciocínio de {name}',
+        'field.fallback': 'Rota de fallback',
+        'field.fallbackHelp': 'Rota de retry única quando a rota do papel esgota quota, sofre rate limits ou fica indisponível. Vazio faz o retry no default da sessão.',
+        'field.fallbackProviderAria': 'Provedor de fallback de {name}',
+        'field.fallbackModelAria': 'Modelo de fallback de {name}',
+        'fallback.none': 'Nenhum — default da sessão',
         'inherit.label': 'Padrão do chat (herdar)',
         'effort.auto': 'Automático (padrão do modelo)',
         'effort.loading': 'Carregando níveis…',
@@ -299,6 +310,7 @@ window.__ModuleLoader__.load({
         'diagnostics.missing': 'Papéis ausentes: {ids}',
         'diagnostics.invalid': 'Cartões com frontmatter inválido: {ids}',
         'diagnostics.outsideCatalog': 'Rotas fora do catálogo ao vivo: {ids}',
+        'diagnostics.fallbackOutsideCatalog': 'Rotas de fallback fora do catálogo ao vivo: {ids}',
         'diagnostics.drift': 'Corpo difere da origem em craft/: {ids}',
         'diagnostics.craftMissing': 'As origens em craft/ estão indisponíveis; a checagem de divergência foi ignorada.',
         'diagnostics.loadError': 'Falha ao carregar o diagnóstico: {error}',
@@ -361,6 +373,11 @@ window.__ModuleLoader__.load({
         'field.effort': '推理强度',
         'field.effortHelp': '模型在回答前思考多久。',
         'field.effortAria': '{name} 的推理强度',
+        'field.fallback': '后备路由',
+        'field.fallbackHelp': '角色路由遇到配额、限流或故障时的一次性重试路由。留空则在会话默认模型上重试。',
+        'field.fallbackProviderAria': '{name} 的后备提供商',
+        'field.fallbackModelAria': '{name} 的后备模型',
+        'fallback.none': '无 — 会话默认',
         'inherit.label': '对话默认（继承）',
         'effort.auto': '自动（模型默认）',
         'effort.loading': '正在加载级别…',
@@ -449,6 +466,7 @@ window.__ModuleLoader__.load({
         'diagnostics.missing': '缺失角色：{ids}',
         'diagnostics.invalid': 'frontmatter 无效的卡片：{ids}',
         'diagnostics.outsideCatalog': '不在实时目录中的路由：{ids}',
+        'diagnostics.fallbackOutsideCatalog': '不在实时目录中的后备路由：{ids}',
         'diagnostics.drift': '正文与 craft/ 源不一致：{ids}',
         'diagnostics.craftMissing': 'craft/ 源不可用；已跳过偏差检查。',
         'diagnostics.loadError': '加载诊断失败：{error}',
@@ -853,6 +871,7 @@ window.__ModuleLoader__.load({
         provider: role.provider || null,
         model: role.model && role.model !== 'inherit' ? role.model : null,
         reasoningEffort: role.reasoningEffort ?? null,
+        fallback: role.fallbackProvider && role.fallbackModel ? { provider: role.fallbackProvider, model: role.fallbackModel } : null,
         disabled: role.disabled === true
       }]))
     });
@@ -892,6 +911,13 @@ window.__ModuleLoader__.load({
         if (typeof value.reasoningEffort === 'string' && (value.provider === null || value.model === null)) {
           return { ok: false, detail: `${id}: reasoningEffort requires provider and model` };
         }
+        const fallbackOk = value.fallback === null || value.fallback === undefined
+          || (typeof value.fallback === 'object' && !Array.isArray(value.fallback)
+            && typeof value.fallback.provider === 'string' && value.fallback.provider !== ''
+            && typeof value.fallback.model === 'string' && value.fallback.model !== '');
+        if (!fallbackOk) {
+          return { ok: false, detail: `${id}: fallback must be null or a {provider, model} object` };
+        }
         if (typeof value.disabled !== 'boolean') {
           return { ok: false, detail: `${id}: disabled must be a boolean` };
         }
@@ -900,6 +926,7 @@ window.__ModuleLoader__.load({
           provider: value.provider,
           model: value.model,
           reasoningEffort: typeof value.reasoningEffort === 'string' ? value.reasoningEffort : null,
+          fallback: value.fallback === undefined ? undefined : (typeof value.fallback === 'object' && value.fallback !== null ? { provider: value.fallback.provider, model: value.fallback.model } : null),
           disabled: value.disabled
         });
       }
@@ -938,22 +965,26 @@ window.__ModuleLoader__.load({
       provider: role.provider ?? '',
       model: role.model === 'inherit' ? '' : (role.model ?? ''),
       reasoningEffort: role.reasoningEffort ?? '',
+      fallbackProvider: role.fallbackProvider ?? '',
+      fallbackModel: role.fallbackModel ?? '',
       disabled: role.disabled === true
     });
 
     function evaluateDraftState(draft, base, catalogEmpty) {
       const routeDirty = draft.provider !== base.provider || draft.model !== base.model;
       const effortDirty = draft.reasoningEffort !== base.reasoningEffort;
+      const fallbackDirty = draft.fallbackProvider !== base.fallbackProvider || draft.fallbackModel !== base.fallbackModel;
       const disabledDirty = draft.disabled !== base.disabled;
-      const dirty = routeDirty || effortDirty || disabledDirty;
+      const dirty = routeDirty || effortDirty || disabledDirty || fallbackDirty;
       const isInherit = draft.provider === '' || draft.model === '';
       const routeComplete = !routeDirty || (draft.provider === '' ? draft.model === '' : draft.model !== '');
+      const fallbackComplete = !fallbackDirty || (draft.fallbackProvider === '' ? draft.fallbackModel === '' : draft.fallbackModel !== '');
       const effortAllowed = !effortDirty
         || (draft.provider === '' && draft.model === '' && draft.reasoningEffort === '')
         || (draft.provider !== '' && draft.model !== '');
-      const complete = routeComplete && effortAllowed;
-      const saveBlocked = !dirty || !complete || (catalogEmpty && routeDirty);
-      return { routeDirty, effortDirty, disabledDirty, dirty, isInherit, complete, saveBlocked };
+      const complete = routeComplete && effortAllowed && fallbackComplete;
+      const saveBlocked = !dirty || !complete || (catalogEmpty && (routeDirty || fallbackDirty));
+      return { routeDirty, effortDirty, disabledDirty, fallbackDirty, dirty, isInherit, complete, saveBlocked };
     }
 
     function groupRoles(list) {
@@ -1295,6 +1326,9 @@ window.__ModuleLoader__.load({
             payload.provider = draft.provider === '' ? null : draft.provider;
             payload.model = draft.model === '' ? null : draft.model;
           }
+          if (state.fallbackDirty) {
+            payload.fallback = draft.fallbackProvider === '' ? null : { provider: draft.fallbackProvider, model: draft.fallbackModel };
+          }
           if (state.disabledDirty) {
             payload.disabled = draft.disabled;
           }
@@ -1317,6 +1351,7 @@ window.__ModuleLoader__.load({
                 provider: base.provider === '' ? null : base.provider,
                 model: base.model === '' ? null : base.model,
                 reasoningEffort: base.reasoningEffort === '' ? null : base.reasoningEffort,
+                fallback: base.fallbackProvider === '' ? null : { provider: base.fallbackProvider, model: base.fallbackModel },
                 disabled: base.disabled
               }
             });
@@ -1363,7 +1398,8 @@ window.__ModuleLoader__.load({
             provider: entry.summary.provider,
             model: entry.summary.model,
             disabled: entry.summary.disabled,
-            reasoningEffort: entry.summary.reasoningEffort
+            reasoningEffort: entry.summary.reasoningEffort,
+            fallback: entry.summary.fallback
           };
           try {
             const { results } = await runCardLoop([payload], (card) => postSettings(card), {
@@ -1510,7 +1546,8 @@ window.__ModuleLoader__.load({
               provider: entry.provider,
               model: entry.model,
               disabled: entry.disabled,
-              reasoningEffort: entry.reasoningEffort
+              reasoningEffort: entry.reasoningEffort,
+              ...(entry.fallback === undefined ? {} : { fallback: entry.fallback })
             };
             if (typeof role?.mtimeMs === 'number' && Number.isFinite(role.mtimeMs) && role.mtimeMs >= 0) {
               payload.expectedMtimeMs = role.mtimeMs;
@@ -1580,6 +1617,7 @@ window.__ModuleLoader__.load({
               missing: Array.isArray(reply.missing) ? reply.missing : [],
               invalid: Array.isArray(reply.invalid) ? reply.invalid : [],
               outsideCatalog: Array.isArray(reply.outsideCatalog) ? reply.outsideCatalog : [],
+              fallbackOutsideCatalog: Array.isArray(reply.fallbackOutsideCatalog) ? reply.fallbackOutsideCatalog : [],
               drift: Array.isArray(reply.drift) ? reply.drift : [],
               craftAvailable: reply.craftAvailable === true
             }, error: null });
@@ -1699,6 +1737,9 @@ window.__ModuleLoader__.load({
           const providerMissing = draft.provider !== '' && !groups.some((group) => group.provider === draft.provider);
           const providerModels = modelsOf(draft.provider);
           const modelMissing = draft.model !== '' && !providerModels.some((model) => model.id === draft.model);
+          const fallbackProviderMissing = draft.fallbackProvider !== '' && !groups.some((group) => group.provider === draft.fallbackProvider);
+          const fallbackModels = modelsOf(draft.fallbackProvider);
+          const fallbackModelMissing = draft.fallbackModel !== '' && !fallbackModels.some((model) => model.id === draft.fallbackModel);
           const effortMissing = draft.reasoningEffort !== '' && !efforts.some((effort) => effort.id === draft.reasoningEffort);
           const effortDisabled = busy || readonlyMode || isInherit || (effortLoading && draft.reasoningEffort === '') || (!effortLoading && efforts.length === 0 && draft.reasoningEffort === '');
           const saveDisabled = busy || readonlyMode || state.saveBlocked;
@@ -1776,6 +1817,34 @@ window.__ModuleLoader__.load({
             !isInherit && effortMissing ? h('option', { value: draft.reasoningEffort }, t('effort.savedUnavailable', { effort: draft.reasoningEffort })) : null,
             efforts.map((effort) => h('option', { key: effort.id, value: effort.id, title: effort.description },
               effort.name === effort.id ? effort.name : t('option.withId', { name: effort.name, id: effort.id }))));
+          const fallbackProviderSelect = h('select', {
+            value: draft.fallbackProvider,
+            disabled: busy || readonlyMode || catalogEmpty,
+            style: controlStyle,
+            'aria-label': t('field.fallbackProviderAria', { name: role.name }),
+            onChange: (event) => {
+              const provider = event.target.value;
+              if (provider === '') {
+                setDraft(role.id, { fallbackProvider: '', fallbackModel: '' });
+                return;
+              }
+              const keepsModel = modelsOf(provider).some((model) => model.id === draft.fallbackModel);
+              setDraft(role.id, { fallbackProvider: provider, fallbackModel: keepsModel ? draft.fallbackModel : '' });
+            }
+          },
+            h('option', { value: '' }, t('fallback.none')),
+            fallbackProviderMissing ? h('option', { value: draft.fallbackProvider }, t('option.unavailable', { name: draft.fallbackProvider })) : null,
+            groups.map((group) => h('option', { key: group.provider, value: group.provider }, group.name)));
+          const fallbackModelSelect = h('select', {
+            value: draft.fallbackModel,
+            disabled: busy || readonlyMode || catalogEmpty || draft.fallbackProvider === '',
+            style: controlStyle,
+            'aria-label': t('field.fallbackModelAria', { name: role.name }),
+            onChange: (event) => setDraft(role.id, { fallbackModel: event.target.value })
+          },
+            h('option', { value: '' }, t('fallback.none')),
+            fallbackModelMissing ? h('option', { value: draft.fallbackModel }, t('option.unavailable', { name: draft.fallbackModel })) : null,
+            fallbackModels.map((model) => h('option', { key: model.id, value: model.id }, model.name === model.id ? model.name : t('option.withId', { name: model.name, id: model.id }))));
           const undoButton = undoEntryFor(role) && !readonlyMode ? h('button', {
             type: 'button',
             onClick: () => undo(role),
@@ -1840,7 +1909,8 @@ window.__ModuleLoader__.load({
             h('div', { style: { display: 'flex', flexDirection: 'column', gap: 12 } },
               renderField(t('field.provider'), t('field.providerHelp'), providerSelect),
               renderField(t('field.model'), t('field.modelHelp'), modelSelect),
-              renderField(t('field.effort'), t('field.effortHelp'), effortSelect)),
+              renderField(t('field.effort'), t('field.effortHelp'), effortSelect),
+              renderField(t('field.fallback'), t('field.fallbackHelp'), h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 8 } }, fallbackProviderSelect, fallbackModelSelect))),
             effortEntry?.status === 'error' ? h('div', { style: { fontSize: 11, color: 'var(--dsw-alias-label-tertiary)' } }, t('effort.errorLine', { error: effortEntry.error })) : null,
             messageBlock,
             h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, borderTop: '1px solid var(--dsw-alias-border-l1)', paddingTop: 12 } },
@@ -1964,12 +2034,14 @@ window.__ModuleLoader__.load({
                     ? diagnosticsState.report.missing.length === 0
                       && diagnosticsState.report.invalid.length === 0
                       && diagnosticsState.report.outsideCatalog.length === 0
+                      && diagnosticsState.report.fallbackOutsideCatalog.length === 0
                       && diagnosticsState.report.drift.length === 0
                       ? h('div', {}, t('diagnostics.ok'))
                       : [
                           diagnosticsState.report.missing.length > 0 ? h('div', { key: 'missing' }, t('diagnostics.missing', { ids: diagnosticsState.report.missing.join(', ') })) : null,
                           diagnosticsState.report.invalid.length > 0 ? h('div', { key: 'invalid' }, t('diagnostics.invalid', { ids: diagnosticsState.report.invalid.map((entry) => entry.id).join(', ') })) : null,
                           diagnosticsState.report.outsideCatalog.length > 0 ? h('div', { key: 'outsideCatalog' }, t('diagnostics.outsideCatalog', { ids: diagnosticsState.report.outsideCatalog.join(', ') })) : null,
+                          diagnosticsState.report.fallbackOutsideCatalog.length > 0 ? h('div', { key: 'fallbackOutsideCatalog' }, t('diagnostics.fallbackOutsideCatalog', { ids: diagnosticsState.report.fallbackOutsideCatalog.join(', ') })) : null,
                           diagnosticsState.report.drift.length > 0 ? h('div', { key: 'drift' }, t('diagnostics.drift', { ids: diagnosticsState.report.drift.join(', ') })) : null
                         ]
                     : null)))),

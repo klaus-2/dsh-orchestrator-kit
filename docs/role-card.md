@@ -14,6 +14,7 @@ Source: `index.js:13` (frontmatter grammar), `index.js:14` (byte limit), `index.
 | `description` | non-empty string | Short description shown in the panel. Read for the summary; never rewritten by the routing writer. |
 | `provider` | non-empty string | Provider id of the pinned route. Written only as part of a route change. |
 | `model` | non-empty string, or `inherit` | Model id of the pinned route. `inherit` means no route: follow the chat default, and no `provider` may be present. |
+| `fallback` | `{ provider, model }` mapping | One-shot retry route used when the role's pinned route fails for model availability (quota exhaustion, concurrency or rate limits, provider outage). Written only as part of a fallback change. |
 | `reasoning_effort` | non-empty string | Canonical snake-case key for the reasoning effort. Written only when an effort is set. |
 | `disabled` | boolean | Present with value `true` when the role is disabled; absent means enabled. |
 
@@ -24,6 +25,7 @@ Source: `index.js:128-133` (optional scalar rule), `index.js:192-213` (field par
 ## Field rules
 
 - **Route pair.** `provider` and `model` are set together. `model: inherit` cannot be combined with a `provider`; the server rejects such a card with 400. Resetting a route deletes `provider`, `reasoning_effort` and the camel-case alias, and sets `model: inherit`.
+- **Fallback pair.** `fallback` must be an exact `{ provider, model }` mapping; a `fallback.model` of `inherit` is rejected, and a half-written pair or a non-mapping value makes the card invalid. The pair is validated against the live catalog before it is written. The fallback is independent of the route: it survives route changes and route resets, and it may be set while the route is `inherit`. A fallback reset (`fallback: null` in the request) deletes the key.
 - **Effort key.** `reasoning_effort` is canonical. `reasoningEffort` is accepted as a read alias only. If both are present with different values the card is invalid. The writer removes the alias and emits only `reasoning_effort`.
 - **Effort dependency.** A reasoning effort cannot be set when the effective route is `inherit` or otherwise incomplete. The server also checks the value against the model's advertised effort ids before writing.
 - **Disabled flag.** Setting it to `true` writes `disabled: true`; setting it to `false` removes the key. There is no `disabled: false` in the canonical form. A missing key and any non-`true` value both mean enabled.

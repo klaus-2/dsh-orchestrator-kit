@@ -17,6 +17,7 @@ Painel de controle de roteamento de modelos para times de agentes de IA — atri
 ## Por que usar
 
 - **Roteamento por papel** — cada papel do pipeline dev-flow Craft (descoberta, planejamento, execução, verificação) pode rodar em seu próprio provider, modelo e esforço de raciocínio.
+- **Despacho resiliente a quota** — configure uma rota de fallback por papel; quando o modelo fixado esgota quota, sofre rate limits ou fica indisponível, o Lead repete o papel uma vez no fallback — ou no default da sessão quando nada está configurado — em vez de perder o despacho.
 - **Ajuste de custo e qualidade** — gaste capacidade de raciocínio profundo só onde compensa (arquitetura, revisão de plano) e deixe papéis de busca rodarem em rotas mais baratas.
 - **Configuração validada fail-closed** — um salvamento que citar papel, modelo ou esforço desconhecido é rejeitado com 409; catálogo indisponível devolve 503. Nenhuma rota morta é escrita.
 - **Sem lock-in de provider** — o painel não embute providers; os selects são alimentados pelo catálogo do próprio harness em execução.
@@ -65,6 +66,7 @@ Papéis não configurados usam `model: inherit` — seguem o roteamento do chat.
 | **Provider** | Seleção do catálogo do harness. |
 | **Model** | Seleção do catálogo do harness. |
 | **Reasoning effort** | Opções carregam de forma lazy por combinação provider + modelo. |
+| **Rota de fallback** | Rota de retry única quando o modelo do papel esgota quota, sofre rate limits ou fica indisponível; vazio repete no default da sessão. |
 | **Save** | Valida fail-closed e escreve atomicamente. |
 | **Reset — Padrão do chat (herdar)** | Devolve o papel para `model: inherit`. |
 
@@ -80,7 +82,7 @@ O painel fala com sete rotas: `GET /api/dsh-orchestrator-kit.roles`, `GET /api/d
 
 Cada salvamento é protegido de ponta a ponta:
 
-- **Validação fail-closed** — papel, modelo ou esforço desconhecido retorna `409`; catálogo indisponível retorna `503`. Nada é escrito às cegas.
+- **Validação fail-closed** — papel, modelo, esforço ou fallback desconhecido retorna `409`; catálogo indisponível retorna `503`. Nada é escrito às cegas.
 - **Escritas atômicas** — um file lock serializa os escritores, uma guarda TOCTOU com revalidação pós-escrita confirma o card, e o `mtimeMs` esperado é conferido para que um editor concorrente nunca seja sobrescrito em silêncio.
 - **Escritor único** — o painel é o único escritor dessas rotas, e uma rota salva vale a partir do próximo turno.
 - **Gate estrito de escrita do frontmatter** — anchors, aliases e tags YAML customizadas são recusados, e o frontmatter é limitado a 65536 bytes com um limite de aninhamento. Cards com anchors, tags ou aninhamento profundo continuam listados, mas somente leitura (toda escrita retorna `400`) até serem limpos; cards com aliases ou acima do limite de bytes falham até no parse tolerante da listagem e aparecem apenas no banner de aviso de cards inválidos, não na grade.
@@ -94,7 +96,7 @@ Cada salvamento é protegido de ponta a ponta:
 - **Aplicar em lote por fase** — em uma aba de fase (nunca na aba "All roles"), o cabeçalho de cada seção traz um botão **Aplicar à fase**. Ele copia a rota/esforço em rascunho do card de origem (o primeiro card com rascunho sujo) para todos os outros cards da seção, enviando um salvamento por card com seu próprio `mtimeMs` esperado. Os resultados são por card: um conflito `409` mantém o loop e reporta naquele card, uma falha que não seja 409 (por exemplo, o lock ocupado `503`) interrompe a execução e reporta o que foi aplicado, e o botão Cancelar para depois do card em andamento. Aplicar em lote nunca é atômico — é uma sequência de salvamentos validados comuns.
 - **Perfis de roteamento** — **Exportar perfil** grava as rotas salvas de todos os papéis em um JSON versionado (`version: 1`, `generator`, `roles` chaveado por id de papel; nenhum `mtimeMs` em lugar algum). **Importar perfil** valida todas as entradas primeiro — versão não suportada, rotas escritas pela metade ou ids malformados rejeitam o arquivo inteiro e nada é gravado; ids desconhecidos nesta máquina são ignorados com contagem. Depois que a validação passa, o painel recarrega a lista de cards (mtimes novos) e aplica cada entrada como um salvamento comum; entradas com falha são reportadas e nada é sobrescrito em silêncio.
 - **Alterações recentes** — cada salvamento bem-sucedido acrescenta um registro a um arquivo JSONL append-only ao lado dos cards (`.orchestrator-audit.jsonl`): hora, id do papel, rota anterior/seguinte, origem. Ele não guarda segredos nem caminhos absolutos, e é best-effort — uma falha ao gravar a auditoria nunca faz o salvamento falhar ou ser revertido. A seção **Alterações recentes** do painel (dentro da legenda) mostra os últimos 50 registros e é carregada sob demanda, nunca em cache.
-- **Diagnóstico dos cartões instalados** — uma seção somente leitura (dentro da legenda) reporta papéis ausentes no conjunto instalado em relação às origens em `craft/`, cards com frontmatter inválido, rotas que citam um modelo ausente do catálogo ao vivo e cards cujo corpo difere da origem em craft/ (o frontmatter diverge legitimamente; os corpos são comparados). Calculado sob demanda, nunca em cache; degrada graciosamente quando `craft/` está ausente.
+- **Diagnóstico dos cartões instalados** — uma seção somente leitura (dentro da legenda) reporta papéis ausentes no conjunto instalado em relação às origens em `craft/`, cards com frontmatter inválido, rotas (fixadas ou de fallback) que citam um modelo ausente do catálogo ao vivo e cards cujo corpo difere da origem em craft/ (o frontmatter diverge legitimamente; os corpos são comparados). Calculado sob demanda, nunca em cache; degrada graciosamente quando `craft/` está ausente.
 
 ## Instalar o bundle Craft com o script
 

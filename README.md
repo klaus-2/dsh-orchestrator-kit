@@ -17,6 +17,7 @@ Model routing control panel for AI agent teams — assign provider, model and re
 ## Why use this
 
 - **Per-role routing** — every role of the Craft dev-flow pipeline (discovery, planning, execution, verification) can run on its own provider, model and reasoning effort.
+- **Quota-resilient dispatch** — configure a per-role fallback route; when the pinned model hits quota exhaustion, rate limits or an outage, the Lead retries the role once on the fallback — or on the session default when none is configured — instead of losing the dispatch.
 - **Cost and quality tuning** — spend deep-reasoning capacity only where it pays off (architecture, plan review) and let search-style roles run on cheaper routes.
 - **Fail-closed validated configuration** — a save that names an unknown role, model or effort is rejected with 409; an unavailable catalog returns 503. No dead routes are ever written.
 - **No provider lock-in** — the panel ships no providers of its own; the selects are fed by the catalog of the running harness.
@@ -65,6 +66,7 @@ Unconfigured roles use `model: inherit` — they follow the chat's routing. Over
 | **Provider** | Select from the harness catalog. |
 | **Model** | Select from the harness catalog. |
 | **Reasoning effort** | Options load lazily per provider + model combination. |
+| **Fallback route** | One-shot retry route when the role's model hits quota, rate limits or an outage; empty retries on the session default. |
 | **Save** | Validates fail-closed, then writes atomically. |
 | **Reset — Chat default (inherit)** | Returns the role to `model: inherit`. |
 
@@ -80,7 +82,7 @@ The panel talks to seven routes: `GET /api/dsh-orchestrator-kit.roles`, `GET /ap
 
 Every save is protected end to end:
 
-- **Fail-closed validation** — an unknown role, model or effort returns `409`; an unavailable catalog returns `503`. Nothing is written blind.
+- **Fail-closed validation** — an unknown role, model, effort or fallback returns `409`; an unavailable catalog returns `503`. Nothing is written blind.
 - **Atomic writes** — a file lock serializes writers, a TOCTOU guard plus post-write revalidation confirm the card, and the expected `mtimeMs` is checked so a concurrent editor is never silently overwritten.
 - **Single writer** — the panel is the only writer of these routes, and a saved route takes effect on the next turn.
 - **Strict frontmatter write gate** — anchors, aliases and custom YAML tags are refused, and frontmatter is capped at 65536 bytes with a nesting limit. Anchored, tagged or deeply nested cards stay listed but read-only (every write returns `400`) until cleaned; aliased or oversized cards fail even the lenient listing parse and appear only in the invalid-card warning banner, not in the grid.
@@ -94,7 +96,7 @@ Every save is protected end to end:
 - **Batch apply per phase** — on a phase tab (never the "All roles" tab), each section header carries an **Apply to phase** button. It copies the source card's draft route/effort (the first card with a dirty draft) to every other card in that section, posting one save per card with its own expected `mtimeMs`. Results are per-card: a `409` conflict keeps the loop going and reports on that card, a non-409 failure (for example the `503` busy lock) stops the run and reports what was applied, and a Cancel button stops after the in-flight card. Batch apply is never atomic — it is a sequence of ordinary validated saves.
 - **Routing profiles** — **Export profile** writes the saved routes of all roles to a versioned JSON (`version: 1`, `generator`, `roles` keyed by role id; no `mtimeMs` anywhere). **Import profile** validates every entry first — unsupported version, half-written routes or malformed ids reject the whole file and write nothing; ids unknown on this machine are skipped with a count. After validation passes, the panel refreshes the card list (fresh mtimes), then applies each entry as a normal save; failed entries are reported and nothing is silently overwritten.
 - **Recent changes** — every successful save appends one record to an append-only JSONL file beside the cards (`.orchestrator-audit.jsonl`): time, role id, previous/next route, origin. It stores no secrets and no absolute paths, and it is best-effort — an audit-write failure never fails or rolls back the save. The panel's **Recent changes** section (inside the legend) shows the last 50 records and is fetched on demand, never cached.
-- **Installed-card diagnostics** — a read-only section (inside the legend) reports roles missing from the installed set versus the `craft/` sources, cards with invalid frontmatter, routes naming a model absent from the live catalog, and cards whose body differs from the craft source (frontmatter legitimately diverges, bodies are compared). Computed on demand, never cached; it degrades gracefully when `craft/` is absent.
+- **Installed-card diagnostics** — a read-only section (inside the legend) reports roles missing from the installed set versus the `craft/` sources, cards with invalid frontmatter, routes (pinned or fallback) naming a model absent from the live catalog, and cards whose body differs from the craft source (frontmatter legitimately diverges, bodies are compared). Computed on demand, never cached; it degrades gracefully when `craft/` is absent.
 
 ## Install the craft bundle with the script
 

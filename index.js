@@ -16,7 +16,7 @@ const FRONTMATTER_MAX_BYTES = 65536;
 const FRONTMATTER_MAX_PATH = 24;
 const MAX_ROUTE_BODY_BYTES = 65536;
 const CARD_READ_CONCURRENCY = 8;
-const ROUTE_BODY_FIELDS = new Set(['id', 'provider', 'model', 'disabled', 'reasoningEffort', 'expectedMtimeMs']);
+const ROUTE_BODY_FIELDS = new Set(['id', 'provider', 'model', 'disabled', 'reasoningEffort', 'expectedMtimeMs', 'fallback']);
 const LOCK_TIMEOUT_PREFIX = 'atomic-write: timed out waiting for the writer lock';
 const RELEASES_URL = 'https://api.github.com/repos/klaus-2/dsh-orchestrator-kit/releases/latest';
 const NPM_NAME = 'dsh-orchestrator-kit';
@@ -202,6 +202,22 @@ function parseFrontmatterDocument(text, basename = 'role card', { strict = false
   return { body, match, doc, meta: meta ?? {} };
 }
 
+function parseFallbackRoute(meta, basename) {
+  const raw = meta.fallback;
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error(`${basename}: frontmatter fallback must be a {provider, model} mapping`);
+  }
+  for (const key of ['provider', 'model']) {
+    const value = raw[key];
+    if (typeof value !== 'string' || value.trim() === '') {
+      throw new Error(`${basename}: frontmatter fallback.${key} must be a non-empty string`);
+    }
+  }
+  if (raw.model.trim() === 'inherit') throw new Error(`${basename}: fallback model cannot be inherit`);
+  return { provider: raw.provider.trim(), model: raw.model.trim() };
+}
+
 function parseRoleCard(text, basename = 'role card', options = {}) {
   const { meta } = parseFrontmatterDocument(text, basename, options);
   const cardName = optionalScalar(meta, 'name', basename);
@@ -215,12 +231,14 @@ function parseRoleCard(text, basename = 'role card', options = {}) {
   }
   const reasoningEffort = effort ?? camelEffort;
   if (model === 'inherit' && provider !== undefined) throw new Error(`${basename}: model inherit cannot specify a provider`);
+  const fallback = parseFallbackRoute(meta, basename);
   return {
     ...(cardName === undefined ? {} : { name: cardName }),
     ...(description === undefined ? {} : { description }),
     ...(provider === undefined ? {} : { provider }),
     ...(model === undefined ? {} : { model }),
     ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
+    ...(fallback === undefined ? {} : { fallback }),
     disabled: meta.disabled === true
   };
 }
@@ -228,10 +246,16 @@ function parseRoleCard(text, basename = 'role card', options = {}) {
 function summarizeMeta(meta) {
   const text = (value) => typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
   const model = text(meta?.model);
+  const rawFallback = meta?.fallback;
+  const fallback = rawFallback !== null && typeof rawFallback === 'object' && !Array.isArray(rawFallback)
+    && text(rawFallback.provider) !== null && text(rawFallback.model) !== null
+    ? { provider: text(rawFallback.provider), model: text(rawFallback.model) }
+    : null;
   return {
     provider: text(meta?.provider),
     model: model === 'inherit' ? null : model,
     reasoningEffort: text(meta?.reasoning_effort) ?? text(meta?.reasoningEffort),
+    fallback,
     disabled: meta?.disabled === true
   };
 }
@@ -253,6 +277,16 @@ function applyCardSettings(text, patch) {
     throw new Error('patch must be a settings object');
   }
   if (patch.route !== undefined) validateRouteInput(patch.route);
+  if (patch.fallback !== undefined && patch.fallback !== null) {
+    const candidate = patch.fallback;
+    if (typeof candidate !== 'object' || Array.isArray(candidate)) {
+      throw new Error('fallback must be null or a {provider, model} object');
+    }
+    if (typeof candidate.provider !== 'string' || candidate.provider.trim() === '' || typeof candidate.model !== 'string' || candidate.model.trim() === '') {
+      throw new Error('a fallback needs a non-empty provider and model; a half-written fallback is rejected');
+    }
+    if (candidate.model.trim() === 'inherit') throw new Error('fallback model inherit cannot specify a provider');
+  }
   if (patch.disabled !== undefined && typeof patch.disabled !== 'boolean') {
     throw new Error('disabled must be a boolean');
   }
@@ -282,6 +316,12 @@ function applyCardSettings(text, patch) {
       doc.delete('reasoning_effort');
       doc.delete('reasoningEffort');
     }
+  }
+
+  if (patch.fallback === null) {
+    doc.delete('fallback');
+  } else if (patch.fallback !== undefined) {
+    doc.set('fallback', { provider: patch.fallback.provider.trim(), model: patch.fallback.model.trim() });
   }
 
   if (patch.disabled === true) {
@@ -466,6 +506,8 @@ function toRoleSummary(id, card, mtimeMs) {
     provider: card.provider ?? null,
     model: card.model ?? null,
     reasoningEffort: card.reasoningEffort ?? null,
+    fallbackProvider: card.fallback?.provider ?? null,
+    fallbackModel: card.fallback?.model ?? null,
     disabled: card.disabled,
     mtimeMs
   };
@@ -721,7 +763,7 @@ async function apply(ctx, config = {}) {
     requestBody: 'buffered',
     fetch: async () => {
       const started = performance.now();
-      const report = { missing: [], invalid: [], outsideCatalog: [], drift: [], craftAvailable: false };
+      const report = { missing: [], invalid: [], outsideCatalog: [], fallbackOutsideCatalog: [], drift: [], craftAvailable: false };
       const installed = [];
       try {
         const entries = await readdir(cardsDir(), { withFileTypes: true });
@@ -788,8 +830,14 @@ async function apply(ctx, config = {}) {
           if (typeof provider !== 'string' || typeof model !== 'string' || model === 'inherit') continue;
           if (!catalogIds.has(`${provider}/${model}`)) report.outsideCatalog.push(entry.id);
         }
+        for (const entry of installed) {
+          const fallback = entry.card.fallback;
+          if (fallback === undefined) continue;
+          if (!catalogIds.has(`${fallback.provider}/${fallback.model}`)) report.fallbackOutsideCatalog.push(entry.id);
+        }
       }
       report.outsideCatalog.sort();
+      report.fallbackOutsideCatalog.sort();
       return json({ ok: true, ...report }, 200, [['catalog', performance.now() - started]]);
     }
   });
@@ -839,7 +887,7 @@ async function apply(ctx, config = {}) {
       if (unknown !== undefined) return json({ ok: false, error: `the request contains an unknown field: ${redactText(String(unknown))}` }, 400);
       if (!isEntryName(body.id)) return json({ ok: false, error: 'the role id is not a valid entry name' }, 400);
 
-      const { id, provider, model, disabled, reasoningEffort, expectedMtimeMs } = body;
+      const { id, provider, model, disabled, reasoningEffort, expectedMtimeMs, fallback } = body;
       const hasProvider = provider !== undefined;
       const hasModel = model !== undefined;
       if (hasProvider !== hasModel) {
@@ -866,13 +914,26 @@ async function apply(ctx, config = {}) {
         return json({ ok: false, error: 'reasoningEffort must be null or a non-empty string' }, 400);
       }
 
+      const hasFallback = fallback !== undefined;
+      if (hasFallback && fallback !== null) {
+        if (typeof fallback !== 'object' || Array.isArray(fallback)) {
+          return json({ ok: false, error: 'fallback must be null or a {provider, model} object' }, 400);
+        }
+        if (typeof fallback.provider !== 'string' || fallback.provider.trim() === '' || typeof fallback.model !== 'string' || fallback.model.trim() === '') {
+          return json({ ok: false, error: 'a fallback needs a provider and a model, or null to reset' }, 400);
+        }
+        if (fallback.model.trim() === 'inherit') {
+          return json({ ok: false, error: 'fallback model inherit cannot specify a provider' }, 400);
+        }
+      }
+
       const hasExpectedMtimeMs = expectedMtimeMs !== undefined;
       if (hasExpectedMtimeMs && (typeof expectedMtimeMs !== 'number' || !Number.isFinite(expectedMtimeMs) || expectedMtimeMs < 0)) {
         return json({ ok: false, error: 'expectedMtimeMs must be a finite number >= 0' }, 400);
       }
 
-      if (!hasRoute && !hasDisabled && !hasReasoningEffort) {
-        return json({ ok: false, error: 'at least one field (provider/model, disabled, or reasoningEffort) must be provided' }, 400);
+      if (!hasRoute && !hasDisabled && !hasReasoningEffort && !hasFallback) {
+        return json({ ok: false, error: 'at least one field (provider/model, disabled, reasoningEffort, or fallback) must be provided' }, 400);
       }
 
       if (resetRoute && hasReasoningEffort && reasoningEffort !== null) {
@@ -921,16 +982,29 @@ async function apply(ctx, config = {}) {
       const effectiveModel = resetRoute ? 'inherit' : hasRoute ? model.trim() : existingModel;
 
       let catalogMs = null;
-      if (hasRoute && !resetRoute) {
+      const routeNeedsCatalog = hasRoute && !resetRoute;
+      const fallbackNeedsCatalog = hasFallback && fallback !== null;
+      if (routeNeedsCatalog || fallbackNeedsCatalog) {
         const catalogStarted = performance.now();
         const catalog = await modelCatalog(ctx, timeoutMs);
         catalogMs = performance.now() - catalogStarted;
-        if (catalog.available !== true || catalog.failedProviders.has(effectiveProvider) || catalog.groups.length === 0) {
+        if (catalog.available !== true || catalog.groups.length === 0
+          || (routeNeedsCatalog && catalog.failedProviders.has(effectiveProvider))
+          || (fallbackNeedsCatalog && catalog.failedProviders.has(fallback.provider.trim()))) {
           return json({ ok: false, error: 'the model catalog is unavailable; the route was not written' }, 503);
         }
-        const group = catalog.groups.find((entry) => entry.provider === effectiveProvider);
-        if (group === undefined) return json({ ok: false, error: `the provider is not in the live catalog: ${effectiveProvider}` }, 409);
-        if (!group.models.some((entry) => entry.id === effectiveModel)) return json({ ok: false, error: `the model is not listed for ${effectiveProvider} in the live catalog: ${effectiveModel}` }, 409);
+        if (routeNeedsCatalog) {
+          const group = catalog.groups.find((entry) => entry.provider === effectiveProvider);
+          if (group === undefined) return json({ ok: false, error: `the provider is not in the live catalog: ${effectiveProvider}` }, 409);
+          if (!group.models.some((entry) => entry.id === effectiveModel)) return json({ ok: false, error: `the model is not listed for ${effectiveProvider} in the live catalog: ${effectiveModel}` }, 409);
+        }
+        if (fallbackNeedsCatalog) {
+          const fallbackProvider = fallback.provider.trim();
+          const fallbackModel = fallback.model.trim();
+          const fallbackGroup = catalog.groups.find((entry) => entry.provider === fallbackProvider);
+          if (fallbackGroup === undefined) return json({ ok: false, error: `the fallback provider is not in the live catalog: ${fallbackProvider}` }, 409);
+          if (!fallbackGroup.models.some((entry) => entry.id === fallbackModel)) return json({ ok: false, error: `the fallback model is not listed for ${fallbackProvider} in the live catalog: ${fallbackModel}` }, 409);
+        }
       }
 
       if (hasReasoningEffort && reasoningEffort !== null) {
@@ -956,6 +1030,7 @@ async function apply(ctx, config = {}) {
 
       const patch = {
         ...(hasRoute ? { route: resetRoute ? null : { provider: effectiveProvider, model: effectiveModel } } : {}),
+        ...(hasFallback ? { fallback: fallback === null ? null : { provider: fallback.provider.trim(), model: fallback.model.trim() } } : {}),
         ...(hasDisabled ? { disabled } : {}),
         ...(hasReasoningEffort ? { reasoningEffort: reasoningEffort === null ? null : reasoningEffort.trim() } : {})
       };
@@ -1025,7 +1100,7 @@ async function apply(ctx, config = {}) {
                 at: new Date().toISOString(),
                 id,
                 previous: summarizeMeta(existingMeta),
-                next: { provider: nextCard.provider ?? null, model: nextCard.model ?? null, reasoningEffort: nextCard.reasoningEffort ?? null, disabled: nextCard.disabled === true },
+                next: { provider: nextCard.provider ?? null, model: nextCard.model ?? null, reasoningEffort: nextCard.reasoningEffort ?? null, fallback: nextCard.fallback ?? null, disabled: nextCard.disabled === true },
                 origin: 'panel'
               })}\n`, 'utf8');
             } catch (error) {

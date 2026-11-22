@@ -33,6 +33,8 @@ Lists installed role cards. No query parameters and no request body.
       "provider": null,
       "model": "inherit",
       "reasoningEffort": null,
+      "fallbackProvider": null,
+      "fallbackModel": null,
       "disabled": false,
       "mtimeMs": 123
     }
@@ -50,6 +52,8 @@ Lists installed role cards. No query parameters and no request body.
 | `roles[].provider` | Pinned provider, or `null`. |
 | `roles[].model` | Pinned model, or the literal `inherit`. |
 | `roles[].reasoningEffort` | Configured effort, or `null`. |
+| `roles[].fallbackProvider` | Fallback-route provider, or `null`. |
+| `roles[].fallbackModel` | Fallback-route model, or `null`. |
 | `roles[].disabled` | `true` only when the card sets `disabled: true`. |
 | `roles[].mtimeMs` | Card modification time; the client reuses it as `expectedMtimeMs`. |
 | `invalid[]` | Cards that failed strict parsing, as `{ id, error }`. |
@@ -131,29 +135,30 @@ Source: `index.js:675-705` (handler and statuses), `index.js:347-401` (effort no
 
 Validates and atomically saves routing settings for one role. This is the only write route.
 
-Request body — at least one of `provider`/`model`, `disabled` or `reasoningEffort` must be present:
+Request body — at least one of `provider`/`model`, `disabled`, `reasoningEffort` or `fallback` must be present:
 
 | Field | Required | Type | Meaning |
 | --- | --- | --- | --- |
 | `id` | yes | entry name | Target card id. |
 | `provider` | no | string or `null` | New provider; must be paired with `model`. Both `null` reset the route to inherit. |
 | `model` | no | string or `null` | New model; `inherit` as a literal is rejected here. |
+| `fallback` | no | `{ provider, model }` or `null` | One-shot retry route for model-availability failures. `null` clears it; resetting the route never touches it. |
 | `reasoningEffort` | no | string or `null` | Effort id; `null` clears it. Cannot be set while resetting the route. |
 | `disabled` | no | boolean | `true` disables the role; `false` removes the flag. |
 | `expectedMtimeMs` | no | finite number >= 0 | Stale-draft guard from the roles response. |
 
 ```json
-{ "id": "arch-advisor", "provider": "example-hub", "model": "flash-a", "reasoningEffort": null, "disabled": false, "expectedMtimeMs": 123 }
+{ "id": "arch-advisor", "provider": "example-hub", "model": "flash-a", "fallback": { "provider": "example-cloud", "model": "reasoner-b" }, "reasoningEffort": null, "disabled": false, "expectedMtimeMs": 123 }
 ```
 
 Success responses:
 
 ```json
-{ "ok": true, "role": { "id": "arch-advisor", "name": "arch-advisor", "description": null, "provider": "example-hub", "model": "flash-a", "reasoningEffort": null, "disabled": false, "mtimeMs": 124 } }
+{ "ok": true, "role": { "id": "arch-advisor", "name": "arch-advisor", "description": null, "provider": "example-hub", "model": "flash-a", "reasoningEffort": null, "fallbackProvider": "example-cloud", "fallbackModel": "reasoner-b", "disabled": false, "mtimeMs": 124 } }
 ```
 
 ```json
-{ "ok": true, "unchanged": true, "role": { "id": "arch-advisor", "name": "arch-advisor", "description": null, "provider": "example-hub", "model": "flash-a", "reasoningEffort": null, "disabled": false, "mtimeMs": 123 } }
+{ "ok": true, "unchanged": true, "role": { "id": "arch-advisor", "name": "arch-advisor", "description": null, "provider": "example-hub", "model": "flash-a", "reasoningEffort": null, "fallbackProvider": "example-cloud", "fallbackModel": "reasoner-b", "disabled": false, "mtimeMs": 123 } }
 ```
 
 | Status | Condition |
@@ -161,9 +166,9 @@ Success responses:
 | 200 | Saved, or `unchanged: true` when the computed card text is identical. |
 | 403 | Read-only mode; body is `{ ok: false, code: "readonly", error }`. |
 | 404 | No card with the given id. |
-| 409 | Stale `expectedMtimeMs`, provider or model absent from the live catalog, unknown route for effort validation, or unsupported effort. |
+| 409 | Stale `expectedMtimeMs`, provider or model (route or fallback) absent from the live catalog, unknown route for effort validation, or unsupported effort. |
 | 413 | Body exceeds 65536 bytes, by declared length or measured byte length. |
-| 400 | Invalid JSON, non-object body, unknown field, invalid id, mismatched route pair, invalid flag types, or a strict-mode frontmatter violation. |
+| 400 | Invalid JSON, non-object body, unknown field, invalid id, mismatched route pair, half-written fallback, `fallback.model: inherit`, invalid flag types, or a strict-mode frontmatter violation. |
 | 503 | Model catalog unavailable, model resolver unavailable, or lock timeout with `code: "lock-timeout"`. |
 | 500 | Card unreadable, path validation failure, write or read-back failure, or post-write validation failure. |
 
@@ -182,8 +187,8 @@ Reads the audit trail. No query parameters.
     {
       "at": "2026-01-01T00:00:00.000Z",
       "id": "arch-advisor",
-      "previous": { "provider": null, "model": "inherit", "reasoningEffort": null, "disabled": false },
-      "next": { "provider": "example-hub", "model": "flash-a", "reasoningEffort": null, "disabled": false },
+      "previous": { "provider": null, "model": "inherit", "reasoningEffort": null, "fallback": null, "disabled": false },
+      "next": { "provider": "example-hub", "model": "flash-a", "reasoningEffort": null, "fallback": { "provider": "example-cloud", "model": "reasoner-b" }, "disabled": false },
       "origin": "panel"
     }
   ],
@@ -214,6 +219,7 @@ Compares installed cards with the bundled sources and the live catalog. No query
   "missing": [],
   "invalid": [],
   "outsideCatalog": [],
+  "fallbackOutsideCatalog": [],
   "drift": [],
   "craftAvailable": true
 }
@@ -224,10 +230,11 @@ Compares installed cards with the bundled sources and the live catalog. No query
 | `missing` | Bundled role ids with no installed card; empty when craft sources are unavailable. |
 | `invalid` | Installed cards that failed strict parsing, as `{ id, error }`. |
 | `outsideCatalog` | Installed roles whose pinned pair is absent from the live catalog. |
+| `fallbackOutsideCatalog` | Installed roles whose `fallback` pair is absent from the live catalog. |
 | `drift` | Installed roles whose Markdown body differs from the bundled source. |
 | `craftAvailable` | `true` only when the bundled craft source directory was readable. |
 
-`craftAvailable` starts as `false`. It becomes `true` only when the source directory resolves and can be read; if reading it fails, it is set back to `false` and drift checking is skipped. `outsideCatalog` is only populated when the catalog reports `available: true`. An unreadable roles directory returns 500; a missing one is treated as empty.
+`craftAvailable` starts as `false`. It becomes `true` only when the source directory resolves and can be read; if reading it fails, it is set back to `false` and drift checking is skipped. `outsideCatalog` and `fallbackOutsideCatalog` are only populated when the catalog reports `available: true`. An unreadable roles directory returns 500; a missing one is treated as empty.
 
 Source: `index.js:742-819` (handler), `index.js:748` (initial report), `index.js:775-801` (craft checks), `index.js:803-816` (catalog cross-check), `client.js:1620-1636` (client consumption).
 

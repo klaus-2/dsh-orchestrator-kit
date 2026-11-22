@@ -36,7 +36,7 @@ const PKG = JSON.parse(readFileSync(path.join(packageDir, 'package.json'), 'utf8
 
 const COVERAGE_STATEMENT_FLOOR = 0.70;
 const COVERAGE_FUNCTION_FLOOR = 0.60;
-const CLIENT_BYTE_CEILING = 131072;
+const CLIENT_BYTE_CEILING = 135168;
 const coverageDirArg = process.argv.find((arg) => arg.startsWith('--coverage-dir='));
 const isCoverageReport = process.argv.includes('--coverage-report');
 const coverageRoot = coverageDirArg ? coverageDirArg.slice('--coverage-dir='.length) : null;
@@ -559,6 +559,38 @@ await test('applyCardSettings: canonical reasoning_effort, reset cleanup, route-
   assert.equal(parseRouteText(bomOut).disabled, true);
 });
 
+await test('fallback route: parse rules, write, reset and independence from the route pair', () => {
+  const parsed = parseRoleCard(`---\nname: reviewer\nprovider: ${EXAMPLE_HUB}\nmodel: flash-a\nfallback:\n  provider: ${EXAMPLE_CLOUD}\n  model: reasoner-b\n---\nbody\n`);
+  assert.deepEqual(parsed.fallback, { provider: EXAMPLE_CLOUD, model: 'reasoner-b' });
+  assert.equal(parseRoleCard('---\nname: A\nmodel: inherit\n---\nbody\n').fallback, undefined);
+  assert.equal(parseRoleCard('---\nname: A\nfallback: null\n---\nbody\n').fallback, undefined, 'an explicit YAML null means no fallback');
+  assert.deepEqual(parseRoleCard('---\nname: A\nfallback:\n  provider:  p \n  model:  m \n---\nbody\n').fallback, { provider: 'p', model: 'm' }, 'the fallback pair is trimmed');
+
+  const set = applyCardSettings(LF_CARD, { fallback: { provider: EXAMPLE_CLOUD, model: 'reasoner-b' } });
+  assert.deepEqual(parseRouteText(set).fallback, { provider: EXAMPLE_CLOUD, model: 'reasoner-b' });
+  assert.match(set, /# a comment the round-trip must keep/);
+
+  const routed = applyCardSettings(set, { route: { provider: EXAMPLE_HUB, model: 'flash-a' } });
+  assert.deepEqual(parseRouteText(routed).fallback, { provider: EXAMPLE_CLOUD, model: 'reasoner-b' }, 'a route change never touches the fallback');
+  const resetRoute = applyCardSettings(routed, { route: null });
+  assert.deepEqual(parseRouteText(resetRoute).fallback, { provider: EXAMPLE_CLOUD, model: 'reasoner-b' }, 'resetting the route never touches the fallback');
+  assert.equal(parseRouteText(resetRoute).model, 'inherit');
+  const cleared = applyCardSettings(set, { fallback: null });
+  assert.equal(parseRouteText(cleared).fallback, undefined, 'a fallback reset deletes the key');
+  const canary = applyCardSettings(set, { fallback: { provider: ' p ', model: ' m ' } });
+  assert.deepEqual(parseRouteText(canary).fallback, { provider: 'p', model: 'm' }, 'the written fallback pair is canonical');
+
+  assert.throws(() => applyCardSettings(LF_CARD, { fallback: { provider: EXAMPLE_CLOUD } }), /half-written fallback/);
+  assert.throws(() => applyCardSettings(LF_CARD, { fallback: { provider: EXAMPLE_CLOUD, model: 'inherit' } }), /fallback model inherit/);
+  assert.throws(() => applyCardSettings(LF_CARD, { fallback: 'flash-a' }), /null or a \{provider, model\} object/);
+  assert.throws(() => applyCardSettings(LF_CARD, { fallback: { provider: '', model: 'm' } }), /half-written fallback/);
+  assert.throws(() => parseRoleCard('---\nfallback:\n  provider: p\n---\n', 't.md'), /fallback\.model must be a non-empty string/);
+  assert.throws(() => parseRoleCard('---\nfallback:\n  provider: p\n  model: inherit\n---\n'), /fallback model cannot be inherit/);
+  assert.throws(() => parseRoleCard('---\nfallback: [1, 2]\n---\n'), /fallback must be a \{provider, model\} mapping/);
+  assert.throws(() => parseRoleCard('---\nfallback: 7\n---\n'), /fallback must be a \{provider, model\} mapping/);
+  assert.throws(() => parseRoleCard('---\nfallback:\n  provider: p\n  model: 42\n---\n'), /fallback\.model must be a non-empty string/);
+});
+
 await test('agentsRootOf: DSH_AGENTS_HOME wins, blank means unset, default is the home agents dir', () => {
   const sandboxHome = path.join(tmpdir(), 'agents-home-probe');
   assert.equal(path.resolve(agentsRootOf({ DSH_AGENTS_HOME: sandboxHome })), path.resolve(sandboxHome));
@@ -579,7 +611,7 @@ await test('HTTP API: GET .roles handles ENOENT, omits invalid cards, sorts alph
     const dir = path.join(tmpHome, 'agents');
     mkdirSync(dir, { recursive: true });
     writeFileSync(path.join(dir, 'docs-scout.md'), '---\nname: docs-scout\ndescription: Docs\nmodel: inherit\ndisabled: true\n---\n\nBody\n', 'utf8');
-    writeFileSync(path.join(dir, 'arch-advisor.md'), `---\nname: arch-advisor\ndescription: Advisory\nprovider: ${EXAMPLE_HUB}\nmodel: flash-a\nreasoning_effort: high\n---\n\nBody\n`, 'utf8');
+    writeFileSync(path.join(dir, 'arch-advisor.md'), `---\nname: arch-advisor\ndescription: Advisory\nprovider: ${EXAMPLE_HUB}\nmodel: flash-a\nreasoning_effort: high\nfallback:\n  provider: ${EXAMPLE_CLOUD}\n  model: reasoner-b\n---\n\nBody\n`, 'utf8');
     writeFileSync(path.join(dir, 'broken-card.md'), `---\nname: broken\nprovider: ${EXAMPLE_HUB}\nmodel: flash-a\nreasoning_effort: high\nreasoningEffort: low\n---\n\nBody\n`, 'utf8');
 
     await withMockHost({ agentsHome: tmpHome }, async ({ call }) => {
@@ -595,9 +627,13 @@ await test('HTTP API: GET .roles handles ENOENT, omits invalid cards, sorts alph
         const arch = data.roles[0];
         const docs = data.roles[1];
         assert.equal(arch.reasoningEffort, 'high');
+        assert.equal(arch.fallbackProvider, EXAMPLE_CLOUD, 'the roles summary must surface the fallback provider');
+        assert.equal(arch.fallbackModel, 'reasoner-b', 'the roles summary must surface the fallback model');
         assert.equal(typeof arch.mtimeMs, 'number');
         assert.ok(arch.mtimeMs > 0);
         assert.equal(docs.reasoningEffort, null);
+        assert.equal(docs.fallbackProvider, null, 'a card without a fallback must report null fallback fields');
+        assert.equal(docs.fallbackModel, null);
         assert.equal(docs.disabled, true);
       } finally {
         console.warn = prevWarn;
@@ -1052,6 +1088,75 @@ const flashCatalogLlm = () => ({
     name: model,
     reasoning: { defaultEffort: 'medium', efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }] }
   })
+});
+
+await test('HTTP API: POST .route fallback set/reset validates against the live catalog and audits the pair', async () => {
+  const tmpHome = mkdtempSync(path.join(tmpdir(), 'map-http-fallback-'));
+  try {
+    const dir = path.join(tmpHome, 'agents');
+    mkdirSync(dir, { recursive: true });
+    const cardFile = path.join(dir, 'planner.md');
+    writeFileSync(cardFile, `---\nname: planner\ndescription: Plans\nprovider: ${EXAMPLE_HUB}\nmodel: flash-a\n---\n\nPlan body\n`, 'utf8');
+
+    await withMockHost({ agentsHome: tmpHome, llm: undefined }, async ({ call }) => {
+      const rolesCold = await call(`/api/${NS}.roles`);
+      const cold = rolesCold.data.roles.find((r) => r.id === 'planner');
+      const catalog503 = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'planner', fallback: { provider: EXAMPLE_HUB, model: 'flash-b' }, expectedMtimeMs: cold.mtimeMs }) });
+      assert.equal(catalog503.status, 503, 'an unavailable catalog must fail-closed a fallback write');
+    });
+
+    await withMockHost({ agentsHome: tmpHome, llm: flashCatalogLlm() }, async ({ call }) => {
+      const roles0 = await call(`/api/${NS}.roles`);
+      const planner0 = roles0.data.roles.find((r) => r.id === 'planner');
+
+      const half400 = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'planner', fallback: { provider: EXAMPLE_HUB }, expectedMtimeMs: planner0.mtimeMs }) });
+      assert.equal(half400.status, 400);
+      const inherit400 = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'planner', fallback: { provider: EXAMPLE_HUB, model: 'inherit' }, expectedMtimeMs: planner0.mtimeMs }) });
+      assert.equal(inherit400.status, 400);
+      const shape400 = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'planner', fallback: 'flash-b', expectedMtimeMs: planner0.mtimeMs }) });
+      assert.equal(shape400.status, 400);
+      const unknownProvider409 = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'planner', fallback: { provider: EXAMPLE_CLOUD, model: 'reasoner-b' }, expectedMtimeMs: planner0.mtimeMs }) });
+      assert.equal(unknownProvider409.status, 409);
+      const unknownModel409 = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'planner', fallback: { provider: EXAMPLE_HUB, model: 'flash-z' }, expectedMtimeMs: planner0.mtimeMs }) });
+      assert.equal(unknownModel409.status, 409);
+
+      const set = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'planner', fallback: { provider: EXAMPLE_HUB, model: 'flash-b' }, expectedMtimeMs: planner0.mtimeMs }) });
+      assert.equal(set.status, 200);
+      assert.equal(set.data.role.fallbackProvider, EXAMPLE_HUB);
+      assert.equal(set.data.role.fallbackModel, 'flash-b');
+      assert.equal(set.data.role.model, 'flash-a', 'setting the fallback never disturbs the route');
+
+      const again = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'planner', fallback: { provider: EXAMPLE_HUB, model: 'flash-b' }, expectedMtimeMs: set.data.role.mtimeMs }) });
+      assert.equal(again.status, 200);
+      assert.equal(again.data.unchanged, true, 'an identical fallback must answer unchanged without a write');
+
+      const roles1 = await call(`/api/${NS}.roles`);
+      const planner1 = roles1.data.roles.find((r) => r.id === 'planner');
+      const resetRoute = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'planner', provider: null, model: null, expectedMtimeMs: planner1.mtimeMs }) });
+      assert.equal(resetRoute.status, 200);
+      assert.equal(resetRoute.data.role.model, 'inherit');
+      assert.equal(resetRoute.data.role.fallbackProvider, EXAMPLE_HUB, 'a route reset must keep the fallback');
+
+      const roles2 = await call(`/api/${NS}.roles`);
+      const planner2 = roles2.data.roles.find((r) => r.id === 'planner');
+      const both = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'planner', provider: null, model: null, fallback: null, expectedMtimeMs: planner2.mtimeMs }) });
+      assert.equal(both.status, 200);
+      assert.equal(both.data.role.model, 'inherit');
+      assert.equal(both.data.role.fallbackProvider, null, 'a combined reset clears the fallback too');
+      assert.equal(both.data.role.fallbackModel, null);
+    });
+
+    const auditLines = readFileSync(path.join(dir, '.orchestrator-audit.jsonl'), 'utf8').split('\n').filter((line) => line.trim() !== '');
+    assert.equal(auditLines.length, 3, 'the 503, the 400s/409s and the unchanged save must never append audit records');
+    assert.deepEqual(JSON.parse(auditLines[0]).previous.fallback, null);
+    assert.deepEqual(JSON.parse(auditLines[0]).next.fallback, { provider: EXAMPLE_HUB, model: 'flash-b' }, 'the first audit record must carry the set fallback');
+    assert.deepEqual(JSON.parse(auditLines[1]).previous.fallback, { provider: EXAMPLE_HUB, model: 'flash-b' });
+    assert.deepEqual(JSON.parse(auditLines[1]).next.fallback, { provider: EXAMPLE_HUB, model: 'flash-b' }, 'the route-reset record must show the fallback surviving on both sides');
+    assert.deepEqual(JSON.parse(auditLines[2]).previous.fallback, { provider: EXAMPLE_HUB, model: 'flash-b' });
+    assert.equal(JSON.parse(auditLines[2]).next.fallback, null, 'the combined reset record must clear the fallback');
+  } finally {
+    rmSync(tmpHome, { recursive: true, force: true });
+  }
 });
 
 await test('strict frontmatter: parseRoleCard strict mode rejects anchors, aliases, explicit tags, deep nesting and oversized blocks; lenient mode unchanged', () => {
@@ -2141,6 +2246,18 @@ await test('persona: an explicit child route is bounded by the session model-sel
   assert.match(prefix, /model-selection policy/, 'the persona must state that a route override is policy-bounded');
 });
 
+await test('persona: the role card fallback route is the sanctioned one-shot retry on model-availability failures', () => {
+  const doc = parseDocument(readFileSync(path.join(packageDir, 'cordis.patch.yml'), 'utf8'));
+  const insert = doc.toJS()[0].insert;
+  const persona = insert[1].config.plugins.find((plugin) => plugin.id === 'persona');
+  const prefix = persona.config.prefix;
+  assert.match(prefix, /Model fallback on route failure/, 'the persona must prescribe the fallback retry discipline');
+  assert.match(prefix, /`fallback: \{provider, model\}`/, 'the persona must reference the card fallback frontmatter shape');
+  assert.match(prefix, /without a route so the child inherits the Session default/, 'the persona must default the retry to the session route when no fallback is declared');
+  assert.match(prefix, /A second model-availability failure ends retries/, 'the persona must cap the retry at one fallback attempt');
+  assert.match(prefix, /Task-level failures, user aborts and refusals are not route failures/, 'the persona must bound the fallback trigger to model-availability failures');
+});
+
 await test('persona: the final-stage adversarial verification workflow is task-type branched and DSH-compatible', () => {
   const doc = parseDocument(readFileSync(path.join(packageDir, 'cordis.patch.yml'), 'utf8'));
   const insert = doc.toJS()[0].insert;
@@ -3005,6 +3122,11 @@ const PANEL_KEYS = [
   'field.effort',
   'field.effortHelp',
   'field.effortAria',
+  'field.fallback',
+  'field.fallbackHelp',
+  'field.fallbackProviderAria',
+  'field.fallbackModelAria',
+  'fallback.none',
   'inherit.label',
   'effort.auto',
   'effort.loading',
@@ -3093,6 +3215,7 @@ const PANEL_KEYS = [
   'diagnostics.missing',
   'diagnostics.invalid',
   'diagnostics.outsideCatalog',
+  'diagnostics.fallbackOutsideCatalog',
   'diagnostics.drift',
   'diagnostics.craftMissing',
   'diagnostics.loadError',
@@ -3748,8 +3871,8 @@ await test('i18n structural gate: every panel string renders through t (sentinel
   }
 
   const diagnosticsGateModes = [
-    { reply: () => new Response(JSON.stringify({ ok: true, missing: ['ghost-role'], invalid: [{ id: 'alpha-custom', error: 'bad yaml' }], outsideCatalog: ['zeta-custom'], drift: ['planner'], craftAvailable: true }), { status: 200 }), keys: ['diagnostics.missing', 'diagnostics.invalid', 'diagnostics.outsideCatalog', 'diagnostics.drift'] },
-    { reply: () => new Response(JSON.stringify({ ok: true, missing: [], invalid: [], outsideCatalog: [], drift: [], craftAvailable: false }), { status: 200 }), keys: ['diagnostics.ok', 'diagnostics.craftMissing'] },
+    { reply: () => new Response(JSON.stringify({ ok: true, missing: ['ghost-role'], invalid: [{ id: 'alpha-custom', error: 'bad yaml' }], outsideCatalog: ['zeta-custom'], fallbackOutsideCatalog: ['eta-custom'], drift: ['planner'], craftAvailable: true }), { status: 200 }), keys: ['diagnostics.missing', 'diagnostics.invalid', 'diagnostics.outsideCatalog', 'diagnostics.fallbackOutsideCatalog', 'diagnostics.drift'] },
+    { reply: () => new Response(JSON.stringify({ ok: true, missing: [], invalid: [], outsideCatalog: [], fallbackOutsideCatalog: [], drift: [], craftAvailable: false }), { status: 200 }), keys: ['diagnostics.ok', 'diagnostics.craftMissing'] },
     { reply: () => new Response(JSON.stringify({ ok: false, error: 'diagnostics boom' }), { status: 500 }), keys: ['diagnostics.loadError'] }
   ];
   for (const diagnosticsMode of diagnosticsGateModes) {
@@ -4375,6 +4498,10 @@ await test('save safety: mtime-keyed draft hoisting, dirty seal on every section
       const next = { ...base, mtimeMs: base.mtimeMs + 10 };
       if (payload.provider !== undefined) next.provider = payload.provider;
       if (payload.model !== undefined) next.model = payload.model === null ? 'inherit' : payload.model;
+      if (payload.fallback !== undefined) {
+        next.fallbackProvider = payload.fallback === null ? null : payload.fallback.provider;
+        next.fallbackModel = payload.fallback === null ? null : payload.fallback.model;
+      }
       if (payload.reasoningEffort !== undefined) next.reasoningEffort = payload.reasoningEffort;
       if (payload.disabled !== undefined) next.disabled = payload.disabled;
       if (holdRoute) {
@@ -4462,6 +4589,28 @@ await test('save safety: mtime-keyed draft hoisting, dirty seal on every section
   tree = await app.settle();
   assert.equal(routePostsOf(vm).length, beforeNoop, 'a non-s key must not POST');
 
+  const fallbackProviderSelect = findNodes(cardOf(tree, 'zeta-custom'), (n) => n.type === 'select' && n.props['aria-label'] === 'Fallback provider for zeta-custom')[0];
+  assert.ok(fallbackProviderSelect, 'the comfortable card must render the fallback provider select');
+  let fallbackModelSelect = findNodes(cardOf(tree, 'zeta-custom'), (n) => n.type === 'select' && n.props['aria-label'] === 'Fallback model for zeta-custom')[0];
+  assert.ok(fallbackModelSelect, 'the comfortable card must render the fallback model select');
+  assert.equal(fallbackModelSelect.props.disabled, true, 'the fallback model select must stay disabled until a provider is chosen');
+  fallbackProviderSelect.props.onChange({ target: { value: EXAMPLE_HUB } });
+  tree = app.renderCycle();
+  fallbackModelSelect = findNodes(cardOf(tree, 'zeta-custom'), (n) => n.type === 'select' && n.props['aria-label'] === 'Fallback model for zeta-custom')[0];
+  assert.equal(fallbackModelSelect.props.disabled, false, 'choosing a fallback provider must enable the model select');
+  fallbackModelSelect.props.onChange({ target: { value: 'flash-a' } });
+  tree = app.renderCycle();
+  const fallbackPostsBefore = routePostsOf(vm).length;
+  await saveOfCard(cardOf(tree, 'zeta-custom')).props.onClick();
+  tree = await app.settle();
+  assert.equal(routePostsOf(vm).length, fallbackPostsBefore + 1, 'the fallback save must issue exactly one POST');
+  const fallbackPost = JSON.parse(routePostsOf(vm).at(-1).opts.body);
+  assert.deepEqual(fallbackPost.fallback, { provider: EXAMPLE_HUB, model: 'flash-a' }, 'the fallback save must POST the pair');
+  assert.ok(!('provider' in fallbackPost) && !('model' in fallbackPost), 'a fallback-only save must not resend the route');
+  const savedZeta = liveRoles.find((role) => role.id === 'zeta-custom');
+  assert.equal(savedZeta.fallbackProvider, EXAMPLE_HUB, 'the saved fallback must surface in the server role state');
+  assert.equal(cardOf(tree, 'zeta-custom') && !collectText(cardOf(tree, 'zeta-custom')).join('').includes(' (unsaved)'), true, 'the saved fallback must clear the dirty suffix');
+
   checkboxOfId(tree, 'zeta-custom').props.onChange({ target: { checked: false } });
   tree = app.renderCycle();
   const secondMount = vm.mountInstance();
@@ -4547,7 +4696,7 @@ await test('undo last save: reverse POST of the pre-save summary with the post-s
   holdUndo = true;
   undoButton.props.onClick();
   tree = await app.settle(false);
-  assert.deepEqual(JSON.parse(routePostsOf(vm).at(-1).opts.body), { id: 'zeta-custom', expectedMtimeMs: 3010, provider: null, model: null, disabled: false, reasoningEffort: null }, 'the undo POST must reverse the pre-save summary with the post-save mtime');
+  assert.deepEqual(JSON.parse(routePostsOf(vm).at(-1).opts.body), { id: 'zeta-custom', expectedMtimeMs: 3010, provider: null, model: null, disabled: false, reasoningEffort: null, fallback: null }, 'the undo POST must reverse the pre-save summary with the post-save mtime');
   const busyUndo = undoButtonsOf(cardOf(app.renderCycle(), 'zeta-custom'))[0];
   assert.equal(busyUndo.children[0], 'Undoing…', 'the in-flight undo must read undo.busy');
   assert.equal(saveOfCard(cardOf(app.renderCycle(), 'zeta-custom')).props.disabled, true, 'save must be disabled while undo is in flight');
@@ -4570,7 +4719,7 @@ await test('undo last save: reverse POST of the pre-save summary with the post-s
   assert.ok(plannerUndo, 'the route-dirty planner save must expose the undo button');
   plannerUndo.props.onClick();
   tree = await app.settle();
-  assert.deepEqual(JSON.parse(routePostsOf(vm)[plannerPosts + 1].opts.body), { id: 'planner', expectedMtimeMs: 1010, provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: null, disabled: false }, 'the route-dirty undo must carry the pre-save provider/model strings and clear the effort');
+  assert.deepEqual(JSON.parse(routePostsOf(vm)[plannerPosts + 1].opts.body), { id: 'planner', expectedMtimeMs: 1010, provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: null, fallback: null, disabled: false }, 'the route-dirty undo must carry the pre-save provider/model strings and clear the effort');
 
   routeMode = 'ok';
   checkboxOfId(tree, 'zeta-custom').props.onChange({ target: { checked: true } });
@@ -4870,7 +5019,7 @@ await test('density modes: compact one-line rows keep the same controls; grid ca
   assert.equal(plannerCard.props.style.contentVisibility, 'auto', 'comfortable cards must set contentVisibility');
   assert.equal(plannerCard.props.style.containIntrinsicSize, 'auto 220px', 'comfortable cards must set containIntrinsicSize');
   assert.ok(collectText(cardOf(tree, 'alpha-custom')).join('').includes('Inherits chat default: example-cloud / reasoner-d'), 'the inherit hint must render the chat default');
-  assert.equal(fieldHelpOf(cardOf(tree, 'planner')).length, 3, 'comfortable cards keep the three field help nodes');
+  assert.equal(fieldHelpOf(cardOf(tree, 'planner')).length, 4, 'comfortable cards keep the four field help nodes (route pair, effort and fallback)');
 
   const densitySelect = findNodes(tree, (n) => n.type === 'select' && n.props['aria-label'] === 'Density')[0];
   assert.ok(densitySelect, 'the density select must render');
@@ -5061,7 +5210,7 @@ const p4Card = (id, notes) => `---\nname: ${id}\ndescription: ${id} notes\nmodel
 const p4LoadRoles = (mtime) => [
   { id: 'planner', name: 'planner', description: 'Plans the work', provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: null, disabled: false, mtimeMs: mtime },
   { id: 'debugger', name: 'debugger', description: 'Debugs the work', provider: null, model: 'inherit', reasoningEffort: null, disabled: false, mtimeMs: mtime + 1000 },
-  { id: 'zeta-custom', name: 'zeta-custom', description: 'Custom Z', provider: null, model: 'inherit', reasoningEffort: null, disabled: false, mtimeMs: mtime + 2000 }
+  { id: 'zeta-custom', name: 'zeta-custom', description: 'Custom Z', provider: null, model: 'inherit', reasoningEffort: null, fallbackProvider: EXAMPLE_HUB, fallbackModel: 'flash-b', disabled: false, mtimeMs: mtime + 2000 }
 ];
 const P4_ROLE_NOTES = { planner: 'Plans the work', debugger: 'Debugs the work', 'zeta-custom': 'Custom Z' };
 
@@ -5197,8 +5346,10 @@ await test('routing profiles: export carries version and no mtimes; import valid
   assert.deepEqual(Object.keys(exported.roles).sort(), ['debugger', 'planner', 'zeta-custom'], 'the exported profile must key roles by id');
   assert.equal(exported.roles.planner.provider, EXAMPLE_HUB, 'a routed role must export its saved provider');
   assert.equal(exported.roles.planner.model, 'flash-a', 'a routed role must export its saved model');
+  assert.equal(exported.roles.planner.fallback, null, 'a role without a fallback must export a null fallback');
   assert.equal(exported.roles.debugger.provider, null, 'an inherit role must export a null provider');
   assert.equal(exported.roles.debugger.model, null, 'an inherit role must export a null model');
+  assert.deepEqual(exported.roles['zeta-custom'].fallback, { provider: EXAMPLE_HUB, model: 'flash-b' }, 'a role with a fallback must export the pair');
   assert.ok(!JSON.stringify(exported).includes('mtimeMs'), 'the exported profile must never carry mtimes');
 
   const importJson = async (payload) => {
@@ -5217,6 +5368,10 @@ await test('routing profiles: export carries version and no mtimes; import valid
   tree = await app.settle();
   assert.ok(collectText(tree).join('').includes('Nothing was written: 1 entries failed.'), 'an unknown-only profile must render profile.rejected');
   assert.equal(routePOSTsOf(vm).length, 0, 'an unknown-only profile must write nothing');
+  await importJson({ version: 1, roles: { planner: { provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: null, fallback: { provider: EXAMPLE_HUB }, disabled: false } } });
+  tree = await app.settle();
+  assert.ok(collectText(tree).join('').includes('Invalid profile: planner: fallback must be null or a {provider, model} object'), 'a half-written fallback entry must render profile.invalid');
+  assert.equal(routePOSTsOf(vm).length, 0, 'a half-written fallback entry must write nothing');
 
   routeMode = 'rolesdown';
   await importJson({ version: 1, roles: { planner: { provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: null, disabled: false } } });
@@ -5226,7 +5381,7 @@ await test('routing profiles: export carries version and no mtimes; import valid
 
   routeMode = 'ok';
   const importRolesCallsBefore = vm.fetchCalls.filter((call) => call.url.startsWith(`/api/${NS}.roles`)).length;
-  await importJson({ version: 1, roles: { planner: { provider: EXAMPLE_HUB, model: 'flash-b', reasoningEffort: 'high', disabled: false }, debugger: { provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: null, disabled: false } } });
+  await importJson({ version: 1, roles: { planner: { provider: EXAMPLE_HUB, model: 'flash-b', reasoningEffort: 'high', disabled: false }, debugger: { provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: null, fallback: { provider: EXAMPLE_CLOUD, model: 'reasoner-b' }, disabled: false } } });
   tree = await app.settle();
   const importPosts = routePOSTsOf(vm).map((call) => JSON.parse(call.opts.body));
   assert.equal(vm.fetchCalls.filter((call) => call.url.startsWith(`/api/${NS}.roles`)).length, importRolesCallsBefore + 1, 'the import must issue exactly one roles re-GET');
@@ -5234,6 +5389,8 @@ await test('routing profiles: export carries version and no mtimes; import valid
   assert.deepEqual(importPosts.map((post) => post.id), ['planner', 'debugger'], 'the import loop must visit every known entry');
   assert.deepEqual(importPosts.map((post) => post.expectedMtimeMs), [rolesMtime, rolesMtime + 1000], 'every import POST must carry the FRESH per-card mtime from the refresh');
   assert.deepEqual(importPosts[0], { id: 'planner', provider: EXAMPLE_HUB, model: 'flash-b', reasoningEffort: 'high', disabled: false, expectedMtimeMs: rolesMtime }, 'the planner POST must carry the full route+effort+disabled set with its own refreshed mtime');
+  assert.ok(!('fallback' in importPosts[0]), 'a profile entry without a fallback key must not send one (old profiles stay valid)');
+  assert.deepEqual(importPosts[1].fallback, { provider: EXAMPLE_CLOUD, model: 'reasoner-b' }, 'a profile entry with a fallback must POST the pair');
   assert.ok(collectText(tree).join('').includes('Profile applied: 2 roles updated, 0 skipped.'), 'a valid import must render profile.applied with the counts');
   fileInput.props.onChange({ target: { files: [{ text: async () => JSON.stringify({ version: 1, roles: { planner: { provider: null, model: null, reasoningEffort: null, disabled: false } } }) }] } });
   tree = await app.settle();
@@ -5286,8 +5443,8 @@ await test('audit trail: append inside the write lock, relative-only records wit
         const record = JSON.parse(lines[0]);
         assert.equal(typeof record.at, 'string' && record.at.length > 0 ? 'string' : 'not-string', 'the audit record must carry a timestamp');
         assert.equal(record.id, 'planner', 'the audit record must carry the role id');
-        assert.deepEqual(record.previous, { provider: null, model: null, reasoningEffort: null, disabled: false }, 'the audit record must summarize the previous meta');
-        assert.deepEqual(record.next, { provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: 'high', disabled: false }, 'the audit record must summarize the next meta');
+        assert.deepEqual(record.previous, { provider: null, model: null, reasoningEffort: null, fallback: null, disabled: false }, 'the audit record must summarize the previous meta');
+        assert.deepEqual(record.next, { provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: 'high', fallback: null, disabled: false }, 'the audit record must summarize the next meta');
         assert.equal(record.origin, 'panel', 'the audit record must carry the panel origin');
         assert.equal(JSON.stringify(record).includes(secretFixture), false, 'the audit record must never carry a secret-shaped value');
         assert.equal(JSON.stringify(record).includes(tmpHome), false, 'the audit record must never carry an absolute path');
@@ -5302,7 +5459,7 @@ await test('audit trail: append inside the write lock, relative-only records wit
         await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'planner', expectedMtimeMs: currentMtime, disabled: true }) });
         const afterToggle = readFileSync(auditFile, 'utf8').split('\n').filter((line) => line.trim() !== '');
         assert.equal(afterToggle.length, 2, 'the next audited save must append a second record');
-        assert.deepEqual(JSON.parse(afterToggle[1]).next, { provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: 'high', disabled: true }, 'the second record must summarize the disabled toggle');
+        assert.deepEqual(JSON.parse(afterToggle[1]).next, { provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: 'high', fallback: null, disabled: true }, 'the second record must summarize the disabled toggle');
       });
 
       chmodSync(dir, 0o555);
@@ -5428,7 +5585,23 @@ await test('diagnostics: missing, invalid, outside-catalog and body-drift detect
         assert.deepEqual(diag.data.invalid.map((entry) => entry.id), ['broken-card'], 'the real diagnostics route must surface the invalid card');
         assert.deepEqual(diag.data.drift, [], 'a card with no craft source cannot have body drift');
         assert.deepEqual(diag.data.outsideCatalog, [], 'the real diagnostics route must omit outsideCatalog when the catalog is unavailable');
+        assert.deepEqual(diag.data.fallbackOutsideCatalog, [], 'the real diagnostics route must omit fallbackOutsideCatalog when the catalog is unavailable');
         assert.equal(diag.data.craftAvailable, true, 'the real diagnostics route must find the shipped craft/ sources');
+      });
+
+      await withMockHost({ agentsHome: tmpHome, llm: flashCatalogLlm() }, async ({ call }) => {
+        writeFileSync(path.join(dir, 'outside-card.md'), `---\nname: outside-card\ndescription: O\nprovider: ${EXAMPLE_CLOUD}\nmodel: reasoner-b\n---\n\nO body\n`, 'utf8');
+        const catalogDiag = await call(`/api/${NS}.diagnostics`);
+        assert.equal(catalogDiag.status, 200, 'the live-catalog diagnostics route must answer 200');
+        assert.deepEqual(catalogDiag.data.outsideCatalog, ['outside-card'], 'the live catalog must flag the route outside the listed providers');
+        assert.deepEqual(catalogDiag.data.fallbackOutsideCatalog, [], 'no fallback outside the catalog yet');
+        writeFileSync(path.join(dir, 'outside-card.md'), `---\nname: outside-card\ndescription: O\nprovider: ${EXAMPLE_CLOUD}\nmodel: reasoner-b\nfallback:\n  provider: ${EXAMPLE_CLOUD}\n  model: reasoner-a\n---\n\nO body\n`, 'utf8');
+        const withFallback = await call(`/api/${NS}.diagnostics`);
+        assert.deepEqual(withFallback.data.fallbackOutsideCatalog, ['outside-card'], 'a fallback route outside the live catalog must be flagged');
+        writeFileSync(path.join(dir, 'outside-card.md'), `---\nname: outside-card\ndescription: O\nprovider: ${EXAMPLE_CLOUD}\nmodel: reasoner-b\nfallback:\n  provider: ${EXAMPLE_HUB}\n  model: flash-b\n---\n\nO body\n`, 'utf8');
+        const insideFallback = await call(`/api/${NS}.diagnostics`);
+        assert.deepEqual(insideFallback.data.fallbackOutsideCatalog, [], 'a fallback route inside the live catalog must not be flagged');
+        assert.deepEqual(insideFallback.data.outsideCatalog, ['outside-card'], 'the route check must stay independent of the fallback check');
       });
     } finally {
       console.warn = prevWarn;
@@ -5444,7 +5617,7 @@ await test('diagnostics: missing, invalid, outside-catalog and body-drift detect
     if (url.startsWith(`/api/${NS}.efforts`)) return new Response(JSON.stringify({ ok: true, defaultEffort: 'medium', efforts: [{ id: 'high', name: 'High' }] }), { status: 200 });
     if (url.startsWith(`/api/${NS}.diagnostics`)) {
       if (diagMode === '500') return new Response(JSON.stringify({ ok: false, error: 'diagnostics boom' }), { status: 500 });
-      return new Response(JSON.stringify({ ok: true, missing: ['ghost-role'], invalid: [{ id: 'alpha-custom', error: 'bad yaml' }], outsideCatalog: ['zeta-custom'], drift: ['planner'], craftAvailable: false }), { status: 200 });
+      return new Response(JSON.stringify({ ok: true, missing: ['ghost-role'], invalid: [{ id: 'alpha-custom', error: 'bad yaml' }], outsideCatalog: ['zeta-custom'], fallbackOutsideCatalog: ['eta-custom'], drift: ['planner'], craftAvailable: false }), { status: 200 });
     }
     return new Response(JSON.stringify({ ok: false }), { status: 404 });
   });
@@ -5459,6 +5632,7 @@ await test('diagnostics: missing, invalid, outside-catalog and body-drift detect
   assert.ok(diagText.includes('Missing roles: ghost-role'), 'the diagnostics missing list must render');
   assert.ok(diagText.includes('Cards with invalid frontmatter: alpha-custom'), 'the diagnostics invalid list must render');
   assert.ok(diagText.includes('Routes outside the live catalog: zeta-custom'), 'the diagnostics outside-catalog list must render');
+  assert.ok(diagText.includes('Fallback routes outside the live catalog: eta-custom'), 'the diagnostics fallback outside-catalog list must render');
   assert.ok(diagText.includes('Body differs from the craft source: planner'), 'the diagnostics drift list must render');
   assert.ok(diagText.includes('craft/ sources are unavailable'), 'the diagnostics craftMissing line must render');
   assert.ok(!diagText.includes('No problems found.'), 'a non-empty diagnostics report must not render the ok line');
@@ -6060,12 +6234,12 @@ await test('coverage gate fails closed: empty directory, missing coverage root a
   }
 });
 
-await test('client.js byte budget: measured size stays under the versioned 131072-byte ceiling with no self-adjustment', () => {
+await test('client.js byte budget: measured size stays under the versioned 135168-byte ceiling with no self-adjustment', () => {
   const size = statSync(path.join(packageDir, 'client.js')).size;
-  assert.equal(size, 127757, 'client.js must stay byte-identical at the measured 127757 bytes');
-  assert.equal(CLIENT_BYTE_CEILING, 131072, 'the versioned ceiling must stay 131072 bytes (128 KiB)');
-  assert.equal(CLIENT_BYTE_CEILING - size, 3315, 'the headroom must stay 3315 bytes');
-  assert.ok(size <= CLIENT_BYTE_CEILING, `client.js is ${size} bytes; ceiling is ${CLIENT_BYTE_CEILING} (128 KiB) — bump the versioned ceiling by explicit commit or split a chunk (C17)`);
+  assert.equal(size, 133773, 'client.js must stay byte-identical at the measured 133773 bytes');
+  assert.equal(CLIENT_BYTE_CEILING, 135168, 'the versioned ceiling must stay 135168 bytes (132 KiB)');
+  assert.equal(CLIENT_BYTE_CEILING - size, 1395, 'the headroom must stay 1395 bytes');
+  assert.ok(size <= CLIENT_BYTE_CEILING, `client.js is ${size} bytes; ceiling is ${CLIENT_BYTE_CEILING} (132 KiB) — bump the versioned ceiling by explicit commit or split a chunk (C17)`);
 });
 
 await test('docs-parity.mjs: three READMEs share headings, table rows and fenced blocks; importing has no side effects', async () => {
@@ -6187,7 +6361,7 @@ await test('pass-5 docs and static markers: six reference docs carry their secti
   assert.deepEqual(workflowBlock('publish.yml'), expectedBlock, 'publish.yml must carry the byte-identical coverage block');
 
   const testerText = readFileSync(path.join(packageDir, 'scripts', 'test.mjs'), 'utf8');
-  assert.ok(testerText.includes('131072'), 'the versioned byte budget constant must be present');
+  assert.ok(testerText.includes('135168'), 'the versioned byte budget constant must be present');
 });
 
 await test('repo hygiene: no backup artifacts and zero machine tokens in any repo file', () => {
