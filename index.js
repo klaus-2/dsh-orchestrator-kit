@@ -1313,7 +1313,7 @@ async function apply(ctx, config = {}) {
         const settings = await readSettings(settingsFileOf());
         if (settings.teamModeDefault !== true) return;
         const teams = getService('agentTeams');
-        if (teams === null || typeof teams.setEnabled !== 'function') return;
+        if (!teams || typeof teams.setEnabled !== 'function') return;
         const projection = teams.projection;
         const state = projection !== null && typeof projection === 'object' && typeof projection.stateOf === 'function'
           ? projection.stateOf(agent.session)
