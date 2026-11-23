@@ -131,6 +131,12 @@ window.__ModuleLoader__.load({
         'density.compact': 'Compact list',
         'tab.breakdownTitle': 'Routed / inherit / disabled counts for this tab',
         'card.inheritHint': 'Inherits chat default: {provider} / {model}',
+        'card.fallbackSame': 'The fallback repeats the primary route; pick another model or None.',
+        'card.noFallback': 'No fallback',
+        'copyRoute.placeholder': 'Copy route from…',
+        'copyRoute.aria': 'Copy another role’s route into {name}',
+        'copyRoute.done': 'Copied from {name}; review and press Save to keep it.',
+        'header.countNoFallback': ' · {n} without fallback',
         'card.dirtySuffix': ' (unsaved)',
         'card.sealTitle': 'Changed during this session',
         'undo.aria': 'Undo last save for {name}',
@@ -166,6 +172,18 @@ window.__ModuleLoader__.load({
         'diagnostics.drift': 'Body differs from the craft source: {ids}',
         'diagnostics.craftMissing': 'craft/ sources are unavailable; drift checking was skipped.',
         'diagnostics.loadError': 'Failed to load diagnostics: {error}',
+        'diagnostics.copy': 'Copy for an issue',
+        'diagnostics.copied': 'Copied to the clipboard.',
+        'diagnostics.copyFallback': 'The clipboard is unavailable; copy the text below.',
+        'preset.title': 'Ready-made profiles',
+        'preset.economy': 'Economy',
+        'preset.balanced': 'Balance',
+        'preset.rigorous': 'Rigorous review',
+        'preset.fast': 'Fast model…',
+        'preset.deep': 'Strong model…',
+        'preset.review': 'Review',
+        'preset.confirm': 'Apply “{goal}” to {count} roles? Every card is saved; adjust any card afterwards.',
+        'preset.apply': 'Apply profile',
         'readonly.title': 'Read-only mode',
         'readonly.notice': 'Saving is disabled by the server configuration (read-only mode). Controls are shown for reference.',
         'support.star': '⭐',
@@ -299,6 +317,12 @@ window.__ModuleLoader__.load({
         'density.compact': 'Lista compacta',
         'tab.breakdownTitle': 'Contagens de roteados / herdados / desativados nesta aba',
         'card.inheritHint': 'Herdando o padrão do chat: {provider} / {model}',
+        'card.fallbackSame': 'O fallback repete a rota principal; escolha outro modelo ou Nenhum.',
+        'card.noFallback': 'Sem fallback',
+        'copyRoute.placeholder': 'Copiar rota de…',
+        'copyRoute.aria': 'Copiar a rota de outro papel para {name}',
+        'copyRoute.done': 'Copiado de {name}; revise e clique em Salvar para manter.',
+        'header.countNoFallback': ' · {n} sem fallback',
         'card.dirtySuffix': ' (não salvo)',
         'card.sealTitle': 'Alterado nesta sessão',
         'undo.aria': 'Desfazer o último salvamento de {name}',
@@ -334,6 +358,18 @@ window.__ModuleLoader__.load({
         'diagnostics.drift': 'Corpo difere da origem em craft/: {ids}',
         'diagnostics.craftMissing': 'As origens em craft/ estão indisponíveis; a checagem de divergência foi ignorada.',
         'diagnostics.loadError': 'Falha ao carregar o diagnóstico: {error}',
+        'diagnostics.copy': 'Copiar para issue',
+        'diagnostics.copied': 'Copiado para a área de transferência.',
+        'diagnostics.copyFallback': 'A área de transferência está indisponível; copie o texto abaixo.',
+        'preset.title': 'Perfis prontos',
+        'preset.economy': 'Economia',
+        'preset.balanced': 'Equilíbrio',
+        'preset.rigorous': 'Revisão rigorosa',
+        'preset.fast': 'Modelo rápido…',
+        'preset.deep': 'Modelo forte…',
+        'preset.review': 'Revisar',
+        'preset.confirm': 'Aplicar “{goal}” a {count} papéis? Todos os cards serão salvos; ajuste qualquer card depois.',
+        'preset.apply': 'Aplicar perfil',
         'readonly.title': 'Modo somente leitura',
         'readonly.notice': 'O salvamento está desativado pela configuração do servidor (modo somente leitura). Os controles aparecem apenas como referência.',
         'support.star': '⭐',
@@ -467,6 +503,12 @@ window.__ModuleLoader__.load({
         'density.compact': '紧凑列表',
         'tab.breakdownTitle': '此标签页的已路由 / 继承 / 已禁用计数',
         'card.inheritHint': '继承对话默认：{provider} / {model}',
+        'card.fallbackSame': '回退路由与主路由相同；请选择其他模型或“无”。',
+        'card.noFallback': '无回退',
+        'copyRoute.placeholder': '复制路由自…',
+        'copyRoute.aria': '将其他角色的路由复制到 {name}',
+        'copyRoute.done': '已从 {name} 复制；请检查后点击保存。',
+        'header.countNoFallback': ' · {n} 个无回退',
         'card.dirtySuffix': '（未保存）',
         'card.sealTitle': '本次会话中已更改',
         'undo.aria': '撤销 {name} 的上次保存',
@@ -502,6 +544,18 @@ window.__ModuleLoader__.load({
         'diagnostics.drift': '正文与 craft/ 源不一致：{ids}',
         'diagnostics.craftMissing': 'craft/ 源不可用；已跳过偏差检查。',
         'diagnostics.loadError': '加载诊断失败：{error}',
+        'diagnostics.copy': '复制用于 issue',
+        'diagnostics.copied': '已复制到剪贴板。',
+        'diagnostics.copyFallback': '剪贴板不可用；请复制下面的文本。',
+        'preset.title': '预设配置',
+        'preset.economy': '节省',
+        'preset.balanced': '均衡',
+        'preset.rigorous': '严格审查',
+        'preset.fast': '快速模型…',
+        'preset.deep': '强模型…',
+        'preset.review': '预览',
+        'preset.confirm': '将“{goal}”应用到 {count} 个角色？所有卡片都会保存；之后可单独调整。',
+        'preset.apply': '应用配置',
         'readonly.title': '只读模式',
         'readonly.notice': '保存已被服务器配置禁用（只读模式）。控件仅作参考。',
         'support.star': '⭐',
@@ -1072,8 +1126,9 @@ window.__ModuleLoader__.load({
         || (draft.provider === '' && draft.model === '' && draft.reasoningEffort === '')
         || (draft.provider !== '' && draft.model !== '');
       const complete = routeComplete && effortAllowed && fallbackComplete;
-      const saveBlocked = !dirty || !complete || (catalogEmpty && (routeDirty || fallbackDirty));
-      return { routeDirty, effortDirty, disabledDirty, fallbackDirty, dirty, isInherit, complete, saveBlocked };
+      const fallbackSame = !isInherit && draft.fallbackProvider === draft.provider && draft.fallbackModel === draft.model;
+      const saveBlocked = !dirty || !complete || (catalogEmpty && (routeDirty || fallbackDirty)) || (fallbackSame && (routeDirty || fallbackDirty));
+      return { routeDirty, effortDirty, disabledDirty, fallbackDirty, dirty, isInherit, complete, fallbackSame, saveBlocked };
     }
 
     function groupRoles(list) {
@@ -1147,6 +1202,8 @@ window.__ModuleLoader__.load({
         const [profileFileInputRef] = React.useState(() => ({ current: null }));
         const [eventsState, setEventsState] = React.useState({ open: false, loading: false, events: [], skipped: 0, error: null });
         const [diagnosticsState, setDiagnosticsState] = React.useState({ open: false, loading: false, report: null, error: null });
+        const [diagCopy, setDiagCopy] = React.useState(null);
+        const [preset, setPreset] = React.useState({ goal: 'balanced', fast: '', deep: '', pending: null });
         React.useEffect(() => ctx.locale.subscribe(() => setLocaleTick((n) => n + 1)), []);
         const t = localeOverride === null ? hostT : makeT(localeOverride);
         const roleLang = String(localeOverride ?? ctx.locale?.getSnapshot?.()?.active ?? 'en').toLowerCase();
@@ -1722,6 +1779,20 @@ window.__ModuleLoader__.load({
           });
         };
 
+        const presetDocOf = (goal, fastKey, deepKey) => {
+          const pairOf = (key) => { const [provider, model] = JSON.parse(key); return { provider, model }; };
+          const fast = pairOf(fastKey);
+          const deep = pairOf(deepKey);
+          return { version: 1, roles: Object.fromEntries((roles ?? []).map((role) => {
+            const useDeep = goal === 'rigorous' || (goal === 'balanced' && role.recommendedTier === 'deep');
+            const primary = useDeep ? deep : fast;
+            return [role.id, { ...primary, reasoningEffort: null, fallback: fastKey === deepKey ? null : (useDeep ? fast : deep), disabled: role.disabled === true }];
+          })) };
+        };
+
+        const presetPairOptions = groups.map((group) => h('optgroup', { key: group.provider, label: group.name ?? group.provider },
+          ...group.models.map((model) => h('option', { value: effortKeyOf(group.provider, model.id) }, model.name ?? model.id))));
+
         const loadEvents = async () => {
           setEventsState({ open: true, loading: true, events: [], skipped: 0, error: null });
           try {
@@ -1737,7 +1808,39 @@ window.__ModuleLoader__.load({
           }
         };
 
+        const diagnosticsLinesOf = (report) => {
+          const lines = [
+            ['missing', report.missing.join(', ')],
+            ['invalid', report.invalid.map((entry) => entry.id).join(', ')],
+            ['outsideCatalog', report.outsideCatalog.join(', ')],
+            ['fallbackOutsideCatalog', report.fallbackOutsideCatalog.join(', ')],
+            ['drift', report.drift.join(', ')]
+          ].filter(([, ids]) => ids !== '').map(([key, ids]) => [key, t('diagnostics.' + key, { ids })]);
+          return lines.length === 0 ? [['ok', t('diagnostics.ok')]] : lines;
+        };
+
+        const copyDiagnostics = async () => {
+          const report = diagnosticsState.report;
+          if (report === null) return;
+          const text = [
+            '### ' + t('diagnostics.summary'),
+            '',
+            ...diagnosticsLinesOf(report).map(([, line]) => '- ' + line),
+            ...report.invalid.map((entry) => `  - ${entry.id}: ${entry.error ?? ''}`),
+            ...(report.craftAvailable ? [] : ['- ' + t('diagnostics.craftMissing')])
+          ].join('\n');
+          let copied = false;
+          try {
+            await globalThis.navigator.clipboard.writeText(text);
+            copied = true;
+          } catch {
+            copied = false;
+          }
+          if (mountState.mounted) setDiagCopy({ text, copied });
+        };
+
         const loadDiagnostics = async () => {
+          setDiagCopy(null);
           setDiagnosticsState({ open: true, loading: true, report: null, error: null });
           try {
             const reply = await fetchJson(DIAGNOSTICS_ROUTE);
@@ -1845,6 +1948,7 @@ window.__ModuleLoader__.load({
         const total = roles?.length ?? 0;
         const routedCount = roles?.filter((role) => role.provider && role.model && role.model !== 'inherit').length ?? 0;
         const disabledCount = roles?.filter((role) => role.disabled === true).length ?? 0;
+        const noFallbackCount = roles?.filter((role) => statusOf(role) === 'routed' && !role.fallbackProvider).length ?? 0;
         const countOf = (id) => baseSections.find((section) => section.id === id)?.roles.length ?? 0;
 
         const breakdownOf = (id) => {
@@ -2007,6 +2111,28 @@ window.__ModuleLoader__.load({
             messageText(message),
             message.key === 'error.conflict' ? h('button', { type: 'button', onClick: () => retryAfterConflict(role.id), style: { ...buttonStyle, fontSize: 11, padding: '4px 8px', alignSelf: 'flex-start' }, 'aria-label': t('error.action.regetAria', { name: role.name }) }, t('error.action.reget')) : null,
             message.key === 'error.conflict' && message.params?.effortHint ? h('div', { style: { fontSize: 11 } }, t('error.hint.effort')) : null) : null;
+          const copySources = (roles ?? []).filter((entry) => entry.id !== role.id).sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
+          const copyRouteSelect = copySources.length > 0 ? h('select', {
+            value: '',
+            disabled: busy || readonlyMode,
+            style: { ...controlStyle, width: 'auto', fontSize: 11 },
+            'aria-label': t('copyRoute.aria', { name: role.name }),
+            onChange: (event) => {
+              const source = copySources.find((entry) => entry.id === event.target.value);
+              if (!source) return;
+              const from = drafts?.[source.id] ?? normalizeDraft(source);
+              setDraft(role.id, { provider: from.provider, model: from.model, reasoningEffort: from.reasoningEffort, fallbackProvider: from.fallbackProvider, fallbackModel: from.fallbackModel });
+              setMessages((current) => ({ ...current, [role.id]: { kind: 'ok', key: 'copyRoute.done', params: { name: source.name } } }));
+            }
+          },
+            h('option', { value: '' }, t('copyRoute.placeholder')),
+            ...copySources.map((entry) => h('option', { value: entry.id }, entry.name))) : null;
+          const noFallbackBadge = !isInherit && !draft.disabled && draft.fallbackProvider === ''
+            ? h('span', { title: t('field.fallbackHelp'), style: statusBadgeStyle({ background: '#f59e0b1f' }) }, h('span', { style: dotStyle('#f59e0b') }), t('card.noFallback'))
+            : null;
+          const fallbackSameHint = state.fallbackSame
+            ? h('span', { role: 'status', style: { fontSize: 11, color: 'var(--dsw-alias-state-warning-primary, #f59e0b)' } }, t('card.fallbackSame'))
+            : null;
           const nameChildren = [role.name, draft.disabled ? t('card.disabledSuffix') : '', dirty ? t('card.dirtySuffix') : ''];
 
           if (compact) {
@@ -2017,7 +2143,9 @@ window.__ModuleLoader__.load({
             },
               h('span', { title: describe(role) ?? role.name, style: { fontSize: 13, fontWeight: 600, color: 'var(--dsw-alias-label-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 } }, ...nameChildren),
               inheritHint ? h('span', { style: { fontSize: 11, color: 'var(--dsw-alias-label-tertiary)', flex: 'none' } }, inheritHint) : null,
+              fallbackSameHint,
               tierBadge,
+              noFallbackBadge,
               sealDot,
               h('span', { style: statusBadgeStyle(tone) }, h('span', { style: dotStyle(tone.dot) }), t(tone.key)),
               providerSelect,
@@ -2039,6 +2167,7 @@ window.__ModuleLoader__.load({
                 h('span', { title: role.name, style: { fontSize: 13, fontWeight: 600, color: 'var(--dsw-alias-label-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, ...nameChildren)),
               h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, flex: 'none' } },
                 tierBadge,
+                noFallbackBadge,
                 sealDot,
                 h('span', { style: statusBadgeStyle(tone) }, h('span', { style: dotStyle(tone.dot) }), t(tone.key)))),
             describe(role) ? renderDescription(describe(role), phaseTone) : null,
@@ -2047,11 +2176,13 @@ window.__ModuleLoader__.load({
               renderField(t('field.provider'), t('field.providerHelp'), providerSelect),
               renderField(t('field.model'), t('field.modelHelp'), modelSelect),
               renderField(t('field.effort'), t('field.effortHelp'), effortSelect),
-              renderField(t('field.fallback'), t('field.fallbackHelp'), h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 8 } }, fallbackProviderSelect, fallbackModelSelect))),
+              renderField(t('field.fallback'), t('field.fallbackHelp'), h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 8 } }, fallbackProviderSelect, fallbackModelSelect)),
+              fallbackSameHint),
             effortEntry?.status === 'error' ? h('div', { style: { fontSize: 11, color: 'var(--dsw-alias-label-tertiary)' } }, t('effort.errorLine', { error: effortEntry.error })) : null,
             messageBlock,
             h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, borderTop: '1px solid var(--dsw-alias-border-l1)', paddingTop: 12 } },
               disabledControl,
+              copyRouteSelect,
               undoButton,
               saveButton));
         };
@@ -2092,7 +2223,8 @@ window.__ModuleLoader__.load({
                 h('span', { style: statStyle }, String(total)), t('header.countRoles'),
                 h('span', { style: statStyle }, String(routedCount)), t('header.countRouted'),
                 h('span', { style: statStyle }, String(total - routedCount)), t('header.countInherit'),
-                h('span', { style: statStyle }, String(disabledCount)), t('header.countDisabled'))),
+                h('span', { style: statStyle }, String(disabledCount)), t('header.countDisabled'),
+                noFallbackCount > 0 ? h('span', { style: { color: 'var(--dsw-alias-state-warning-primary, #f59e0b)' } }, t('header.countNoFallback', { n: String(noFallbackCount) })) : null)),
             h('select', {
               value: localeOverride ?? '',
               onChange: onLocaleChange,
@@ -2146,6 +2278,18 @@ window.__ModuleLoader__.load({
               profileExportText !== null
                 ? h('textarea', { readOnly: true, rows: 6, value: profileExportText, onChange: () => {}, style: { ...controlStyle, fontFamily: 'monospace', fontSize: 11, marginTop: 8 } })
                 : null,
+              groups.length > 0 ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 } },
+                h('div', { style: { fontSize: 12, fontWeight: 600, color: 'var(--dsw-alias-label-primary)' } }, t('preset.title')),
+                h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' } },
+                  h('select', { value: preset.goal, 'aria-label': t('preset.title'), style: { ...controlStyle, width: 'auto', fontSize: 11 }, onChange: (event) => setPreset((current) => ({ ...current, goal: event.target.value, pending: null })) },
+                    ...['economy', 'balanced', 'rigorous'].map((goal) => h('option', { value: goal }, t('preset.' + goal)))),
+                  ...['fast', 'deep'].map((slot) => h('select', { key: slot, value: preset[slot], 'aria-label': t('preset.' + slot), style: { ...controlStyle, width: 'auto', fontSize: 11 }, onChange: (event) => setPreset((current) => ({ ...current, [slot]: event.target.value, pending: null })) },
+                    h('option', { value: '' }, t('preset.' + slot)), ...presetPairOptions)),
+                  h('button', { type: 'button', disabled: preset.fast === '' || preset.deep === '' || readonlyMode || importing || !roles, onClick: () => setPreset((current) => ({ ...current, pending: presetDocOf(current.goal, current.fast, current.deep) })), style: { ...buttonStyle, fontSize: 11, padding: '4px 8px' } }, t('preset.review'))),
+                preset.pending !== null ? h('div', { role: 'status', style: { display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', fontSize: 12, color: 'var(--dsw-alias-label-secondary)' } },
+                  h('span', {}, t('preset.confirm', { goal: t('preset.' + preset.goal), count: String(Object.keys(preset.pending.roles).length) })),
+                  h('button', { type: 'button', disabled: readonlyMode || importing, onClick: () => { const doc = preset.pending; setPreset((current) => ({ ...current, pending: null })); runImport(doc); }, style: { ...buttonStyle, fontSize: 11, padding: '4px 8px' } }, t('preset.apply')),
+                  h('button', { type: 'button', onClick: () => setPreset((current) => ({ ...current, pending: null })), style: { ...buttonStyle, fontSize: 11, padding: '4px 8px' } }, t('batch.cancel'))) : null) : null,
               h('details', {
                 onToggle: (event) => { if (!event.target.open) setEventsState((current) => ({ ...current, open: false })); else if (eventsState.open === false) loadEvents(); },
                 style: { marginTop: 4 }
@@ -2177,19 +2321,15 @@ window.__ModuleLoader__.load({
                         ? h('div', {}, t('diagnostics.craftMissing'))
                         : null,
                   diagnosticsState.report !== null && diagnosticsState.error === null
-                    ? diagnosticsState.report.missing.length === 0
-                      && diagnosticsState.report.invalid.length === 0
-                      && diagnosticsState.report.outsideCatalog.length === 0
-                      && diagnosticsState.report.fallbackOutsideCatalog.length === 0
-                      && diagnosticsState.report.drift.length === 0
-                      ? h('div', {}, t('diagnostics.ok'))
-                      : [
-                          diagnosticsState.report.missing.length > 0 ? h('div', { key: 'missing' }, t('diagnostics.missing', { ids: diagnosticsState.report.missing.join(', ') })) : null,
-                          diagnosticsState.report.invalid.length > 0 ? h('div', { key: 'invalid' }, t('diagnostics.invalid', { ids: diagnosticsState.report.invalid.map((entry) => entry.id).join(', ') })) : null,
-                          diagnosticsState.report.outsideCatalog.length > 0 ? h('div', { key: 'outsideCatalog' }, t('diagnostics.outsideCatalog', { ids: diagnosticsState.report.outsideCatalog.join(', ') })) : null,
-                          diagnosticsState.report.fallbackOutsideCatalog.length > 0 ? h('div', { key: 'fallbackOutsideCatalog' }, t('diagnostics.fallbackOutsideCatalog', { ids: diagnosticsState.report.fallbackOutsideCatalog.join(', ') })) : null,
-                          diagnosticsState.report.drift.length > 0 ? h('div', { key: 'drift' }, t('diagnostics.drift', { ids: diagnosticsState.report.drift.join(', ') })) : null
-                        ]
+                    ? [
+                        ...diagnosticsLinesOf(diagnosticsState.report).map(([key, line]) => h('div', { key }, line)),
+                        h('div', { key: 'copy', style: { display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' } },
+                          h('button', { type: 'button', onClick: copyDiagnostics, style: { ...buttonStyle, fontSize: 11, padding: '4px 8px' } }, t('diagnostics.copy')),
+                          diagCopy !== null ? h('span', { role: 'status' }, t(diagCopy.copied ? 'diagnostics.copied' : 'diagnostics.copyFallback')) : null),
+                        diagCopy !== null && !diagCopy.copied
+                          ? h('textarea', { key: 'copyText', readOnly: true, rows: 6, value: diagCopy.text, onChange: () => {}, style: { ...controlStyle, fontFamily: 'monospace', fontSize: 11 } })
+                          : null
+                      ]
                     : null)))),
           h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' } },
             h('input', { type: 'search', value: search, onChange: (event) => setSearch(event.target.value), placeholder: t('search.placeholder'), 'aria-label': t('search.aria'), style: { ...controlStyle, width: 'auto', flex: '1 1 200px', minWidth: 0 } }),

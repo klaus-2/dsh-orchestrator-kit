@@ -1229,6 +1229,10 @@ async function apply(ctx, config = {}) {
       } catch (error) {
         return json({ ok: false, error: safeErrorText(error) }, 400);
       }
+      if ((hasRoute || hasFallback) && nextCard.fallback && nextCard.model !== 'inherit'
+        && nextCard.provider === nextCard.fallback.provider && nextCard.model === nextCard.fallback.model) {
+        return json({ ok: false, error: `the fallback repeats the primary route: ${nextCard.provider}/${nextCard.model}` }, 409);
+      }
       if (next === text) {
         let freshInfo;
         try {

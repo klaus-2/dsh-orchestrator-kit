@@ -11,6 +11,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Duplicate-fallback guard: a fallback that repeats the primary provider/model is flagged on the card (both densities) and blocks Save; the route handler answers 409 when a route or fallback write would leave the pair identical, while disabled-only and effort-only saves stay accepted for existing cards
+- No-fallback badge: routed, enabled roles without a fallback carry a "No fallback" badge, and the header summary adds the count of those roles when it is above zero
+- Copy installed-card diagnostics: a button under the diagnostics list copies the report as Markdown ready for an issue (one line per problem, the redacted parse error of each invalid card); when the clipboard is unavailable the text appears in a read-only box
+- Copy route between roles: a "Copy route from…" select on each card fills the draft with another role's provider, model, reasoning effort and fallback; nothing is written until Save, and the disabled flag is never copied
+- Ready-made profiles: Economy, Balance and Rigorous review build a routing profile from a fast and a strong model picked from the live catalog (Balance sends deep-tier roles to the strong model, the other model becomes each role's fallback); Review shows a confirmation and Apply runs the existing profile-import loop, keeping each role's disabled flag and resetting effort to auto
+
+### Changed
+
+- `client.js` byte budget: the versioned ceiling rises from 147456 bytes (144 KiB) to 163840 bytes (160 KiB) for the five panel features above, measured at 156611 bytes (7229 bytes of headroom)
+
 ## [0.3.0] - 2026-11-23
 
 ### Added

@@ -36,7 +36,7 @@ const PKG = JSON.parse(readFileSync(path.join(packageDir, 'package.json'), 'utf8
 
 const COVERAGE_STATEMENT_FLOOR = 0.70;
 const COVERAGE_FUNCTION_FLOOR = 0.60;
-const CLIENT_BYTE_CEILING = 147456;
+const CLIENT_BYTE_CEILING = 163840;
 const coverageDirArg = process.argv.find((arg) => arg.startsWith('--coverage-dir='));
 const isCoverageReport = process.argv.includes('--coverage-report');
 const coverageRoot = coverageDirArg ? coverageDirArg.slice('--coverage-dir='.length) : null;
@@ -1175,6 +1175,9 @@ await test('HTTP API: POST .route fallback set/reset validates against the live 
       assert.equal(unknownProvider409.status, 409);
       const unknownModel409 = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'planner', fallback: { provider: EXAMPLE_HUB, model: 'flash-z' }, expectedMtimeMs: planner0.mtimeMs }) });
       assert.equal(unknownModel409.status, 409);
+      const sameAsRoute409 = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'planner', fallback: { provider: EXAMPLE_HUB, model: 'flash-a' }, expectedMtimeMs: planner0.mtimeMs }) });
+      assert.equal(sameAsRoute409.status, 409, 'a fallback equal to the primary route must be refused');
+      assert.match(sameAsRoute409.data.error, /repeats the primary route/);
 
       const set = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'planner', fallback: { provider: EXAMPLE_HUB, model: 'flash-b' }, expectedMtimeMs: planner0.mtimeMs }) });
       assert.equal(set.status, 200);
@@ -1185,6 +1188,9 @@ await test('HTTP API: POST .route fallback set/reset validates against the live 
       const again = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'planner', fallback: { provider: EXAMPLE_HUB, model: 'flash-b' }, expectedMtimeMs: set.data.role.mtimeMs }) });
       assert.equal(again.status, 200);
       assert.equal(again.data.unchanged, true, 'an identical fallback must answer unchanged without a write');
+      const routeOntoFallback409 = await call(`/api/${NS}.route`, { method: 'POST', body: JSON.stringify({ id: 'planner', provider: EXAMPLE_HUB, model: 'flash-b', expectedMtimeMs: set.data.role.mtimeMs }) });
+      assert.equal(routeOntoFallback409.status, 409, 'moving the route onto the stored fallback must be refused');
+      assert.match(routeOntoFallback409.data.error, /repeats the primary route/);
 
       const roles1 = await call(`/api/${NS}.roles`);
       const planner1 = roles1.data.roles.find((r) => r.id === 'planner');
@@ -2721,7 +2727,8 @@ function mountVmClient(fetchHandler, options = {}) {
     Number,
     String,
     Symbol,
-    Error
+    Error,
+    ...(options.clipboard ? { navigator: { clipboard: options.clipboard } } : {})
   });
   runInContext(source, sandbox);
   assert.equal(registeredModule.id, PKG.name);
@@ -2967,7 +2974,8 @@ await test('client.js: runtime module registration, phase grouping, save, 409, r
     assert.ok(sectionTitles.includes(heading), `rendered settings must include section title node ${heading}`);
   }
   assert.ok(texts.includes('Refresh'));
-  assert.ok(texts.indexOf('alpha-custom') < texts.indexOf('zeta-custom'), 'Other roles must sort alphabetically');
+  const cardOrder = findNodes(tree, (n) => typeof n.props?.key === 'string' && n.props.onFocusCapture !== undefined).map((n) => n.props.key);
+  assert.ok(cardOrder.indexOf('alpha-custom') !== -1 && cardOrder.indexOf('alpha-custom') < cardOrder.indexOf('zeta-custom'), 'Other roles must sort alphabetically');
 
   const effortCalls = vm1.fetchCalls.filter((c) => c.url.startsWith(`/api/${NS}.efforts`));
   const uniquePairs = new Set(
@@ -3421,6 +3429,12 @@ const PANEL_KEYS = [
   'density.compact',
   'tab.breakdownTitle',
   'card.inheritHint',
+  'card.fallbackSame',
+  'card.noFallback',
+  'copyRoute.placeholder',
+  'copyRoute.aria',
+  'copyRoute.done',
+  'header.countNoFallback',
   'card.dirtySuffix',
   'card.sealTitle',
   'undo.aria',
@@ -3456,6 +3470,18 @@ const PANEL_KEYS = [
   'diagnostics.drift',
   'diagnostics.craftMissing',
   'diagnostics.loadError',
+  'diagnostics.copy',
+  'diagnostics.copied',
+  'diagnostics.copyFallback',
+  'preset.title',
+  'preset.economy',
+  'preset.balanced',
+  'preset.rigorous',
+  'preset.fast',
+  'preset.deep',
+  'preset.review',
+  'preset.confirm',
+  'preset.apply',
   'readonly.title',
   'readonly.notice',
   'support.star',
@@ -3909,6 +3935,82 @@ await test('i18n structural gate: every panel string renders through t (sentinel
   assert.ok(collectText(treeTiming).includes('⟦legend.timing⟧'), 'server-timing responses must render legend.timing through t');
   appTiming.unmount();
 
+  const vmSameFallback = mountVmClient(async (url) => {
+    if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles: [{ ...gateRoles[0], fallbackProvider: EXAMPLE_HUB, fallbackModel: 'flash-a' }] }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify(gateCatalog), { status: 200 });
+    if (url.startsWith(`/api/${NS}.efforts`)) return new Response(JSON.stringify(gateEfforts), { status: 200 });
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  }, { sentinelBind: true });
+  const appSameFallback = vmSameFallback.mountInstance();
+  const treeSameFallback = await appSameFallback.settle();
+  scanTree(treeSameFallback);
+  assert.ok(collectText(treeSameFallback).includes('⟦card.fallbackSame⟧'), 'a fallback equal to the primary route must render card.fallbackSame through t');
+  appSameFallback.unmount();
+
+  const vmCopyRoute = mountVmClient(async (url) => {
+    if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles: gateRoles }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify(gateCatalog), { status: 200 });
+    if (url.startsWith(`/api/${NS}.efforts`)) return new Response(JSON.stringify(gateEfforts), { status: 200 });
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  }, { sentinelBind: true });
+  const appCopyRoute = vmCopyRoute.mountInstance();
+  let treeCopyRoute = await appCopyRoute.settle();
+  const copySelectOf = (tree) => findNodes(cardOf(tree, 'zeta-custom'), (n) => n.type === 'select' && String(n.props['aria-label'] ?? '').includes('copyRoute.aria'))[0];
+  assert.ok(copySelectOf(treeCopyRoute), 'each card must offer a copy-route select');
+  copySelectOf(treeCopyRoute).props.onChange({ target: { value: 'planner' } });
+  treeCopyRoute = await appCopyRoute.settle();
+  scanTree(treeCopyRoute);
+  assert.ok(collectText(treeCopyRoute).join('').includes('⟦copyRoute.done⟧'), 'a copied route must render copyRoute.done through t');
+  assert.ok(findNodes(cardOf(treeCopyRoute, 'zeta-custom'), (n) => n.type === 'select' && n.props.value === EXAMPLE_HUB).length > 0, 'the copy must fill the target draft with the source provider');
+  assert.equal(routePostsOf(vmCopyRoute).length, 0, 'copying a route must never save until the user presses Save');
+  appCopyRoute.unmount();
+
+  const vmPreset = mountVmClient(async (url, opts) => {
+    if (url === `/api/${NS}.route`) {
+      const body = JSON.parse(opts.body);
+      const base = gateRoles.find((role) => role.id === body.id);
+      return new Response(JSON.stringify({ ok: true, role: { ...base, provider: body.provider, model: body.model, fallbackProvider: body.fallback?.provider ?? null, fallbackModel: body.fallback?.model ?? null, disabled: body.disabled, mtimeMs: 2000 } }), { status: 200 });
+    }
+    if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles: gateRoles }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify(gateCatalog), { status: 200 });
+    if (url.startsWith(`/api/${NS}.efforts`)) return new Response(JSON.stringify(gateEfforts), { status: 200 });
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  }, { sentinelBind: true });
+  const appPreset = vmPreset.mountInstance();
+  let treePreset = await appPreset.settle();
+  scanTree(treePreset);
+  const presetSelectOf = (tree, key) => findNodes(tree, (n) => n.type === 'select' && n.props['aria-label'] === `⟦${key}⟧`)[0];
+  const presetButtonOf = (tree, key) => findNodes(tree, (n) => n.type === 'button' && collectText(n).join('') === `⟦${key}⟧`)[0];
+  for (const key of ['preset.title', 'preset.economy', 'preset.balanced', 'preset.rigorous', 'preset.fast', 'preset.deep', 'preset.review']) {
+    assert.ok(collectText(treePreset).join('').includes(`⟦${key}⟧`), `${key} must render through t`);
+  }
+  assert.equal(presetButtonOf(treePreset, 'preset.review').props.disabled, true, 'review stays disabled until both models are picked');
+  presetSelectOf(treePreset, 'preset.title').props.onChange({ target: { value: 'balanced' } });
+  presetSelectOf(appPreset.renderCycle(), 'preset.fast').props.onChange({ target: { value: JSON.stringify([EXAMPLE_HUB, 'flash-a']) } });
+  presetSelectOf(appPreset.renderCycle(), 'preset.deep').props.onChange({ target: { value: JSON.stringify([EXAMPLE_HUB, 'flash-b']) } });
+  treePreset = appPreset.renderCycle();
+  presetButtonOf(treePreset, 'preset.review').props.onClick();
+  treePreset = appPreset.renderCycle();
+  scanTree(treePreset);
+  assert.ok(collectText(treePreset).join('').includes('⟦preset.confirm⟧'), 'a reviewed preset must render preset.confirm through t');
+  assert.equal(routePostsOf(vmPreset).length, 0, 'reviewing a preset must never save');
+  presetButtonOf(treePreset, 'batch.cancel').props.onClick();
+  treePreset = appPreset.renderCycle();
+  assert.ok(!collectText(treePreset).join('').includes('⟦preset.confirm⟧'), 'cancel must drop the pending preset');
+  presetButtonOf(treePreset, 'preset.review').props.onClick();
+  treePreset = appPreset.renderCycle();
+  await presetButtonOf(treePreset, 'preset.apply').props.onClick();
+  treePreset = await appPreset.settle();
+  scanTree(treePreset);
+  const presetPosts = routePostsOf(vmPreset).map((call) => JSON.parse(call.opts.body));
+  assert.equal(presetPosts.length, gateRoles.length, 'applying a preset must post every role through the import loop');
+  const plannerPost = presetPosts.find((body) => body.id === 'planner');
+  assert.deepEqual([plannerPost.model, plannerPost.fallback], ['flash-b', { provider: EXAMPLE_HUB, model: 'flash-a' }], 'balance routes deep-tier roles to the strong model with the fast fallback');
+  const alphaPost = presetPosts.find((body) => body.id === 'alpha-custom');
+  assert.deepEqual([alphaPost.model, alphaPost.fallback?.model, alphaPost.disabled], ['flash-a', 'flash-b', true], 'balance routes fast-tier roles to the fast model and keeps the disabled flag');
+  assert.ok(collectText(treePreset).join('').includes('⟦profile.applied⟧'), 'an applied preset must report through the import notice');
+  appPreset.unmount();
+
   let resolveEffort = null;
   let effortStarted = null;
   const effortReady = new Promise((resolve) => { effortStarted = resolve; });
@@ -4165,14 +4267,15 @@ await test('i18n structural gate: every panel string renders through t (sentinel
     { reply: () => new Response(JSON.stringify({ ok: true, missing: [], invalid: [], outsideCatalog: [], fallbackOutsideCatalog: [], drift: [], craftAvailable: false }), { status: 200 }), keys: ['diagnostics.ok', 'diagnostics.craftMissing'] },
     { reply: () => new Response(JSON.stringify({ ok: false, error: 'diagnostics boom' }), { status: 500 }), keys: ['diagnostics.loadError'] }
   ];
-  for (const diagnosticsMode of diagnosticsGateModes) {
+  const copiedTexts = [];
+  for (const [modeIndex, diagnosticsMode] of diagnosticsGateModes.entries()) {
     const vmDiagGate = mountVmClient(async (url) => {
       if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles: gateRoles }), { status: 200 });
       if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify(gateCatalog), { status: 200 });
       if (url.startsWith(`/api/${NS}.efforts`)) return new Response(JSON.stringify(gateEfforts), { status: 200 });
       if (url.startsWith(`/api/${NS}.diagnostics`)) return diagnosticsMode.reply();
       return new Response(JSON.stringify({ ok: false }), { status: 404 });
-    }, { sentinelBind: true });
+    }, { sentinelBind: true, ...(modeIndex === 0 ? { clipboard: { writeText: async (text) => { copiedTexts.push(text); } } } : {}) });
     const appDiagGate = vmDiagGate.mountInstance();
     const treeDiagGate = await appDiagGate.settle();
     const diagDetailsGate = findNodes(treeDiagGate, (n) => n.type === 'details' && (n.children ?? []).some((child) => child.type === 'summary' && collectText(child).join('').includes('⟦diagnostics.summary⟧')))[0];
@@ -4183,8 +4286,24 @@ await test('i18n structural gate: every panel string renders through t (sentinel
     for (const key of diagnosticsMode.keys) {
       assert.ok(collectText(treeDiagLoaded).join('').includes(`⟦${key}⟧`), `${key} must render through t in the diagnostics drive`);
     }
+    const copyButton = findNodes(treeDiagLoaded, (n) => n.type === 'button' && collectText(n).join('') === '⟦diagnostics.copy⟧')[0];
+    if (modeIndex < 2) {
+      assert.ok(copyButton, 'a loaded report must offer the copy button');
+      await copyButton.props.onClick();
+      const treeCopied = await appDiagGate.settle();
+      scanTree(treeCopied);
+      const copyKey = modeIndex === 0 ? 'diagnostics.copied' : 'diagnostics.copyFallback';
+      assert.ok(collectText(treeCopied).join('').includes(`⟦${copyKey}⟧`), `${copyKey} must render through t after copying`);
+      assert.equal(findNodes(treeCopied, (n) => n.type === 'textarea').length, modeIndex === 0 ? 0 : 1, 'the text box appears only when the clipboard is unavailable');
+    } else {
+      assert.equal(copyButton, undefined, 'a failed load must not offer a copy');
+    }
     appDiagGate.unmount();
   }
+  assert.equal(copiedTexts.length, 1, 'the clipboard must receive exactly one report');
+  assert.ok(copiedTexts[0].startsWith('### ⟦diagnostics.summary⟧'), 'the copied report must open with a Markdown heading');
+  assert.ok(copiedTexts[0].includes('- ⟦diagnostics.missing⟧') && copiedTexts[0].includes('- ⟦diagnostics.drift⟧'), 'the copied report must list every problem line');
+  assert.ok(copiedTexts[0].includes('  - alpha-custom: bad yaml'), 'the copied report must carry the redacted parse error of each invalid card');
 
   const vmReadonlyGate = mountVmClient(async (url) => {
     if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles: gateRoles, readOnly: true }), { status: 200 });
@@ -6683,12 +6802,12 @@ await test('recommended model tier: every shipped role carries one tier, custom 
   assert.ok(collectText(ptBadges[0]).includes(ptPanel['tier.deep']), 'the pt-BR badge must carry the pt-BR label');
 });
 
-await test('client.js byte budget: measured size stays under the versioned 147456-byte ceiling with no self-adjustment', () => {
+await test('client.js byte budget: measured size stays under the versioned 163840-byte ceiling with no self-adjustment', () => {
   const size = statSync(path.join(packageDir, 'client.js')).size;
-  assert.equal(size, 146785, 'client.js must stay byte-identical at the measured 146785 bytes');
-  assert.equal(CLIENT_BYTE_CEILING, 147456, 'the versioned ceiling must stay 147456 bytes (144 KiB)');
-  assert.equal(CLIENT_BYTE_CEILING - size, 671, 'the headroom must stay 671 bytes');
-  assert.ok(size <= CLIENT_BYTE_CEILING, `client.js is ${size} bytes; ceiling is ${CLIENT_BYTE_CEILING} (144 KiB) — bump the versioned ceiling by explicit commit or split a chunk (C17)`);
+  assert.equal(size, 156611, 'client.js must stay byte-identical at the measured 156611 bytes');
+  assert.equal(CLIENT_BYTE_CEILING, 163840, 'the versioned ceiling must stay 163840 bytes (160 KiB)');
+  assert.equal(CLIENT_BYTE_CEILING - size, 7229, 'the headroom must stay 7229 bytes');
+  assert.ok(size <= CLIENT_BYTE_CEILING, `client.js is ${size} bytes; ceiling is ${CLIENT_BYTE_CEILING} (160 KiB) — bump the versioned ceiling by explicit commit or split a chunk (C17)`);
 });
 
 await test('docs-parity.mjs: three READMEs share headings, table rows and fenced blocks; importing has no side effects', async () => {
@@ -6810,7 +6929,7 @@ await test('pass-5 docs and static markers: six reference docs carry their secti
   assert.deepEqual(workflowBlock('publish.yml'), expectedBlock, 'publish.yml must carry the byte-identical coverage block');
 
   const testerText = readFileSync(path.join(packageDir, 'scripts', 'test.mjs'), 'utf8');
-  assert.ok(testerText.includes('147456'), 'the versioned byte budget constant must be present');
+  assert.ok(testerText.includes('163840'), 'the versioned byte budget constant must be present');
 });
 
 await test('repo hygiene: no backup artifacts and zero machine tokens in any repo file', () => {
