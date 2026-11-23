@@ -36,7 +36,7 @@ const PKG = JSON.parse(readFileSync(path.join(packageDir, 'package.json'), 'utf8
 
 const COVERAGE_STATEMENT_FLOOR = 0.70;
 const COVERAGE_FUNCTION_FLOOR = 0.60;
-const CLIENT_BYTE_CEILING = 163840;
+const CLIENT_BYTE_CEILING = 172032;
 const coverageDirArg = process.argv.find((arg) => arg.startsWith('--coverage-dir='));
 const isCoverageReport = process.argv.includes('--coverage-report');
 const coverageRoot = coverageDirArg ? coverageDirArg.slice('--coverage-dir='.length) : null;
@@ -2780,10 +2780,15 @@ function mountVmClient(fetchHandler, options = {}) {
       pluginDisposers.push(dispose);
       return dispose;
     },
-    ...(options.pluginManager === undefined ? {} : {
+    ...(options.pluginManager === undefined && options.configForms === undefined ? {} : {
       inject(deps, setup) {
+        if (deps.includes('configForms')) {
+          assert.deepEqual([...deps], ['configForms'], 'the limits wiring must inject configForms alone');
+          if (options.configForms !== undefined) setup({ configForms: options.configForms, effect(fn2) { return fn2(); } });
+          return { dispose() {} };
+        }
         assert.deepEqual([...deps], ['remote.pluginManager'], 'the update wiring must inject remote.pluginManager');
-        setup({ remote: { pluginManager: options.pluginManager }, effect(fn2) { return fn2(); } });
+        if (options.pluginManager !== undefined) setup({ remote: { pluginManager: options.pluginManager }, effect(fn2) { return fn2(); } });
         return { dispose() {} };
       }
     })
@@ -3482,6 +3487,15 @@ const PANEL_KEYS = [
   'preset.review',
   'preset.confirm',
   'preset.apply',
+  'limits.title',
+  'limits.current',
+  'limits.low',
+  'limits.ok',
+  'limits.apply',
+  'limits.confirm',
+  'limits.confirmApply',
+  'limits.reset',
+  'limits.failed',
   'readonly.title',
   'readonly.notice',
   'support.star',
@@ -4010,6 +4024,60 @@ await test('i18n structural gate: every panel string renders through t (sentinel
   assert.deepEqual([alphaPost.model, alphaPost.fallback?.model, alphaPost.disabled], ['flash-a', 'flash-b', true], 'balance routes fast-tier roles to the fast model and keeps the disabled flag');
   assert.ok(collectText(treePreset).join('').includes('⟦profile.applied⟧'), 'an applied preset must report through the import notice');
   appPreset.unmount();
+
+  const limitsOps = [];
+  let limitsAccept = true;
+  const limitsListeners = new Set();
+  let limitsSnap = { status: 'ready', value: { maxDepth: 5, maxActiveSubagents: 8 }, base: { maxDepth: 25, maxActiveSubagents: 8 }, user: { maxDepth: 5 }, revision: 1, writable: true };
+  const fakeLimitsForm = {
+    getSnapshot: () => limitsSnap,
+    subscribe: (listener) => { limitsListeners.add(listener); return () => limitsListeners.delete(listener); },
+    mutate: async (ops) => {
+      limitsOps.push(ops);
+      if (!limitsAccept) return false;
+      const value = { ...limitsSnap.value };
+      const user = { ...limitsSnap.user };
+      for (const op of ops) {
+        if (op.op === 'set') { value[op.path[0]] = op.value; user[op.path[0]] = op.value; }
+        else { value[op.path[0]] = limitsSnap.base[op.path[0]]; delete user[op.path[0]]; }
+      }
+      limitsSnap = { ...limitsSnap, value, user, revision: limitsSnap.revision + 1 };
+      for (const listener of limitsListeners) listener();
+      return true;
+    }
+  };
+  const vmLimits = mountVmClient(async (url) => {
+    if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles: gateRoles }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify(gateCatalog), { status: 200 });
+    if (url.startsWith(`/api/${NS}.efforts`)) return new Response(JSON.stringify(gateEfforts), { status: 200 });
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  }, { sentinelBind: true, configForms: { get: (id) => { assert.equal(id, 'subagent', 'the limits card must bind the subagent settings section'); return fakeLimitsForm; } } });
+  const appLimits = vmLimits.mountInstance();
+  let treeLimits = await appLimits.settle();
+  scanTree(treeLimits);
+  const limitsText = (tree) => collectText(tree).join('');
+  const limitsButtonOf = (tree, key) => findNodes(tree, (n) => n.type === 'button' && collectText(n).join('') === `⟦${key}⟧`)[0];
+  for (const key of ['limits.title', 'limits.current', 'limits.low', 'limits.apply', 'limits.reset']) {
+    assert.ok(limitsText(treeLimits).includes(`⟦${key}⟧`), `${key} must render through t`);
+  }
+  limitsButtonOf(treeLimits, 'limits.apply').props.onClick();
+  treeLimits = appLimits.renderCycle();
+  scanTree(treeLimits);
+  assert.ok(limitsText(treeLimits).includes('⟦limits.confirm⟧'), 'apply must ask for confirmation first');
+  assert.equal(limitsOps.length, 0, 'asking for confirmation must not write the Harness settings');
+  await limitsButtonOf(treeLimits, 'limits.confirmApply').props.onClick();
+  treeLimits = await appLimits.settle();
+  scanTree(treeLimits);
+  assert.deepEqual(JSON.parse(JSON.stringify(limitsOps[0])), [{ op: 'set', path: ['maxDepth'], value: 8 }, { op: 'set', path: ['maxActiveSubagents'], value: 16 }], 'confirming must raise only the low limits in one mutation');
+  assert.ok(limitsText(treeLimits).includes('⟦limits.ok⟧'), 'raised limits must render limits.ok through t');
+  assert.equal(limitsButtonOf(treeLimits, 'limits.apply'), undefined, 'apply disappears once the limits suffice');
+  limitsAccept = false;
+  await limitsButtonOf(treeLimits, 'limits.reset').props.onClick();
+  treeLimits = await appLimits.settle();
+  scanTree(treeLimits);
+  assert.deepEqual(JSON.parse(JSON.stringify(limitsOps[1])), [{ op: 'unset', path: ['maxDepth'] }, { op: 'unset', path: ['maxActiveSubagents'] }], 'reset must clear both overrides');
+  assert.ok(limitsText(treeLimits).includes('⟦limits.failed⟧'), 'a refused write must render limits.failed through t');
+  appLimits.unmount();
 
   let resolveEffort = null;
   let effortStarted = null;
@@ -6802,12 +6870,12 @@ await test('recommended model tier: every shipped role carries one tier, custom 
   assert.ok(collectText(ptBadges[0]).includes(ptPanel['tier.deep']), 'the pt-BR badge must carry the pt-BR label');
 });
 
-await test('client.js byte budget: measured size stays under the versioned 163840-byte ceiling with no self-adjustment', () => {
+await test('client.js byte budget: measured size stays under the versioned 172032-byte ceiling with no self-adjustment', () => {
   const size = statSync(path.join(packageDir, 'client.js')).size;
-  assert.equal(size, 156611, 'client.js must stay byte-identical at the measured 156611 bytes');
-  assert.equal(CLIENT_BYTE_CEILING, 163840, 'the versioned ceiling must stay 163840 bytes (160 KiB)');
-  assert.equal(CLIENT_BYTE_CEILING - size, 7229, 'the headroom must stay 7229 bytes');
-  assert.ok(size <= CLIENT_BYTE_CEILING, `client.js is ${size} bytes; ceiling is ${CLIENT_BYTE_CEILING} (160 KiB) — bump the versioned ceiling by explicit commit or split a chunk (C17)`);
+  assert.equal(size, 164110, 'client.js must stay byte-identical at the measured 164110 bytes');
+  assert.equal(CLIENT_BYTE_CEILING, 172032, 'the versioned ceiling must stay 172032 bytes (168 KiB)');
+  assert.equal(CLIENT_BYTE_CEILING - size, 7922, 'the headroom must stay 7922 bytes');
+  assert.ok(size <= CLIENT_BYTE_CEILING, `client.js is ${size} bytes; ceiling is ${CLIENT_BYTE_CEILING} (168 KiB) — bump the versioned ceiling by explicit commit or split a chunk (C17)`);
 });
 
 await test('docs-parity.mjs: three READMEs share headings, table rows and fenced blocks; importing has no side effects', async () => {
@@ -6929,7 +6997,7 @@ await test('pass-5 docs and static markers: six reference docs carry their secti
   assert.deepEqual(workflowBlock('publish.yml'), expectedBlock, 'publish.yml must carry the byte-identical coverage block');
 
   const testerText = readFileSync(path.join(packageDir, 'scripts', 'test.mjs'), 'utf8');
-  assert.ok(testerText.includes('163840'), 'the versioned byte budget constant must be present');
+  assert.ok(testerText.includes('172032'), 'the versioned byte budget constant must be present');
 });
 
 await test('repo hygiene: no backup artifacts and zero machine tokens in any repo file', () => {

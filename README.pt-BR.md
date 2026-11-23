@@ -55,6 +55,17 @@ Duas escolhas pontuais continuam suas, e a página de configurações lembra as 
 
 O painel mantém o plugin atualizado. Cerca de 15 segundos após cada inicialização, ele verifica as releases do GitHub em busca de uma versão mais nova — uma verificação somente leitura, sem credenciais — e mostra o resultado em uma linha de atualizações na página de configurações. Nada é instalado automaticamente: a atualização passa pelo gerenciador de plugins do harness apenas quando você pressiona o botão de atualizar da linha, e a linha avisa quando o harness precisa ser reiniciado para terminar. Depois que uma versão é instalada, um diálogo de novidades mostra as notas de release no idioma do painel, uma vez por versão. Cópias que não foram instaladas pelo npm (pastas renomeadas ou vinculadas) aceitam apenas atualização manual: a linha informa a nova versão, mas a atualização é feita por Configurações → Plugins.
 
+## Limites de subagents
+
+O pipeline dev-flow aninha subagents (Lead → run-conductor → especialista → scout) e abre até quatro lanes de escrita, cada uma com scouts em paralelo. Duas configurações do plugin `@deepseek-ai/dsh-subagent` do DeepSeek Harness limitam isso, em **Configurações → Plugins**:
+
+| Configuração | Padrão do Harness | Recomendado para o orchestrator |
+| --- | --- | --- |
+| Profundidade máxima de recursão (`maxDepth`) | 25 | 8 ou mais |
+| Limite de paralelismo de subagents (`maxActiveSubagents`) | 8 | 16 ou mais |
+
+O cartão **Limites de subagents** no painel do Orchestrator mostra os valores atuais. Quando algum está abaixo do recomendado, **Aplicar limites recomendados** aumenta só os campos baixos depois de uma confirmação e nunca diminui um valor; **Restaurar padrões do Harness** remove as sobrescritas. Os dois gravam na mesma camada de patch do usuário que a página de Configurações edita, então o cartão e a página ficam sincronizados. Os limites são globais: valem para todo plugin que cria subagents.
+
 ## Bundle do pipeline Craft
 
 `craft/` entrega o pipeline como arquivos simples e portáteis, instalados automaticamente na ativação do plugin:

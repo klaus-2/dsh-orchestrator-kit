@@ -55,6 +55,17 @@ Two one-time picks remain yours, and the settings page reminds you of both:
 
 The panel keeps the plugin current. About 15 seconds after every startup it checks GitHub releases for a newer version — a read-only check, no credentials — and shows the result in an Updates row on the settings page. Nothing installs automatically: the update runs through the harness plugin manager only when you press the row's update button, and the row tells you when the harness needs a restart to finish. After a version is installed, a What's-new dialog shows its release notes in the panel language, once per version. Copies that were not installed from npm (renamed or linked folders) are manual-update-only: the row reports the new version, but updating goes through Settings → Plugins.
 
+## Subagent limits
+
+The dev-flow pipeline nests subagents (Lead → run-conductor → specialist → scout) and fans out up to four writer lanes, each with parallel scouts. Two DeepSeek Harness settings of the `@deepseek-ai/dsh-subagent` plugin cap that, under **Settings → Plugins**:
+
+| Setting | Harness default | Recommended for the orchestrator |
+| --- | --- | --- |
+| Maximum recursion depth (`maxDepth`) | 25 | 8 or more |
+| Subagent parallelism limit (`maxActiveSubagents`) | 8 | 16 or more |
+
+The **Subagent limits** card in the Orchestrator panel shows the current values. When either is below the recommendation, **Apply recommended limits** raises only the low fields after a confirmation and never lowers a value; **Restore Harness defaults** clears the overrides. Both write the same user patch layer the Settings page edits, so the card and the page stay in sync. The limits are global: they apply to every plugin that spawns subagents.
+
 ## The Craft pipeline bundle
 
 `craft/` ships the pipeline as plain, portable files, installed automatically at plugin activation:

@@ -18,10 +18,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Copy installed-card diagnostics: a button under the diagnostics list copies the report as Markdown ready for an issue (one line per problem, the redacted parse error of each invalid card); when the clipboard is unavailable the text appears in a read-only box
 - Copy route between roles: a "Copy route from…" select on each card fills the draft with another role's provider, model, reasoning effort and fallback; nothing is written until Save, and the disabled flag is never copied
 - Ready-made profiles: Economy, Balance and Rigorous review build a routing profile from a fast and a strong model picked from the live catalog (Balance sends deep-tier roles to the strong model, the other model becomes each role's fallback); Review shows a confirmation and Apply runs the existing profile-import loop, keeping each role's disabled flag and resetting effort to auto
+- Subagent limits card: the panel reads the DeepSeek Harness `subagent` settings (max depth, parallel subagents) through the host `configForms` service; when either is below what the orchestrator needs (depth 8, 16 in parallel) it offers "Apply recommended limits" behind a confirmation, raising only the low fields in one mutation and never lowering a value, plus "Restore Harness defaults" when an override exists; the card is hidden on hosts without that section
 
 ### Changed
 
-- `client.js` byte budget: the versioned ceiling rises from 147456 bytes (144 KiB) to 163840 bytes (160 KiB) for the five panel features above, measured at 156611 bytes (7229 bytes of headroom)
+- `client.js` byte budget: the versioned ceiling rises from 147456 bytes (144 KiB) to 172032 bytes (168 KiB) for the panel features above, measured at 164110 bytes (7922 bytes of headroom)
 
 ## [0.3.0] - 2026-11-23
 

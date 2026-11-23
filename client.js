@@ -184,6 +184,15 @@ window.__ModuleLoader__.load({
         'preset.review': 'Review',
         'preset.confirm': 'Apply “{goal}” to {count} roles? Every card is saved; adjust any card afterwards.',
         'preset.apply': 'Apply profile',
+        'limits.title': 'Subagent limits (DeepSeek Harness)',
+        'limits.current': 'Max depth: {depth} · Parallel subagents: {active}',
+        'limits.low': 'Below what the orchestrator needs: a depth of at least {depth} and at least {active} subagents in parallel.',
+        'limits.ok': 'Enough for the orchestrator (depth ≥ {depth}, parallel ≥ {active}).',
+        'limits.apply': 'Apply recommended limits',
+        'limits.confirm': 'Raise the global subagent limits in Settings → Plugins to depth {depth} and {active} in parallel? Values already higher stay as they are.',
+        'limits.confirmApply': 'Raise limits',
+        'limits.reset': 'Restore Harness defaults',
+        'limits.failed': 'The Harness refused the change; edit the limits in Settings → Plugins.',
         'readonly.title': 'Read-only mode',
         'readonly.notice': 'Saving is disabled by the server configuration (read-only mode). Controls are shown for reference.',
         'support.star': '⭐',
@@ -370,6 +379,15 @@ window.__ModuleLoader__.load({
         'preset.review': 'Revisar',
         'preset.confirm': 'Aplicar “{goal}” a {count} papéis? Todos os cards serão salvos; ajuste qualquer card depois.',
         'preset.apply': 'Aplicar perfil',
+        'limits.title': 'Limites de subagents (DeepSeek Harness)',
+        'limits.current': 'Profundidade máxima: {depth} · Subagents em paralelo: {active}',
+        'limits.low': 'Abaixo do que o orchestrator precisa: profundidade de pelo menos {depth} e pelo menos {active} subagents em paralelo.',
+        'limits.ok': 'Suficiente para o orchestrator (profundidade ≥ {depth}, paralelo ≥ {active}).',
+        'limits.apply': 'Aplicar limites recomendados',
+        'limits.confirm': 'Aumentar os limites globais de subagents em Configurações → Plugins para profundidade {depth} e {active} em paralelo? Valores já maiores ficam como estão.',
+        'limits.confirmApply': 'Aumentar limites',
+        'limits.reset': 'Restaurar padrões do Harness',
+        'limits.failed': 'O Harness recusou a alteração; ajuste os limites em Configurações → Plugins.',
         'readonly.title': 'Modo somente leitura',
         'readonly.notice': 'O salvamento está desativado pela configuração do servidor (modo somente leitura). Os controles aparecem apenas como referência.',
         'support.star': '⭐',
@@ -556,6 +574,15 @@ window.__ModuleLoader__.load({
         'preset.review': '预览',
         'preset.confirm': '将“{goal}”应用到 {count} 个角色？所有卡片都会保存；之后可单独调整。',
         'preset.apply': '应用配置',
+        'limits.title': '子代理限制（DeepSeek Harness）',
+        'limits.current': '最大深度：{depth} · 并行子代理：{active}',
+        'limits.low': '低于编排器所需：深度至少 {depth}，并行子代理至少 {active}。',
+        'limits.ok': '满足编排器需求（深度 ≥ {depth}，并行 ≥ {active}）。',
+        'limits.apply': '应用推荐限制',
+        'limits.confirm': '将设置 → 插件中的全局子代理限制提高到深度 {depth}、并行 {active}？已更高的值保持不变。',
+        'limits.confirmApply': '提高限制',
+        'limits.reset': '恢复 Harness 默认值',
+        'limits.failed': 'Harness 拒绝了此更改；请在设置 → 插件中调整限制。',
         'readonly.title': '只读模式',
         'readonly.notice': '保存已被服务器配置禁用（只读模式）。控件仅作参考。',
         'support.star': '⭐',
@@ -931,6 +958,16 @@ window.__ModuleLoader__.load({
 
     const effortKeyOf = (provider, model) => JSON.stringify([provider, model]);
 
+    const LIMITS_RECOMMENDED = { maxDepth: 8, maxActiveSubagents: 16 };
+    const subagentLimits = {
+      form: undefined,
+      listeners: new Set(),
+      bind(form) {
+        subagentLimits.form = form;
+        for (const listener of subagentLimits.listeners) listener();
+      }
+    };
+
     async function parseApiResponse(response, requireOkTrue = false) {
       let data = null;
       let invalidJson = false;
@@ -1203,6 +1240,19 @@ window.__ModuleLoader__.load({
         const [eventsState, setEventsState] = React.useState({ open: false, loading: false, events: [], skipped: 0, error: null });
         const [diagnosticsState, setDiagnosticsState] = React.useState({ open: false, loading: false, report: null, error: null });
         const [diagCopy, setDiagCopy] = React.useState(null);
+        const [limitsState, setLimitsState] = React.useState({ confirm: false, busy: false, failed: false });
+        const [, setLimitsTick] = React.useState(0);
+        React.useEffect(() => {
+          let off = null;
+          const attach = () => {
+            if (off) off();
+            off = typeof subagentLimits.form?.subscribe === 'function' ? subagentLimits.form.subscribe(() => setLimitsTick((n) => n + 1)) : null;
+            setLimitsTick((n) => n + 1);
+          };
+          subagentLimits.listeners.add(attach);
+          attach();
+          return () => { subagentLimits.listeners.delete(attach); if (off) off(); };
+        }, []);
         const [preset, setPreset] = React.useState({ goal: 'balanced', fast: '', deep: '', pending: null });
         React.useEffect(() => ctx.locale.subscribe(() => setLocaleTick((n) => n + 1)), []);
         const t = localeOverride === null ? hostT : makeT(localeOverride);
@@ -2187,6 +2237,37 @@ window.__ModuleLoader__.load({
               saveButton));
         };
 
+        const limitsSnapshot = typeof subagentLimits.form?.getSnapshot === 'function' ? subagentLimits.form.getSnapshot() : undefined;
+        const limitsValue = limitsSnapshot?.status === 'ready' && limitsSnapshot.value !== null && typeof limitsSnapshot.value === 'object' ? limitsSnapshot.value : null;
+        const limitsLow = limitsValue === null ? [] : Object.entries(LIMITS_RECOMMENDED).filter(([field, minimum]) => !(typeof limitsValue[field] === 'number' && limitsValue[field] >= minimum)).map(([field]) => field);
+        const limitsUser = limitsSnapshot?.user;
+        const limitsOverridden = limitsUser !== null && typeof limitsUser === 'object' && Object.keys(LIMITS_RECOMMENDED).some((field) => Object.hasOwn(limitsUser, field));
+        const limitsParams = { depth: String(LIMITS_RECOMMENDED.maxDepth), active: String(LIMITS_RECOMMENDED.maxActiveSubagents) };
+        const limitsLocked = limitsSnapshot?.writable !== true || limitsState.busy || readonlyMode;
+        const runLimits = async (ops) => {
+          setLimitsState({ confirm: false, busy: true, failed: false });
+          let accepted = false;
+          try {
+            accepted = await subagentLimits.form.mutate(ops);
+          } catch {
+            accepted = false;
+          }
+          if (mountState.mounted) setLimitsState({ confirm: false, busy: false, failed: accepted !== true });
+        };
+        const limitsButtonStyle = { ...buttonStyle, fontSize: 11, padding: '4px 8px' };
+        const limitsSection = limitsValue === null ? null : h('div', { style: { border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 12, padding: '12px 16px', background: 'var(--dsw-alias-bg-base)', display: 'flex', flexDirection: 'column', gap: 8 } },
+          h('div', { style: { fontSize: 12, fontWeight: 600, color: 'var(--dsw-alias-label-primary)' } }, t('limits.title')),
+          h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-secondary)' } }, t('limits.current', { depth: String(limitsValue.maxDepth ?? '?'), active: String(limitsValue.maxActiveSubagents ?? '?') })),
+          h('div', { style: { fontSize: 12, color: limitsLow.length > 0 ? 'var(--dsw-alias-state-warning-primary, #f59e0b)' : 'var(--dsw-alias-label-tertiary)' } }, t(limitsLow.length > 0 ? 'limits.low' : 'limits.ok', limitsParams)),
+          limitsState.confirm
+            ? h('div', { role: 'status', style: { display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', fontSize: 12, color: 'var(--dsw-alias-label-secondary)' } },
+                h('span', {}, t('limits.confirm', limitsParams)),
+                h('button', { type: 'button', disabled: limitsLocked, onClick: () => runLimits(limitsLow.map((field) => ({ op: 'set', path: [field], value: LIMITS_RECOMMENDED[field] }))), style: limitsButtonStyle }, t('limits.confirmApply')),
+                h('button', { type: 'button', onClick: () => setLimitsState((current) => ({ ...current, confirm: false })), style: limitsButtonStyle }, t('batch.cancel')))
+            : h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' } },
+                limitsLow.length > 0 ? h('button', { type: 'button', disabled: limitsLocked, onClick: () => setLimitsState({ confirm: true, busy: false, failed: false }), style: limitsButtonStyle }, t('limits.apply')) : null,
+                limitsOverridden ? h('button', { type: 'button', disabled: limitsLocked, onClick: () => runLimits(Object.keys(LIMITS_RECOMMENDED).map((field) => ({ op: 'unset', path: [field] }))), style: limitsButtonStyle }, t('limits.reset')) : null),
+          limitsState.failed ? h('div', { role: 'status', style: { fontSize: 12, color: 'var(--dsw-alias-state-error-primary, #ef4444)' } }, t('limits.failed')) : null);
         const onboardSection = h('div', { style: { border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 12, padding: '12px 16px', background: 'var(--dsw-alias-bg-base)', display: 'flex', flexDirection: 'column', gap: 8 } },
           h('label', { style: { display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--dsw-alias-label-secondary)', cursor: teamDefault === null || savingTeamDefault || readonlyMode ? 'default' : 'pointer' } },
             h('input', { type: 'checkbox', checked: teamDefault === true, disabled: teamDefault === null || savingTeamDefault || readonlyMode, 'aria-label': t('team.defaultAria'), onChange: (event) => saveTeamDefault(event.target.checked) }),
@@ -2241,6 +2322,7 @@ window.__ModuleLoader__.load({
               'aria-label': t('refresh.aria')
             }, refreshing ? t('refresh.busy') : t('refresh'))),
           onboardSection,
+          limitsSection,
           supportBanner,
           UpdateSettings({ updater, whatsNew, t }),
           messages.__load ? h('div', { style: bannerStyle('error') }, messageText(messages.__load)) : null,
@@ -2423,6 +2505,10 @@ window.__ModuleLoader__.load({
           updater.manager = scope.remote?.pluginManager;
           scope.effect(() => () => { updater.manager = undefined; }, 'update: manager binding');
         })) ctx.effect(() => off, 'update: plugin manager scope');
+        for (const off of injectScope(['configForms'], (scope) => {
+          subagentLimits.bind(typeof scope.configForms?.get === 'function' ? scope.configForms.get('subagent') : undefined);
+          scope.effect(() => () => { subagentLimits.bind(undefined); }, 'limits: subagent settings binding');
+        })) ctx.effect(() => off, 'limits: config forms scope');
         ctx.effect(() => {
           const timerId = window.setTimeout(() => { updater.check(); }, 15000);
           timerId.unref?.(); // Node test runs only; a browser timer is a number
