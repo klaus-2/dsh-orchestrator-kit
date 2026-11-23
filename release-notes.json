@@ -1,8 +1,8 @@
 {
-  "version": "0.2.0",
+  "version": "0.3.0",
   "notes": {
-    "en": "New in 0.2.0: the panel updates itself (release checks plus a What's-new dialog) and speaks English, Português (BR) and 简体中文.\nPer-role fallback routes retry once on quota exhaustion or outages, falling back to the session default.\nZero-step install: the 20 role cards and the dev-flow skill install automatically on activation.\nGetting-started section: make Orchestrator the new-chat default and start sessions in Agent Teams mode by default.",
-    "pt-BR": "Novidades na 0.2.0: o painel se atualiza sozinho (checagem de releases e diálogo de novidades) e fala English, Português (BR) e 简体中文.\nRotas de fallback por papel repetem uma vez em quota esgotada ou indisponibilidade, caindo para o default da sessão.\nInstalação em zero passos: os 20 cards de papel e a skill dev-flow instalam-se automaticamente na ativação.\nSeção de primeiros passos: torne o Orchestrator o default de novos chats e inicie sessões em modo Agent Teams por padrão.",
-    "zh": "0.2.0 新增：面板可自行更新（发布检查与新增内容对话框），并提供 English、Português (BR)、简体中文 三语界面。\n按角色后备路由在配额耗尽或故障时一次性重试，未配置则回退会话默认。\n零步骤安装：激活时自动安装 20 张角色卡与 dev-flow 技能。\n入门分区：将 Orchestrator 设为新聊天默认，并可让新会话默认以 Agent Teams 模式启动。"
+    "en": "New in 0.3.0: role descriptions read in Português (BR) and 简体中文, laid out as a phase badge with \"What it does\" / \"What it doesn't do\" lines.\nEach role card shows a recommended model badge: Fast & cheap, Balanced or Deep reasoning.\nThe What's-new dialog is restyled, lists the notes and keeps keyboard focus inside.\nThe dev-flow skill also installs into other agents with npx skills add klaus-2/dsh-orchestrator-kit.",
+    "pt-BR": "Novidades na 0.3.0: as descrições dos papéis aparecem em Português (BR) e 简体中文, com selo da fase e as linhas \"O que faz\" / \"O que não faz\".\nCada card de papel mostra um badge de modelo recomendado: Rápido e barato, Equilibrado ou Raciocínio forte.\nO diálogo de novidades ganhou novo visual, lista as notas e mantém o foco do teclado dentro dele.\nA skill dev-flow também se instala em outros agentes com npx skills add klaus-2/dsh-orchestrator-kit.",
+    "zh": "0.3.0 新增：角色描述提供 Português (BR) 与 简体中文 版本，以阶段徽章加“做什么”/“不做什么”两行呈现。\n每张角色卡显示推荐模型徽章：快速低价、均衡或强推理。\n新增内容对话框重新设计，以列表展示说明，并将键盘焦点保持在对话框内。\ndev-flow 技能也可通过 npx skills add klaus-2/dsh-orchestrator-kit 安装到其他智能体。"
   }
 }
