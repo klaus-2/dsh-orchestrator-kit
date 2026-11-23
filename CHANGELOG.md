@@ -11,6 +11,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-23
+
 ### Added
 
 - Duplicate-fallback guard: a fallback that repeats the primary provider/model is flagged on the card (both densities) and blocks Save; the route handler answers 409 when a route or fallback write would leave the pair identical, while disabled-only and effort-only saves stay accepted for existing cards
@@ -110,7 +112,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - CI workflow and trusted-publishing release workflow.
 - Animated showcase (`docs/showcase.svg`).
 
-[Unreleased]: https://github.com/klaus-2/dsh-orchestrator-kit/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/klaus-2/dsh-orchestrator-kit/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/klaus-2/dsh-orchestrator-kit/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/klaus-2/dsh-orchestrator-kit/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/klaus-2/dsh-orchestrator-kit/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/klaus-2/dsh-orchestrator-kit/tree/v0.1.0

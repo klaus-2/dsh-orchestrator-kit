@@ -1697,8 +1697,8 @@ await test('HTTP API: GET .update serves the npm-gated release probe, zero-netwo
   console.warn = () => {};
   const originalFetch = globalThis.fetch;
   const release = {
-    tag_name: 'v0.4.0',
-    html_url: 'https://github.com/klaus-2/dsh-orchestrator-kit/releases/tag/v0.4.0',
+    tag_name: 'v0.5.0',
+    html_url: 'https://github.com/klaus-2/dsh-orchestrator-kit/releases/tag/v0.5.0',
     body: 'Integration release body\n## Install\nnpm i'
   };
   let githubBehavior = { ok: true };
@@ -1721,10 +1721,10 @@ await test('HTTP API: GET .update serves the npm-gated release probe, zero-netwo
         ok: true,
         name: NS,
         current: PKG.version,
-        latest: '0.4.0',
+        latest: '0.5.0',
         managed: true,
         newer: true,
-        url: 'https://github.com/klaus-2/dsh-orchestrator-kit/releases/tag/v0.4.0',
+        url: 'https://github.com/klaus-2/dsh-orchestrator-kit/releases/tag/v0.5.0',
         notes: 'Integration release body\n'
       }, 'the default update probe must serve the npm-gated release envelope');
       assert.ok(!('installed' in probe.data), 'an equal on-disk version must not add the installed field');
@@ -2550,7 +2550,7 @@ await test('server and client agree on the /api/<name>.* route surface', () => {
 
 await test('package.json: public npm contract (name, exports, files, dsh manifest, no private)', () => {
   assert.equal(PKG.name, 'dsh-orchestrator-kit');
-  assert.equal(PKG.version, '0.3.0');
+  assert.equal(PKG.version, '0.4.0');
   assert.equal(PKG.type, 'module');
   assert.equal(PKG.license, 'MIT');
   assert.equal(typeof PKG.description, 'string');
