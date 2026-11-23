@@ -20,6 +20,10 @@ Source: `index.js:13` (frontmatter grammar), `index.js:14` (byte limit), `index.
 
 `name` and `description` are required by the bundled role-card contract; the parser treats them as optional scalars but the panel cannot display a meaningful entry without them. Any present value must be a non-empty string or the card is reported as invalid.
 
+The panel translates `description` only for the 20 shipped roles: the roles summary carries `descriptionI18n` (`{ "pt-BR", "zh" }`, from the `roles` object in `locale/<lang>.json`) only while the card's description is byte-identical to the shipped English text for that role id. Edit the description and the panel shows your text in every language; `descriptionI18n` is `null` for edited, custom or description-less cards. The card file itself is never rewritten for translation.
+
+A description in the `[Phase] Does: … / Skip: …` shape (the shipped form, also `Faz:`/`Não use:` and `做什么：`/`不适用：`) renders as a phase badge plus localized "What it does" / "What it doesn't do" lines; `` `code` ``, `**bold**`, dotted paths such as `.devflow/plans/*.md` and snake_case identifiers render inline-formatted. Any other description renders as plain text. The tooltip always carries the full raw text.
+
 Source: `index.js:128-133` (optional scalar rule), `index.js:192-213` (field parsing), `index.js:448-459` (role summary), `index.js:215-224` (summary of the routing keys).
 
 ## Field rules

@@ -36,7 +36,7 @@ const PKG = JSON.parse(readFileSync(path.join(packageDir, 'package.json'), 'utf8
 
 const COVERAGE_STATEMENT_FLOOR = 0.70;
 const COVERAGE_FUNCTION_FLOOR = 0.60;
-const CLIENT_BYTE_CEILING = 139264;
+const CLIENT_BYTE_CEILING = 147456;
 const coverageDirArg = process.argv.find((arg) => arg.startsWith('--coverage-dir='));
 const isCoverageReport = process.argv.includes('--coverage-report');
 const coverageRoot = coverageDirArg ? coverageDirArg.slice('--coverage-dir='.length) : null;
@@ -649,6 +649,51 @@ await test('HTTP API: GET .roles handles ENOENT, omits invalid cards, sorts alph
       } finally {
         console.warn = prevWarn;
       }
+    });
+  } finally {
+    rmSync(tmpHome, { recursive: true, force: true });
+  }
+});
+
+await test('role description i18n: locale roles mirror the shipped cards, the roles route localizes only stock descriptions', async () => {
+  const langs = ['en', 'pt-BR', 'zh'];
+  const rolesOf = (lang) => JSON.parse(readFileSync(path.join(packageDir, 'locale', `${lang}.json`), 'utf8')).roles;
+  const shipped = Object.fromEntries(readdirSync(path.join(packageDir, 'craft', 'agents')).filter((f) => f.endsWith('.md')).map((f) => [f.slice(0, -3), parseRoleCard(readFileSync(path.join(packageDir, 'craft', 'agents', f), 'utf8'), f).description]));
+  const ids = Object.keys(shipped).sort();
+  assert.equal(ids.length, 20, 'the kit must ship 20 role cards');
+  assert.deepEqual(rolesOf('en'), Object.fromEntries(ids.map((id) => [id, shipped[id]])), 'locale/en.json roles must equal the shipped card descriptions byte-for-byte');
+  for (const lang of langs) {
+    const roles = rolesOf(lang);
+    assert.deepEqual(Object.keys(roles).sort(), ids, `locale/${lang}.json roles must cover exactly the shipped role ids`);
+    for (const id of ids) assert.ok(typeof roles[id] === 'string' && roles[id].trim() !== '', `locale/${lang}.json roles.${id} must be a non-empty string`);
+  }
+  for (const id of ids) {
+    assert.notEqual(rolesOf('pt-BR')[id], shipped[id], `roles.${id} must be translated for pt-BR`);
+    assert.notEqual(rolesOf('zh')[id], shipped[id], `roles.${id} must be translated for zh`);
+  }
+
+  const tmpHome = mkdtempSync(path.join(tmpdir(), 'map-role-i18n-'));
+  try {
+    const dir = path.join(tmpHome, 'agents');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, 'debugger.md'), readFileSync(path.join(packageDir, 'craft', 'agents', 'debugger.md'), 'utf8'), 'utf8');
+    writeFileSync(path.join(dir, 'planner.md'), '---\nname: planner\ndescription: My own planner notes\nmodel: inherit\n---\n\nBody\n', 'utf8');
+    writeFileSync(path.join(dir, 'zeta-custom.md'), `---\nname: zeta-custom\ndescription: ${JSON.stringify(shipped.debugger)}\nmodel: inherit\n---\n\nBody\n`, 'utf8');
+    writeFileSync(path.join(dir, 'repo-scout.md'), '---\nname: repo-scout\nmodel: inherit\n---\n\nBody\n', 'utf8');
+    const foldAt = shipped.implementer.indexOf(' ', 40);
+    writeFileSync(path.join(dir, 'implementer.md'), `---\nname: implementer\ndescription: "${shipped.implementer.slice(0, foldAt)}\n  ${shipped.implementer.slice(foldAt + 1)}"\nmodel: inherit\n---\n\nBody\n`, 'utf8');
+    await withMockHost({ agentsHome: tmpHome }, async ({ call }) => {
+      const { status, data } = await call(`/api/${NS}.roles`);
+      assert.equal(status, 200);
+      const byId = Object.fromEntries(data.roles.map((role) => [role.id, role]));
+      assert.equal(byId.debugger.description, shipped.debugger, 'the raw description must stay untouched');
+      assert.deepEqual(byId.debugger.descriptionI18n, { 'pt-BR': rolesOf('pt-BR').debugger, zh: rolesOf('zh').debugger }, 'a stock card must carry its pt-BR and zh translations');
+      assert.equal(byId.planner.descriptionI18n, null, 'an edited description must never be overlaid by a translation');
+      assert.equal(byId.planner.description, 'My own planner notes');
+      assert.equal(byId['zeta-custom'].descriptionI18n, null, 'translations are keyed by shipped role id, not by matching text');
+      assert.equal(byId['repo-scout'].descriptionI18n, null, 'a card without a description must carry no translations');
+      assert.equal(byId.implementer.description, shipped.implementer, 'a writer-folded description must parse back to the shipped text');
+      assert.equal(byId.implementer.descriptionI18n?.zh, rolesOf('zh').implementer, 'a writer-folded stock description must still be localized');
     });
   } finally {
     rmSync(tmpHome, { recursive: true, force: true });
@@ -3438,7 +3483,9 @@ const PANEL_KEYS = [
   'whatsNew.close',
   'whatsNew.star',
   'whatsNew.starLink',
-  'whatsNew.starDismiss'
+  'whatsNew.starDismiss',
+  'role.does',
+  'role.skip'
 ];
 
 const FROZEN_PACK_FILES = [
@@ -3644,7 +3691,7 @@ await test('i18n structural gate: every panel string renders through t (sentinel
   const requiredKeys = Object.keys(enDoc.panel);
 
   const gateRoles = [
-    { id: 'planner', name: 'planner', description: 'Plans the work', provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: null, disabled: false, mtimeMs: 1000 },
+    { id: 'planner', name: 'planner', description: '[Planning] Does: Plans the work / Skip: Trivial edits', provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: null, disabled: false, mtimeMs: 1000 },
     { id: 'alpha-custom', name: 'alpha-custom', description: 'Custom A', provider: null, model: 'inherit', reasoningEffort: null, disabled: true, mtimeMs: 1000 },
     { id: 'zeta-custom', name: 'zeta-custom', description: 'Custom Z', provider: null, model: 'inherit', reasoningEffort: null, disabled: false, mtimeMs: 1000 }
   ];
@@ -3654,7 +3701,7 @@ await test('i18n structural gate: every panel string renders through t (sentinel
   const gateBreakdownText = (list) => `${list.filter((role) => gateStatusOf(role) === 'routed').length}/${list.filter((role) => gateStatusOf(role) === 'inherit').length}/${list.filter((role) => gateStatusOf(role) === 'disabled').length}`;
   const allowedData = new Set([
     'planner', 'alpha-custom', 'zeta-custom', 'ghost-role',
-    'Plans the work', 'Custom A', 'Custom Z', 'Ghost route',
+    'Plans the work', 'Custom A', 'Custom Z', 'Ghost route', '[Planning] Does: Plans the work / Skip: Trivial edits', 'Planning', 'Trivial edits',
     EXAMPLE_HUB, 'Example Hub', 'flash-a', 'flash-b', 'Flash A', 'Flash B', 'high', 'High',
     'English', 'Português (BR)', '简体中文',
     '—', '', '0', '1', '2', '3',
@@ -4523,11 +4570,10 @@ await test('client.js What\'s-new dialog: once-per-version seen gate, install-re
   assert.equal(JSON.parse(vmSeen.storage.get(PREFS)).support, 'thanked', 'the star link must persist the thanked support answer');
   treeSeen = appSeen.renderCycle();
   assert.ok(dialogStarOf(treeSeen), 'the star link must keep the line while the browser opens the repository');
-  const dismissButton = findNodes(treeSeen, (n) => n.type === 'button' && n.props.className === 'dsh-ok-whatsnew-dismiss')[0];
-  dismissButton.props.onClick();
-  assert.equal(JSON.parse(vmSeen.storage.get(PREFS)).support, 'dismissed', 'the dismiss control must persist the dismissed support answer');
-  treeSeen = appSeen.renderCycle();
-  assert.equal(dialogStarOf(treeSeen), undefined, 'the dismissed answer must remove the star line at once');
+  assert.equal(dialogStarOf(treeSeen).props['data-state'], 'thanked', 'the star link must turn the line into its thank-you state');
+  assert.ok(collectText(dialogStarOf(treeSeen)).join('').includes(enPanel['support.thanks']), 'the thank-you state must render support.thanks');
+  assert.equal(findNodes(treeSeen, (n) => n.type === 'button' && n.props.className === 'dsh-ok-whatsnew-dismiss').length, 0, 'the thank-you state must not ask again');
+  assert.equal(findNodes(dialogStarOf(treeSeen), (n) => n.type === 'a').length, 0, 'the thank-you state must drop the star link');
 
   dialogFooterButtonOf(treeSeen).props.onClick();
   treeSeen = appSeen.renderCycle();
@@ -4537,6 +4583,17 @@ await test('client.js What\'s-new dialog: once-per-version seen gate, install-re
   assert.equal(dialogModalOf(treeSeenAgain), undefined, 'the same version must never reopen the dialog (once per version)');
   appSeenAgain.unmount();
   appSeen.unmount();
+
+  const vmDismiss = mountVmClient(dialogHandler, { storageMap: seenSeed() });
+  const appDismiss = vmDismiss.mountInstance();
+  let treeDismiss = await appDismiss.settle();
+  assert.equal(dialogStarOf(treeDismiss).props['data-state'], 'ask', 'an unanswered support question must render the asking state');
+  findNodes(treeDismiss, (n) => n.type === 'button' && n.props.className === 'dsh-ok-whatsnew-dismiss')[0].props.onClick();
+  assert.equal(JSON.parse(vmDismiss.storage.get(PREFS)).support, 'dismissed', 'the dismiss control must persist the dismissed support answer');
+  treeDismiss = appDismiss.renderCycle();
+  assert.equal(dialogStarOf(treeDismiss), undefined, 'the dismissed answer must remove the star line at once');
+  assert.ok(dialogModalOf(treeDismiss), 'dismissing the star question must keep the dialog open');
+  appDismiss.unmount();
 
   const vmRecord = mountVmClient(dialogHandler, { storageMap: recordSeed() });
   currentNotes = { 'pt-BR': 'Dialog notes pt' };
@@ -4584,8 +4641,26 @@ await test('client.js What\'s-new dialog: once-per-version seen gate, install-re
   const vmMarkdown = mountVmClient(dialogHandler, { storageMap: seenSeed() });
   const appMarkdown = vmMarkdown.mountInstance();
   const treeMarkdown = await appMarkdown.settle();
-  assert.equal(dialogNotesTextOf(treeMarkdown), 'Fixed\nFast startup now', 'plainNotes must strip headings and bold marks from the notes');
+  const markdownItems = findNodes(dialogNotesOf(treeMarkdown), (n) => n.type === 'li').map((n) => collectText(n).join(''));
+  assert.deepEqual(markdownItems, ['Fixed', 'Fast startup now'], 'plainNotes must strip headings and bold marks and each note line must render as its own list item');
   appMarkdown.unmount();
+
+  currentNotes = { en: '- First change\n\n* Second change\n• Third change' };
+  const vmBullets = mountVmClient(dialogHandler, { storageMap: seenSeed() });
+  const appBullets = vmBullets.mountInstance();
+  const treeBullets = await appBullets.settle();
+  assert.deepEqual(findNodes(dialogNotesOf(treeBullets), (n) => n.type === 'li').map((n) => collectText(n).join('')), ['First change', 'Second change', 'Third change'], 'blank lines must drop and leading bullet marks must not double the list marker');
+  appBullets.unmount();
+
+  currentNotes = { en: 'Single line note' };
+  const vmSingle = mountVmClient(dialogHandler, { storageMap: seenSeed() });
+  const appSingle = vmSingle.mountInstance();
+  const treeSingle = await appSingle.settle();
+  assert.equal(findNodes(dialogNotesOf(treeSingle), (n) => n.type === 'li').length, 0, 'a single-line note must render as a paragraph, not a one-item list');
+  assert.equal(findNodes(dialogNotesOf(treeSingle), (n) => n.type === 'p').length, 1, 'a single-line note must render one paragraph');
+  assert.equal(dialogModalOf(treeSingle).props.className, 'dsh-ok-wn', 'the dialog must carry its own class so the widened card styles apply');
+  assert.ok(findNodes(dialogModalOf(treeSingle), (n) => n.type === 'style').length === 1, 'the dialog must ship its own styles: it opens at start-up before the settings section mounts');
+  appSingle.unmount();
 });
 
 const PANEL_RENDERABLE_KEYS = new Set([
@@ -4601,6 +4676,67 @@ const PANEL_RENDERABLE_KEYS = new Set([
   'legend.provider', 'legend.providerText', 'legend.model', 'legend.modelText', 'legend.effort', 'legend.effortText', 'legend.disabled', 'legend.disabledText', 'legend.inherit', 'legend.inheritText', 'legend.subagent', 'legend.apply', 'legend.summary',
   'search.aria', 'search.placeholder', 'filter.status.aria', 'filter.status.all', 'sort.aria', 'sort.name', 'sort.routedFirst', 'sort.inheritsFirst', 'density.aria', 'density.comfortable', 'density.compact', 'tab.breakdownTitle'
 ]);
+
+await test('panel role descriptions: the active language picks descriptionI18n, raw text is the fallback, and search matches both', async () => {
+  const ptText = '[Planejamento e Execução] Faz: produz specs executáveis em .devflow/plans/<slug>.md com **contratos congelados**. / Não use: edições triviais.';
+  const zhText = '[规划与执行] 做什么：生成可执行的规格。/ 不适用：琐碎修改。';
+  const descRoles = [
+    { id: 'planner', name: 'planner', description: 'Plans the work', descriptionI18n: { 'pt-BR': ptText, zh: zhText }, provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: null, disabled: false, mtimeMs: 1000 },
+    { id: 'zeta-custom', name: 'zeta-custom', description: 'Custom Z', descriptionI18n: null, provider: null, model: 'inherit', reasoningEffort: null, disabled: false, mtimeMs: 1000 }
+  ];
+  const descHandler = async (url) => {
+    if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles: descRoles }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify({ ok: true, available: true, degraded: false, default: null, groups: [{ provider: EXAMPLE_HUB, name: 'Example Hub', models: [{ id: 'flash-a', name: 'Flash A' }] }] }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.efforts`)) return new Response(JSON.stringify({ ok: true, defaultEffort: 'medium', efforts: [{ id: 'high', name: 'High' }] }), { status: 200 });
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  };
+  const enPanel = localePanelOf('en');
+  const ptPanel = localePanelOf('pt-BR');
+  const languageSelectOf = (tree, aria) => findNodes(tree, (n) => n.type === 'select' && n.props['aria-label'] === aria)[0];
+  const searchOf = (tree, aria) => findNodes(tree, (n) => n.type === 'input' && n.props['aria-label'] === aria)[0];
+  const hasDescription = (tree, value) => findNodes(tree, (n) => n.type === 'div' && n.props.title === value).length === 1;
+  const isPlain = (tree, value) => findNodes(tree, (n) => n.type === 'div' && n.props.title === value && n.children.length === 1 && n.children[0] === value).length === 1;
+
+  const vm = mountVmClient(descHandler);
+  const app = vm.mountInstance();
+  let tree = await app.settle();
+  assert.ok(hasDescription(tree, 'Plans the work'), 'the host language (en) must render the raw description');
+  assert.ok(!collectText(tree).includes(ptText), 'en must not render the pt-BR translation');
+
+  languageSelectOf(tree, enPanel['locale.aria']).props.onChange({ target: { value: 'pt-BR' } });
+  tree = app.renderCycle();
+  assert.ok(hasDescription(tree, ptText), 'the pt-BR override must render the pt-BR description as text and tooltip');
+  assert.ok(!collectText(tree).includes('Plans the work'), 'the pt-BR override must replace the raw description');
+  assert.ok(isPlain(tree, 'Custom Z'), 'a role without translations must fall back to its raw description as plain text');
+  const ptCard = findNodes(tree, (n) => n.type === 'div' && n.props.title === ptText)[0];
+  const ptCardText = collectText(ptCard);
+  assert.equal(ptCard.children[0].children[0], 'Planejamento e Execução', 'a structured description must lead with its phase badge');
+  assert.ok(ptCardText.includes(ptPanel['role.does']) && ptCardText.includes(ptPanel['role.skip']), 'a structured description must render the localized does/skip labels');
+  assert.ok(ptCardText.includes('edições triviais.'), 'the skip line must carry the skip text without the inline marker');
+  assert.ok(!ptCardText.some((part) => part.includes('Não use:') || part.includes('Faz:')), 'the inline Does/Skip markers must not be repeated under the labels');
+  assert.equal(findNodes(ptCard, (n) => n.type === 'code' && n.children[0] === '.devflow/plans/<slug>.md').length, 1, 'paths must render as inline code');
+  assert.equal(findNodes(ptCard, (n) => n.type === 'strong' && n.children[0] === 'contratos congelados').length, 1, '**bold** must render as strong text');
+  assert.ok(ptCard.children.slice(1).every((row) => row.props?.style?.display !== 'flex'), 'wrapped does/skip text must flow back to the left edge, not hang under the label');
+
+  searchOf(tree, ptPanel['search.aria']).props.onChange({ target: { value: 'specs executáveis' } });
+  tree = app.renderCycle();
+  assert.ok(hasDescription(tree, ptText), 'search must match the translated description');
+  assert.ok(!hasDescription(tree, 'Custom Z'), 'search must filter out roles that do not match');
+  searchOf(tree, ptPanel['search.aria']).props.onChange({ target: { value: 'plans the work' } });
+  tree = app.renderCycle();
+  assert.ok(hasDescription(tree, ptText), 'search must still match the raw description under a translation');
+  searchOf(tree, ptPanel['search.aria']).props.onChange({ target: { value: '' } });
+  tree = app.renderCycle();
+
+  languageSelectOf(tree, ptPanel['locale.aria']).props.onChange({ target: { value: '' } });
+  tree = app.renderCycle();
+  vm.locale.active = 'zh';
+  vm.locale.revision += 1;
+  for (const fn of [...vm.locale.listeners]) fn();
+  tree = app.renderCycle();
+  assert.ok(hasDescription(tree, zhText), 'Auto must follow a host switch to zh for role descriptions');
+  app.unmount();
+});
 
 await test('panel language switch: override renders pt-BR/zh from dictionaries, Auto follows host, best-effort localStorage persists and restores, storage failure degrades to host language', async () => {
   const switchRoles = [
@@ -6497,12 +6633,12 @@ await test('coverage gate fails closed: empty directory, missing coverage root a
   }
 });
 
-await test('client.js byte budget: measured size stays under the versioned 139264-byte ceiling with no self-adjustment', () => {
+await test('client.js byte budget: measured size stays under the versioned 147456-byte ceiling with no self-adjustment', () => {
   const size = statSync(path.join(packageDir, 'client.js')).size;
-  assert.equal(size, 138853, 'client.js must stay byte-identical at the measured 138853 bytes');
-  assert.equal(CLIENT_BYTE_CEILING, 139264, 'the versioned ceiling must stay 139264 bytes (136 KiB)');
-  assert.equal(CLIENT_BYTE_CEILING - size, 411, 'the headroom must stay 411 bytes');
-  assert.ok(size <= CLIENT_BYTE_CEILING, `client.js is ${size} bytes; ceiling is ${CLIENT_BYTE_CEILING} (136 KiB) — bump the versioned ceiling by explicit commit or split a chunk (C17)`);
+  assert.equal(size, 145783, 'client.js must stay byte-identical at the measured 145783 bytes');
+  assert.equal(CLIENT_BYTE_CEILING, 147456, 'the versioned ceiling must stay 147456 bytes (144 KiB)');
+  assert.equal(CLIENT_BYTE_CEILING - size, 1673, 'the headroom must stay 1673 bytes');
+  assert.ok(size <= CLIENT_BYTE_CEILING, `client.js is ${size} bytes; ceiling is ${CLIENT_BYTE_CEILING} (144 KiB) — bump the versioned ceiling by explicit commit or split a chunk (C17)`);
 });
 
 await test('docs-parity.mjs: three READMEs share headings, table rows and fenced blocks; importing has no side effects', async () => {
@@ -6624,7 +6760,7 @@ await test('pass-5 docs and static markers: six reference docs carry their secti
   assert.deepEqual(workflowBlock('publish.yml'), expectedBlock, 'publish.yml must carry the byte-identical coverage block');
 
   const testerText = readFileSync(path.join(packageDir, 'scripts', 'test.mjs'), 'utf8');
-  assert.ok(testerText.includes('139264'), 'the versioned byte budget constant must be present');
+  assert.ok(testerText.includes('147456'), 'the versioned byte budget constant must be present');
 });
 
 await test('repo hygiene: no backup artifacts and zero machine tokens in any repo file', () => {

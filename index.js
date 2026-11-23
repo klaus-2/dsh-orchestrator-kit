@@ -26,6 +26,15 @@ const NPM_NAME = 'dsh-orchestrator-kit';
 const NOTES_LANG_RE = /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})?$/;
 const NOTES_MAX = 20000;
 const PACKAGE = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
+const ROLE_TEXT_LANGS = ['pt-BR', 'zh'];
+const SHIPPED_ROLE_TEXT = Object.fromEntries(['en', ...ROLE_TEXT_LANGS].map((lang) => {
+  try {
+    const roles = JSON.parse(readFileSync(new URL(`./locale/${lang}.json`, import.meta.url), 'utf8')).roles;
+    return [lang, roles && typeof roles === 'object' && !Array.isArray(roles) ? roles : {}];
+  } catch {
+    return [lang, {}];
+  }
+}));
 const SHIPPED_NOTES = (() => {
   try {
     return JSON.parse(readFileSync(new URL('./release-notes.json', import.meta.url), 'utf8'));
@@ -610,11 +619,20 @@ async function modelCatalog(ctx, timeoutMs = CATALOG_TIMEOUT_MS) {
   return catalog;
 }
 
+function localizedDescriptionsOf(id, description) {
+  if (typeof description !== 'string' || !Object.hasOwn(SHIPPED_ROLE_TEXT.en, id) || SHIPPED_ROLE_TEXT.en[id] !== description) return null;
+  const entries = ROLE_TEXT_LANGS
+    .map((lang) => [lang, Object.hasOwn(SHIPPED_ROLE_TEXT[lang], id) ? SHIPPED_ROLE_TEXT[lang][id] : undefined])
+    .filter(([, text]) => typeof text === 'string' && text.trim() !== '');
+  return entries.length === 0 ? null : Object.fromEntries(entries);
+}
+
 function toRoleSummary(id, card, mtimeMs) {
   return {
     id,
     name: card.name ?? id,
     description: card.description ?? null,
+    descriptionI18n: localizedDescriptionsOf(id, card.description),
     provider: card.provider ?? null,
     model: card.model ?? null,
     reasoningEffort: card.reasoningEffort ?? null,

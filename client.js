@@ -192,7 +192,9 @@ window.__ModuleLoader__.load({
         'whatsNew.close': 'Close',
         'whatsNew.star': 'Enjoying the kit? ',
         'whatsNew.starLink': 'Star it on GitHub',
-        'whatsNew.starDismiss': 'Don\'t ask again'
+        'whatsNew.starDismiss': 'Don\'t ask again',
+        'role.does': 'What it does:',
+        'role.skip': 'What it doesn\'t do:'
       },
       'pt-br': {
         'nav.label': 'Orchestrator',
@@ -354,7 +356,9 @@ window.__ModuleLoader__.load({
         'whatsNew.close': 'Fechar',
         'whatsNew.star': 'Gostando do kit? ',
         'whatsNew.starLink': 'Deixe uma estrela no GitHub',
-        'whatsNew.starDismiss': 'Não perguntar novamente'
+        'whatsNew.starDismiss': 'Não perguntar novamente',
+        'role.does': 'O que faz:',
+        'role.skip': 'O que não faz:'
       },
       zh: {
         'nav.label': 'Orchestrator',
@@ -516,7 +520,9 @@ window.__ModuleLoader__.load({
         'whatsNew.close': '关闭',
         'whatsNew.star': '喜欢这个套件吗？ ',
         'whatsNew.starLink': '去 GitHub 点个 Star',
-        'whatsNew.starDismiss': '不再询问'
+        'whatsNew.starDismiss': '不再询问',
+        'role.does': '做什么：',
+        'role.skip': '不做什么：'
       }
     };
     PANEL_DICTS.pt = PANEL_DICTS['pt-br'];
@@ -695,7 +701,7 @@ window.__ModuleLoader__.load({
         stopStar(hide) {
           storedPrefs = { ...storedPrefs, support: hide ? 'dismissed' : 'thanked' };
           writeStoredPrefs(storedPrefs);
-          if (hide && note !== null) set({ ...note, star: false });
+          if (note !== null) set({ ...note, star: hide ? false : 'thanked' });
         },
         refresh() {
           const seq = ++refreshSeq;
@@ -732,7 +738,7 @@ window.__ModuleLoader__.load({
       };
     }
 
-    const UPDATE_STYLES = '.dsh-ok-update { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 14px; border: 1px solid var(--dsw-alias-border-l1, #2a2f3a); border-radius: 14px; background: var(--dsw-alias-bg-layer-1, #16181d); }\n.dsh-ok-update-title { font-size: 13px; font-weight: 600; color: var(--dsw-alias-label-primary, #eee); }\n.dsh-ok-update-status { display: flex; flex: 1; min-width: 180px; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 12px; line-height: 17px; color: var(--dsw-alias-label-secondary, #bbb); }\n.dsh-ok-update-link { color: var(--dsw-alias-label-primary, #eee); text-decoration: underline; text-underline-offset: 2px; }\n.dsh-ok-update-open { padding: 0; font: inherit; color: var(--dsw-alias-label-secondary, #bbb); background: none; border: none; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }\n.dsh-ok-update-open:hover { color: var(--dsw-alias-label-primary, #eee); }\n.dsh-ok-update-action { flex: none; padding: 7px 14px; font-size: 12.5px; font-weight: 600; white-space: nowrap; color: var(--dsw-alias-label-primary, #eee); background: var(--dsw-alias-bg-layer-2, #1d2026); border: 1px solid var(--dsw-alias-border-l1, #2a2f3a); border-radius: 10px; cursor: pointer; transition: border-color 160ms ease; }\n.dsh-ok-update-action:hover { border-color: var(--dsw-alias-brand-primary, #4f8cff); }\n.dsh-ok-update-action:disabled { opacity: 0.5; cursor: default; }\n.dsh-ok-update-action:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, #4f8cff); outline-offset: 1px; }\n.dsh-ok-whatsnew { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 55vh; overflow-y: auto; font-size: 13px; line-height: 20px; color: var(--dsw-alias-label-primary, #eee); }\n.dsh-ok-whatsnew-star { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--dsw-alias-border-l1, #2a2f3a); font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-secondary, #bbb); }\n.dsh-ok-whatsnew-link { color: var(--dsw-alias-label-primary, #eee); white-space: nowrap; text-decoration: none; }\n.dsh-ok-whatsnew-link:hover { text-decoration: underline; }\n.dsh-ok-whatsnew-dismiss { padding: 0; font: inherit; font-size: 12px; color: inherit; background: none; border: none; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }\n@media (prefers-reduced-motion: reduce) { .dsh-ok-update-action { transition: none; } }';
+    const UPDATE_STYLES = '.dsh-ok-update { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 14px; border: 1px solid var(--dsw-alias-border-l1, #2a2f3a); border-radius: 14px; background: var(--dsw-alias-bg-layer-1, #16181d); }\n.dsh-ok-update-title { font-size: 13px; font-weight: 600; color: var(--dsw-alias-label-primary, #eee); }\n.dsh-ok-update-status { display: flex; flex: 1; min-width: 180px; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 12px; line-height: 17px; color: var(--dsw-alias-label-secondary, #bbb); }\n.dsh-ok-update-link { color: var(--dsw-alias-label-primary, #eee); text-decoration: underline; text-underline-offset: 2px; }\n.dsh-ok-update-open { padding: 0; font: inherit; color: var(--dsw-alias-label-secondary, #bbb); background: none; border: none; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }\n.dsh-ok-update-open:hover { color: var(--dsw-alias-label-primary, #eee); }\n.dsh-ok-update-action { flex: none; padding: 7px 14px; font-size: 12.5px; font-weight: 600; white-space: nowrap; color: var(--dsw-alias-label-primary, #eee); background: var(--dsw-alias-bg-layer-2, #1d2026); border: 1px solid var(--dsw-alias-border-l1, #2a2f3a); border-radius: 10px; cursor: pointer; transition: border-color 160ms ease; }\n.dsh-ok-update-action:hover { border-color: var(--dsw-alias-brand-primary, #4f8cff); }\n.dsh-ok-update-action:disabled { opacity: 0.5; cursor: default; }\n.dsh-ok-update-action:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, #4f8cff); outline-offset: 1px; }\n@media (prefers-reduced-motion: reduce) { .dsh-ok-update-action { transition: none; } }';
 
     let primitives;
     try { primitives = require('@deepseek-ai/dsh-client-ui-primitives'); } catch { primitives = undefined; }
@@ -763,30 +769,66 @@ window.__ModuleLoader__.load({
         }, canInstall ? t('update.install') : t('update.check')));
     }
 
+    const WHATS_NEW_STYLES = '.dsh-ok-wn.dsh-ok-wn { width: min(520px, 100%); max-height: calc(100vh - 48px); }\n.dsh-ok-whatsnew { max-height: min(52vh, 440px); overflow-y: auto; overscroll-behavior: contain; margin: 0 -6px; padding: 2px 6px; border-radius: 8px; font-size: 13.5px; line-height: 21px; color: var(--dsw-alias-label-primary, #eee); overflow-wrap: anywhere; }\n.dsh-ok-whatsnew:focus { outline: none; }\n.dsh-ok-whatsnew:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, #4f8cff); outline-offset: 2px; }\n.dsh-ok-whatsnew p { margin: 0; }\n.dsh-ok-whatsnew ul { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; list-style: none; }\n.dsh-ok-whatsnew li { position: relative; padding-left: 18px; }\n.dsh-ok-whatsnew li::before { content: ""; position: absolute; left: 3px; top: 8px; width: 6px; height: 6px; border-radius: 50%; background: var(--dsw-alias-brand-primary, #4f8cff); }\n.dsh-ok-whatsnew-star { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-top: 18px; padding: 10px 12px; border: 1px solid rgba(245,158,11,0.35); border-radius: 12px; background: rgba(245,158,11,0.07); font-size: 12.5px; line-height: 18px; color: var(--dsw-alias-label-secondary, #bbb); }\n.dsh-ok-whatsnew-star-icon { flex: none; font-size: 16px; line-height: 1; }\n.dsh-ok-whatsnew-star-text { flex: 1 1 140px; min-width: 0; }\n.dsh-ok-whatsnew-link { display: inline-flex; align-items: center; padding: 5px 10px; font-weight: 600; white-space: nowrap; color: var(--dsw-alias-label-primary, #eee); text-decoration: none; background: rgba(245,158,11,0.14); border: 1px solid rgba(245,158,11,0.5); border-radius: 8px; transition: border-color 160ms ease, background 160ms ease; }\n.dsh-ok-whatsnew-link:hover { border-color: rgba(245,158,11,0.8); background: rgba(245,158,11,0.22); }\n.dsh-ok-whatsnew-dismiss { padding: 5px 6px; font: inherit; font-size: 12px; color: var(--dsw-alias-label-tertiary, #888); background: none; border: none; border-radius: 6px; cursor: pointer; }\n.dsh-ok-whatsnew-dismiss:hover { color: var(--dsw-alias-label-primary, #eee); text-decoration: underline; text-underline-offset: 2px; }\n.dsh-ok-whatsnew-star[data-state="thanked"] .dsh-ok-whatsnew-star-icon { animation: dsh-ok-wn-pop 700ms cubic-bezier(0.34,1.56,0.64,1) both; }\n.dsh-ok-whatsnew-foot { display: flex; flex: 1; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px; min-width: 0; }\n.dsh-ok-whatsnew-notes { margin-right: auto; font-size: 12.5px; color: var(--dsw-alias-label-secondary, #bbb); text-decoration: underline; text-underline-offset: 2px; }\n.dsh-ok-whatsnew-notes::after { content: "\\00a0\\2197"; }\n.dsh-ok-whatsnew-notes:hover { color: var(--dsw-alias-label-primary, #eee); }\n.dsh-ok-whatsnew-link:focus-visible, .dsh-ok-whatsnew-dismiss:focus-visible, .dsh-ok-whatsnew-notes:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, #4f8cff); outline-offset: 2px; }\n@keyframes dsh-ok-wn-pop { 0% { transform: scale(0.4) rotate(-30deg); } 62% { transform: scale(1.4) rotate(10deg); } 100% { transform: scale(1) rotate(0deg); } }\n@media (prefers-reduced-motion: reduce) { .dsh-ok-whatsnew-link { transition: none; } .dsh-ok-whatsnew-star-icon { animation: none !important; } }';
+
+    const trapDialogFocus = () => {
+      if (typeof document === 'undefined') return undefined;
+      const before = document.activeElement;
+      const dialog = () => document.querySelector('.dsh-ok-wn');
+      dialog()?.querySelector('[data-dsh-ok-autofocus]')?.focus();
+      const onKey = (event) => {
+        const root = dialog();
+        if (event.key !== 'Tab' || root === null) return;
+        const items = [...root.querySelectorAll('a[href], button:not([disabled]), [tabindex="0"]')];
+        if (items.length === 0) return;
+        const first = items[0];
+        const last = items[items.length - 1];
+        const at = document.activeElement;
+        if (!root.contains(at)) { event.preventDefault(); first.focus(); }
+        else if (event.shiftKey && at === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && at === last) { event.preventDefault(); first.focus(); }
+      };
+      document.addEventListener('keydown', onKey);
+      return () => {
+        document.removeEventListener('keydown', onKey);
+        if (before?.isConnected) before.focus?.();
+      };
+    };
+
     function createWhatsNewDialog(ctx, whatsNew) {
       return function WhatsNewDialog() {
         const note = React.useSyncExternalStore(whatsNew.subscribe, whatsNew.getSnapshot);
         const [, setLocaleTick] = React.useState(0);
         React.useEffect(() => ctx.locale.subscribe(() => setLocaleTick((n) => n + 1)), []);
+        const open = note !== null && primitives?.Modal !== undefined;
+        React.useEffect(() => (open ? trapDialogFocus() : undefined), [open]);
         const t = localeOverride === null ? ctx.locale.bind(NS) : makeT(localeOverride);
         const active = localeOverride ?? ctx.locale?.getSnapshot?.()?.active ?? 'en';
-        if (note === null || primitives?.Modal === undefined) return null;
+        if (!open) return null;
         const shown = notesIn(note.notes, active);
+        const title = t('whatsNew.title', { version: note.version });
+        const lines = plainNotes(shown.text).split(/\r?\n/).map((line) => line.replace(/^\s*[-*•]\s+/, '').trim()).filter((line) => line !== '');
+        const thanked = note.star === 'thanked';
         return h(primitives.Modal, {
           open: true,
           onClose: whatsNew.close,
           closeLabel: t('whatsNew.close'),
-          title: t('whatsNew.title', { version: note.version }),
-          footer: h(React.Fragment, null,
-            note.url === undefined ? null : h('a', { className: 'dsh-ok-whatsnew-link', href: note.url, target: '_blank', rel: 'noopener noreferrer' }, t('update.notes')),
-            h(primitives.Button, { variant: 'outline', onClick: whatsNew.close }, t('whatsNew.close')))
+          title,
+          className: 'dsh-ok-wn',
+          footer: h('div', { className: 'dsh-ok-whatsnew-foot' },
+            note.url === undefined ? null : h('a', { className: 'dsh-ok-whatsnew-notes', href: note.url, target: '_blank', rel: 'noopener noreferrer' }, t('update.notes')),
+            h(primitives.Button, { variant: 'primary', onClick: whatsNew.close }, t('whatsNew.close')))
         },
-          h('div', { className: 'dsh-ok-whatsnew', lang: shown.lang, tabIndex: 0 }, plainNotes(shown.text)),
-          note.star ? h('div', { className: 'dsh-ok-whatsnew-star' },
-            t('whatsNew.star'),
-            h('a', { className: 'dsh-ok-whatsnew-link', href: REPO_URL, target: '_blank', rel: 'noopener noreferrer', onClick: () => whatsNew.stopStar(false) },
-              h('span', { 'aria-hidden': 'true' }, t('support.star')), t('whatsNew.starLink')),
-            h('button', { type: 'button', className: 'dsh-ok-whatsnew-dismiss', onClick: () => whatsNew.stopStar(true) }, t('whatsNew.starDismiss'))) : null);
+          h('style', null, WHATS_NEW_STYLES),
+          h('div', { className: 'dsh-ok-whatsnew', lang: shown.lang, tabIndex: 0, role: 'region', 'aria-label': title, 'data-dsh-ok-autofocus': '' },
+            lines.length > 1 ? h('ul', null, lines.map((line, index) => h('li', { key: index }, line))) : h('p', null, lines[0] ?? '')),
+          note.star ? h('div', { className: 'dsh-ok-whatsnew-star', 'data-state': thanked ? 'thanked' : 'ask' },
+            h('span', { className: 'dsh-ok-whatsnew-star-icon', 'aria-hidden': 'true' }, t('support.star')),
+            thanked ? h('span', { className: 'dsh-ok-whatsnew-star-text', role: 'status' }, t('support.thanks')) : [
+              h('span', { key: 'text', className: 'dsh-ok-whatsnew-star-text' }, t('whatsNew.star').trim()),
+              h('a', { key: 'link', className: 'dsh-ok-whatsnew-link', href: REPO_URL, target: '_blank', rel: 'noopener noreferrer', onClick: () => whatsNew.stopStar(false) }, t('whatsNew.starLink')),
+              h('button', { key: 'dismiss', type: 'button', className: 'dsh-ok-whatsnew-dismiss', onClick: () => whatsNew.stopStar(true) }, t('whatsNew.starDismiss'))
+            ]) : null);
       };
     }
 
@@ -803,6 +845,12 @@ window.__ModuleLoader__.load({
     const legendTermStyle = { fontWeight: 600, color: 'var(--dsw-alias-label-primary)' };
     const tabRowStyle = { display: 'flex', flexWrap: 'wrap', gap: 4, background: SURFACE_TINT, borderRadius: 8, padding: 4 };
     const tabStyle = (active) => ({ border: 'none', borderRadius: 4, padding: '8px 12px', fontSize: 12, fontWeight: active ? 600 : 400, cursor: 'pointer', background: active ? 'var(--dsw-alias-bg-base)' : 'transparent', color: active ? 'var(--dsw-alias-label-primary)' : 'var(--dsw-alias-label-secondary)' });
+    const ROLE_TEXT_RE = /^\s*\[([^\]]+)\]\s*(?:Does|Faz|做什么)\s*[:：]\s*([\s\S]+?)\s*\/\s*(?:Skip|Não use|不适用)\s*[:：]\s*([\s\S]+?)\s*$/;
+    const INLINE_RE = /(\x60[^\x60]+\x60|\*\*[^*]+\*\*|\.[\w-]+(?:\/[\w*<>-]+(?:\.[\w*<>-]+)*)+\/?|\b[a-z]+(?:_[a-z]+)+\b)/g;
+    const codeStyle = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: 11, padding: '0 4px', borderRadius: 4, background: SURFACE_TINT, color: 'var(--dsw-alias-label-primary)' };
+    const inlineOf = (text) => text.split(INLINE_RE).map((part, i) => (i % 2 === 0 ? part
+      : part.startsWith('**') ? h('strong', { key: i, style: { fontWeight: 600, color: 'var(--dsw-alias-label-primary)' } }, part.slice(2, -2))
+      : h('code', { key: i, style: codeStyle }, part.startsWith('\x60') ? part.slice(1, -1) : part))).filter((part) => part !== '');
     const dotStyle = (color) => ({ width: 6, height: 6, borderRadius: 999, background: color, flex: 'none' });
     const statusTone = (disabled, isInherit) => (disabled
       ? { key: 'status.disabled', dot: 'var(--dsw-alias-state-error-primary, #ef4444)', background: 'rgba(239,68,68,0.12)' }
@@ -1088,6 +1136,21 @@ window.__ModuleLoader__.load({
         const [diagnosticsState, setDiagnosticsState] = React.useState({ open: false, loading: false, report: null, error: null });
         React.useEffect(() => ctx.locale.subscribe(() => setLocaleTick((n) => n + 1)), []);
         const t = localeOverride === null ? hostT : makeT(localeOverride);
+        const roleLang = String(localeOverride ?? ctx.locale?.getSnapshot?.()?.active ?? 'en').toLowerCase();
+        const roleLangKey = roleLang.startsWith('pt') ? 'pt-BR' : roleLang.startsWith('zh') ? 'zh' : null;
+        const renderDescription = (text, tone) => {
+          const box = { title: text, style: { fontSize: 12, color: 'var(--dsw-alias-label-tertiary)', lineHeight: '16px' } };
+          const match = ROLE_TEXT_RE.exec(text);
+          if (!match) return h('div', box, text);
+          const row = (label, color, body) => h('div', {},
+            h('span', { style: { marginRight: 6, fontSize: 11, fontWeight: 600, color } }, label),
+            h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } }, ...inlineOf(body)));
+          return h('div', { ...box, style: { ...box.style, display: 'flex', flexDirection: 'column', gap: 4 } },
+            h('span', { style: { alignSelf: 'flex-start', fontSize: 11, fontWeight: 600, lineHeight: '16px', borderRadius: 999, padding: '0 8px', color: tone, background: tone + '1f', border: '1px solid ' + tone + '55' } }, match[1]),
+            row(t('role.does'), '#3ecf8e', match[2]),
+            row(t('role.skip'), '#f87171', match[3]));
+        };
+        const describe = (role) => (roleLangKey !== null && typeof role.descriptionI18n?.[roleLangKey] === 'string' ? role.descriptionI18n[roleLangKey] : role.description);
         const onLocaleChange = (event) => {
           const value = event.target.value;
           localeOverride = value === '' ? null : value;
@@ -1760,7 +1823,7 @@ window.__ModuleLoader__.load({
           return [...list].sort((left, right) => (rank[statusOf(left)] - rank[statusOf(right)]) || byName(left, right));
         };
         const query = search.toLowerCase();
-        const matchesSearch = (role) => query === '' || role.name.toLowerCase().includes(query) || (typeof role.description === 'string' && role.description.toLowerCase().includes(query));
+        const matchesSearch = (role) => query === '' || role.name.toLowerCase().includes(query) || [role.description, describe(role)].some((text) => typeof text === 'string' && text.toLowerCase().includes(query));
         const matchesStatus = (role) => statusFilter === 'all' || statusOf(role) === statusFilter;
         const visibleRoles = (list) => sortRoles(list.filter((role) => matchesSearch(role) && matchesStatus(role)));
 
@@ -1937,7 +2000,7 @@ window.__ModuleLoader__.load({
               style: { ...cardStyle, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, padding: 8, opacity: draft.disabled ? 0.7 : 1, ...cardAccent },
               onFocusCapture: () => { focusedCardId = role.id; }
             },
-              h('span', { title: role.description ?? role.name, style: { fontSize: 13, fontWeight: 600, color: 'var(--dsw-alias-label-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 } }, ...nameChildren),
+              h('span', { title: describe(role) ?? role.name, style: { fontSize: 13, fontWeight: 600, color: 'var(--dsw-alias-label-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 } }, ...nameChildren),
               inheritHint ? h('span', { style: { fontSize: 11, color: 'var(--dsw-alias-label-tertiary)', flex: 'none' } }, inheritHint) : null,
               sealDot,
               h('span', { style: statusBadgeStyle(tone) }, h('span', { style: dotStyle(tone.dot) }), t(tone.key)),
@@ -1961,7 +2024,7 @@ window.__ModuleLoader__.load({
               h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, flex: 'none' } },
                 sealDot,
                 h('span', { style: statusBadgeStyle(tone) }, h('span', { style: dotStyle(tone.dot) }), t(tone.key)))),
-            role.description ? h('div', { title: role.description, style: { fontSize: 12, color: 'var(--dsw-alias-label-tertiary)', lineHeight: '16px' } }, role.description) : null,
+            describe(role) ? renderDescription(describe(role), phaseTone) : null,
             inheritHint ? h('div', { style: { fontSize: 11, color: 'var(--dsw-alias-label-tertiary)' } }, inheritHint) : null,
             h('div', { style: { display: 'flex', flexDirection: 'column', gap: 12 } },
               renderField(t('field.provider'), t('field.providerHelp'), providerSelect),

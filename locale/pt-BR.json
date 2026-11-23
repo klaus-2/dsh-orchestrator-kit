@@ -164,6 +164,30 @@
     "whatsNew.close": "Fechar",
     "whatsNew.star": "Gostando do kit? ",
     "whatsNew.starLink": "Deixe uma estrela no GitHub",
-    "whatsNew.starDismiss": "Não perguntar novamente"
+    "whatsNew.starDismiss": "Não perguntar novamente",
+    "role.does": "O que faz:",
+    "role.skip": "O que não faz:"
+  },
+  "roles": {
+    "arch-advisor": "[Descoberta e Consultoria] Faz: consultor sênior somente leitura para trade-offs difíceis de arquitetura, design de contratos, fronteiras de segurança e escalonamentos após 2+ falhas de depuração. / Não use: edições triviais, correções de tentativa única ou consultas de rotina.",
+    "browser-qa": "[Verificação, QA e Documentação] Faz: QA ao vivo de navegador, Web UI e Windows/desktop com Playwright/Chrome DevTools MCP, agent-desktop e read_image; registra screenshots e checagens em .devflow/evidence/. / Não use: edições de código-fonte ou fechar abas abertas.",
+    "debt-auditor": "[Verificação, QA e Documentação] Faz: auditor de manutenibilidade somente leitura que detecta duplicação, caminhos mortos, responsabilidades emaranhadas, módulos grandes demais e scaffolding obsoleto quando o retorno da limpeza supera o custo de migração. / Não use: edições de código, churn cosmético ou limpezas triviais.",
+    "debugger": "[Planejamento e Execução] Faz: reproduz falhas primeiro, isola causas-raiz com hipóteses de variável única, aplica correções cirúrgicas e impõe o escalonamento 3-Strike. / Não use: features novas do zero.",
+    "diff-reviewer": "[Verificação, QA e Documentação] Faz: revisão de código somente leitura de prontidão para merge em diffs concluídos, via skills review-loop, checklist e excellence, com nota de 1 a 10 e achados agrupados por severidade. / Não use: escrever correções, edições só de docs ou especulação sem diff.",
+    "docs-scout": "[Descoberta e Consultoria] Faz: pesquisa somente leitura de documentação externa, internals de bibliotecas, exemplos OSS e versões/issues, com URLs e permalinks verificados. / Não use: busca no repositório local ou arquivos locais já lidos.",
+    "docs-sync": "[Verificação, QA e Documentação] Faz: redator só de docs que reconcilia de imediato a documentação de comportamento, configuração e interfaces em toda superfície de docs afetada, com base em arquivos-fonte verificados. / Não use: editar código da aplicação, testes, schemas ou inventar comportamento não verificado.",
+    "error-auditor": "[Verificação, QA e Documentação] Faz: auditoria somente leitura de falhas silenciosas, blocos catch/fallback, rejeições engolidas e esgotamento de retries, classificando como CONFIRMED DEFECT, REQUIRES JUSTIFICATION ou JUSTIFIED EXCEPTION. / Não use: implementar correções ou revisão genérica.",
+    "implementer": "[Planejamento e Execução] Faz: implementa código, configuração e testes unitários com escopo definido, dentro de escopos de escrita explícitos e disjuntos, com verificação V1/V2. / Não use: planejamento de arquitetura ou exploração ampla.",
+    "media-analyst": "[Descoberta e Consultoria] Faz: inspeção somente leitura de screenshots, capturas de UI, diagramas, gráficos e PDFs para extrair fatos e estados de layout solicitados. / Não use: arquivos de texto puro ou código-fonte que exigem edições linha a linha.",
+    "perf-auditor": "[Verificação, QA e Documentação] Faz: auditor somente leitura de desempenho e ciclo de vida de recursos que detecta gargalos de latência, consultas N+1, loops ou alocações sem limite, caminhos quentes bloqueantes e vazamentos de timers, processos ou listeners. / Não use: micro-otimizações ou edições.",
+    "plan-auditor": "[Planejamento e Execução] Faz: auditor rigoroso somente leitura de .devflow/plans/*.md que verifica referências, clareza, verificabilidade e isolamento de escopo. / Não use: tarefas triviais ou redesenhar a arquitetura já escolhida.",
+    "planner": "[Planejamento e Execução] Faz: produz specs executáveis em .devflow/plans/<slug>.md com contratos congelados, escopos de escrita disjuntos e gates de verificação. / Não use: edições triviais ou codificação direta do código-fonte.",
+    "repo-scout": "[Descoberta e Consultoria] Faz: busca rápida somente leitura no código local por arquivos, símbolos, caminhos de chamada e histórico do git, com sondagens paralelas. / Não use: quando o caminho exato do arquivo é conhecido ou um único grep/glob resolve.",
+    "run-conductor": "[Planejamento e Execução] Faz: executa .devflow/plans/*.md aprovados via delegação de 1 salto, congelamento de contratos, reconciliação e verificação nova. / Não use: edições de um só arquivo com menos de 10 linhas.",
+    "scope-analyst": "[Planejamento e Execução] Faz: analista somente leitura pré-plano de lacunas, ambiguidades e excesso de engenharia, que levanta perguntas bloqueantes antes do planejamento. / Não use: edições triviais ou tarefas totalmente especificadas.",
+    "security-auditor": "[Verificação, QA e Documentação] Faz: revisor de segurança somente leitura baseado no modelo de confiança, que rastreia caminhos de ataque alcançáveis em autenticação, sessões, segredos, entrada não confiável, arquivos e execução de comandos, com correções cirúrgicas. / Não use: testes ao vivo, especulação ou edição de arquivos.",
+    "tech-writer": "[Verificação, QA e Documentação] Faz: especialista só de docs que escreve READMEs duráveis, docs de arquitetura, referências de API, changelogs e guias de migração estritamente baseados em código-fonte verificado. / Não use: código funcional, handoffs de sessão ou arquivos de controle do harness.",
+    "test-auditor": "[Verificação, QA e Documentação] Faz: auditoria somente leitura de suficiência de testes e anti-flake, mapeando comportamento alterado para asserções, detectando mocks tautológicos e suposições de timing e avaliando lacunas de 1 a 10. / Não use: escrever testes, rodar suítes ou revisão de código genérica.",
+    "test-writer": "[Verificação, QA e Documentação] Faz: escreve testes que reproduzem a falha usando a skill de testes da stack, confirma que ficam vermelhos antes ou sem a correção, roda checagens anti-flake em várias execuções e registra em .devflow/evidence/. / Não use: editar código de produção."
   }
 }

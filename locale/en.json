@@ -164,6 +164,30 @@
     "whatsNew.close": "Close",
     "whatsNew.star": "Enjoying the kit? ",
     "whatsNew.starLink": "Star it on GitHub",
-    "whatsNew.starDismiss": "Don't ask again"
+    "whatsNew.starDismiss": "Don't ask again",
+    "role.does": "What it does:",
+    "role.skip": "What it doesn't do:"
+  },
+  "roles": {
+    "arch-advisor": "[Discovery & Advisory] Does: read-only senior advisor for hard architecture tradeoffs, contract design, security boundaries, and 2+ debug-failure escalations. / Skip: for trivial edits, single-attempt fixes, or routine lookups.",
+    "browser-qa": "[Verification, QA & Docs] Does: Live browser, Web UI, and Windows/desktop QA using Playwright/Chrome DevTools MCP, agent-desktop, and read_image; logs screenshots and checks under .devflow/evidence/. / Skip: source code edits or closing open tabs.",
+    "debt-auditor": "[Verification, QA & Docs] Does: Read-only maintainability auditor catching duplication, dead paths, tangled ownership, oversized modules, and stale scaffolding where cleanup ROI exceeds migration cost. / Skip: code edits, cosmetic churn, or trivial cleanups.",
+    "debugger": "[Planning & Execution] Does: Reproduces failures first, isolates root causes via single-variable hypotheses, applies surgical fixes, and enforces 3-Strike escalation. / Skip: Greenfield features.",
+    "diff-reviewer": "[Verification, QA & Docs] Does: Read-only merge-readiness code review of completed diffs via review-loop, checklist, and excellence skills, scoring 1-10 with severity-grouped findings. / Skip: writing fixes, docs-only edits, or diff-less speculation.",
+    "docs-scout": "[Discovery & Advisory] Does: read-only external documentation, library internals, OSS examples, and version/issue research with verified URLs and permalinks. / Skip: for local repo search or already-read local files.",
+    "docs-sync": "[Verification, QA & Docs] Does: Docs-only writer immediately reconciling behavior, config, and interface documentation across every affected doc surface against verified source files. / Skip: editing app code, tests, schemas, or inventing unverified behavior.",
+    "error-auditor": "[Verification, QA & Docs] Does: Read-only audit of silent failures, catch/fallback blocks, swallowed rejections, and retry exhaustion, assigning CONFIRMED DEFECT, REQUIRES JUSTIFICATION, or JUSTIFIED EXCEPTION. / Skip: implementing fixes or generic review.",
+    "implementer": "[Planning & Execution] Does: Implements scoped code, config, and unit tests inside explicit disjoint write scopes with V1/V2 verification. / Skip: Architecture planning or broad exploration.",
+    "media-analyst": "[Discovery & Advisory] Does: read-only inspection of screenshots, UI captures, diagrams, charts, and PDFs to extract requested facts and layout states. / Skip: for plain-text or source files needing exact line edits.",
+    "perf-auditor": "[Verification, QA & Docs] Does: Read-only performance and resource-lifecycle auditor catching latency bottlenecks, N+1 queries, unbounded loops or allocations, blocking hot paths, and timer, process, or listener leaks. / Skip: micro-optimizations or edits.",
+    "plan-auditor": "[Planning & Execution] Does: Read-only strict auditor of .devflow/plans/*.md checking references, clarity, verifiability, and scope isolation. / Skip: Trivial tasks or redesigning chosen architecture.",
+    "planner": "[Planning & Execution] Does: Produces executable .devflow/plans/<slug>.md specs with frozen contracts, disjoint write scopes, and verify gates. / Skip: Trivial edits or direct source coding.",
+    "repo-scout": "[Discovery & Advisory] Does: fast read-only local codebase search across files, symbols, call paths, and git history using parallel probes. / Skip: when the exact file path is known or one grep/glob call suffices.",
+    "run-conductor": "[Planning & Execution] Does: Executes approved .devflow/plans/*.md via 1-hop delegation, contract freezes, reconciliation, and fresh verification. / Skip: Single-file edits under 10 lines.",
+    "scope-analyst": "[Planning & Execution] Does: Read-only pre-plan gap, ambiguity, and over-engineering analyst surfacing blocking questions before planning. / Skip: Trivial edits or fully specified tasks.",
+    "security-auditor": "[Verification, QA & Docs] Does: Read-only trust-model security reviewer tracing reachable attack paths across auth, sessions, secrets, untrusted input, files, and command execution with surgical fixes. / Skip: live probing, speculation, or editing files.",
+    "tech-writer": "[Verification, QA & Docs] Does: Docs-only specialist authoring durable READMEs, architecture docs, API references, changelogs, and migration guides strictly grounded in verified source. / Skip: functional code, session handoffs, or harness control files.",
+    "test-auditor": "[Verification, QA & Docs] Does: Read-only test-sufficiency and anti-flake audit mapping changed behavior to assertions, catching tautological mocks and timing assumptions, rating gaps 1-10. / Skip: writing tests, running suites, or generic code review.",
+    "test-writer": "[Verification, QA & Docs] Does: Author failure-reproducing tests using the stack's matching test skill, verify tests go red before or without the fix, run multi-run anti-flake checks, and log to .devflow/evidence/. / Skip: editing production code."
   }
 }
