@@ -3485,7 +3485,11 @@ const PANEL_KEYS = [
   'whatsNew.starLink',
   'whatsNew.starDismiss',
   'role.does',
-  'role.skip'
+  'role.skip',
+  'tier.title',
+  'tier.fast',
+  'tier.balanced',
+  'tier.deep'
 ];
 
 const FROZEN_PACK_FILES = [
@@ -3691,9 +3695,9 @@ await test('i18n structural gate: every panel string renders through t (sentinel
   const requiredKeys = Object.keys(enDoc.panel);
 
   const gateRoles = [
-    { id: 'planner', name: 'planner', description: '[Planning] Does: Plans the work / Skip: Trivial edits', provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: null, disabled: false, mtimeMs: 1000 },
-    { id: 'alpha-custom', name: 'alpha-custom', description: 'Custom A', provider: null, model: 'inherit', reasoningEffort: null, disabled: true, mtimeMs: 1000 },
-    { id: 'zeta-custom', name: 'zeta-custom', description: 'Custom Z', provider: null, model: 'inherit', reasoningEffort: null, disabled: false, mtimeMs: 1000 }
+    { id: 'planner', name: 'planner', description: '[Planning] Does: Plans the work / Skip: Trivial edits', recommendedTier: 'deep', provider: EXAMPLE_HUB, model: 'flash-a', reasoningEffort: null, disabled: false, mtimeMs: 1000 },
+    { id: 'alpha-custom', name: 'alpha-custom', description: 'Custom A', recommendedTier: 'fast', provider: null, model: 'inherit', reasoningEffort: null, disabled: true, mtimeMs: 1000 },
+    { id: 'zeta-custom', name: 'zeta-custom', description: 'Custom Z', recommendedTier: 'balanced', provider: null, model: 'inherit', reasoningEffort: null, disabled: false, mtimeMs: 1000 }
   ];
   const gateCatalog = { ok: true, available: true, degraded: false, default: { provider: EXAMPLE_CLOUD, model: 'reasoner-d' }, groups: [{ provider: EXAMPLE_HUB, name: 'Example Hub', models: [{ id: 'flash-a', name: 'Flash A' }, { id: 'flash-b', name: 'Flash B' }] }] };
   const gateEfforts = { ok: true, defaultEffort: 'medium', efforts: [{ id: 'high', name: 'High' }] };
@@ -6633,11 +6637,57 @@ await test('coverage gate fails closed: empty directory, missing coverage root a
   }
 });
 
+await test('recommended model tier: every shipped role carries one tier, custom ids carry none, and the card renders the localized badge', async () => {
+  const tiers = new Set(['fast', 'balanced', 'deep']);
+  const agentsDir = path.join(packageDir, 'craft', 'agents');
+  const shippedIds = readdirSync(agentsDir).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3)).sort();
+  const tmpHome = mkdtempSync(path.join(tmpdir(), 'map-role-tier-'));
+  try {
+    const dir = path.join(tmpHome, 'agents');
+    mkdirSync(dir, { recursive: true });
+    for (const id of shippedIds) writeFileSync(path.join(dir, `${id}.md`), readFileSync(path.join(agentsDir, `${id}.md`), 'utf8'), 'utf8');
+    writeFileSync(path.join(dir, 'zeta-custom.md'), '---\nname: zeta-custom\ndescription: Custom Z\nmodel: inherit\n---\n\nBody\n', 'utf8');
+    await withMockHost({ agentsHome: tmpHome }, async ({ call }) => {
+      const { status, data } = await call(`/api/${NS}.roles`);
+      assert.equal(status, 200);
+      const byId = Object.fromEntries(data.roles.map((role) => [role.id, role]));
+      for (const id of shippedIds) assert.ok(tiers.has(byId[id]?.recommendedTier), `shipped role ${id} must carry a known recommendedTier`);
+      for (const tier of tiers) assert.ok(shippedIds.some((id) => byId[id].recommendedTier === tier), `at least one shipped role must recommend ${tier}`);
+      assert.equal(byId['zeta-custom'].recommendedTier, null, 'a custom role id must carry no recommendation');
+    });
+  } finally {
+    rmSync(tmpHome, { recursive: true, force: true });
+  }
+
+  const tierRoles = [
+    { id: 'debugger', name: 'debugger', description: 'Fixes bugs', recommendedTier: 'deep', provider: null, model: 'inherit', reasoningEffort: null, disabled: false, mtimeMs: 1000 },
+    { id: 'zeta-custom', name: 'zeta-custom', description: 'Custom Z', recommendedTier: 'bogus', provider: null, model: 'inherit', reasoningEffort: null, disabled: false, mtimeMs: 1000 }
+  ];
+  const tierHandler = async (url) => {
+    if (url.startsWith(`/api/${NS}.roles`)) return new Response(JSON.stringify({ ok: true, roles: tierRoles }), { status: 200 });
+    if (url.startsWith(`/api/${NS}.catalog`)) return new Response(JSON.stringify({ ok: true, available: true, degraded: false, default: null, groups: [] }), { status: 200 });
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  };
+  const enPanel = localePanelOf('en');
+  const ptPanel = localePanelOf('pt-BR');
+  const badgesOf = (tree, title) => findNodes(tree, (n) => n.type === 'span' && n.props.title === title);
+  const app = mountVmClient(tierHandler).mountInstance();
+  let tree = await app.settle();
+  const enBadges = badgesOf(tree, enPanel['tier.title']);
+  assert.equal(enBadges.length, 1, 'only the role with a known tier must render a badge');
+  assert.ok(collectText(enBadges[0]).includes(enPanel['tier.deep']), 'the badge must carry the localized tier label');
+  findNodes(tree, (n) => n.type === 'select' && n.props['aria-label'] === enPanel['locale.aria'])[0].props.onChange({ target: { value: 'pt-BR' } });
+  tree = app.renderCycle();
+  const ptBadges = badgesOf(tree, ptPanel['tier.title']);
+  assert.equal(ptBadges.length, 1, 'the badge must follow the language override');
+  assert.ok(collectText(ptBadges[0]).includes(ptPanel['tier.deep']), 'the pt-BR badge must carry the pt-BR label');
+});
+
 await test('client.js byte budget: measured size stays under the versioned 147456-byte ceiling with no self-adjustment', () => {
   const size = statSync(path.join(packageDir, 'client.js')).size;
-  assert.equal(size, 145783, 'client.js must stay byte-identical at the measured 145783 bytes');
+  assert.equal(size, 146785, 'client.js must stay byte-identical at the measured 146785 bytes');
   assert.equal(CLIENT_BYTE_CEILING, 147456, 'the versioned ceiling must stay 147456 bytes (144 KiB)');
-  assert.equal(CLIENT_BYTE_CEILING - size, 1673, 'the headroom must stay 1673 bytes');
+  assert.equal(CLIENT_BYTE_CEILING - size, 671, 'the headroom must stay 671 bytes');
   assert.ok(size <= CLIENT_BYTE_CEILING, `client.js is ${size} bytes; ceiling is ${CLIENT_BYTE_CEILING} (144 KiB) — bump the versioned ceiling by explicit commit or split a chunk (C17)`);
 });
 

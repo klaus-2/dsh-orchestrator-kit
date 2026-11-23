@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - Role description i18n: the 20 shipped role descriptions are translated into Português (BR) and 简体中文 in a new `roles` object in `locale/<lang>.json` (`locale/en.json` mirrors the card frontmatter byte-for-byte, suite-enforced). The roles route attaches `descriptionI18n` only while a card's description is identical to the shipped English text, so edited and custom cards always show their own words; the panel picks the text for the active language (override or Auto) with the raw description as fallback, and search matches both the translated and the raw text. Descriptions in the `[phase] Does: … / Skip: …` shape render structured: a phase badge in the phase colour, then green "What it does" and red "What it doesn't do" lines with localized labels; inline `` `code` `` and `**bold**` render, and dotted paths (`.devflow/plans/*.md`) and snake_case identifiers show as code. Any other description renders as plain text.
+- Recommended model badge: each of the 20 shipped roles carries a recommended model profile — Fast & cheap (repo-scout, docs-scout, browser-qa, docs-sync), Balanced (implementer, test-writer, run-conductor, media-analyst, tech-writer and the test/error/perf/debt auditors) or Deep reasoning (planner, arch-advisor, scope-analyst, plan-auditor, debugger, diff-reviewer, security-auditor). The roles summary exposes it as `recommendedTier` (`fast` | `balanced` | `deep`, keyed by shipped role id; `null` for custom roles) and the card header shows it as a localized coloured badge next to the status. The badge is advice only: it never changes a route.
 
 ### Fixed
 
@@ -22,7 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - What's-new dialog rework: a wider card (`min(520px, 100%)`, viewport-bounded height) over the host `Modal`; multi-line notes render as a list (leading `-`/`*`/`•` marks and blank lines dropped), single-line notes as a paragraph; the release-notes link moves to the start of the footer with an external-link mark and Close becomes the primary action; the star prompt is a contained callout whose link turns it into an in-dialog thank-you state (no repeat question) while "Don't ask again" removes it at once; focus moves into the notes on open, Tab/Shift+Tab stay inside the dialog and focus returns to the opener on close; reduced-motion users get no animation.
-- `client.js` byte budget: the versioned ceiling rises from 139264 bytes (136 KiB) to 147456 bytes (144 KiB) for the dialog rework, measured at 145783 bytes (1673 bytes of headroom) after the dialog rework and role description i18n; the 140 KiB step would have left negative headroom.
+- `client.js` byte budget: the versioned ceiling rises from 139264 bytes (136 KiB) to 147456 bytes (144 KiB) for the dialog rework, measured at 146785 bytes (671 bytes of headroom) after the dialog rework, role description i18n and the recommended model badge; the 140 KiB step would have left negative headroom.
 
 ## [0.2.0] - 2026-11-22
 

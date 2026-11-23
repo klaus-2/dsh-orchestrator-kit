@@ -24,6 +24,8 @@ The panel translates `description` only for the 20 shipped roles: the roles summ
 
 A description in the `[Phase] Does: … / Skip: …` shape (the shipped form, also `Faz:`/`Não use:` and `做什么：`/`不适用：`) renders as a phase badge plus localized "What it does" / "What it doesn't do" lines; `` `code` ``, `**bold**`, dotted paths such as `.devflow/plans/*.md` and snake_case identifiers render inline-formatted. Any other description renders as plain text. The tooltip always carries the full raw text.
 
+Each shipped role also carries a recommended model profile: the roles summary field `recommendedTier` is `fast` (Fast & cheap), `balanced` or `deep` (Deep reasoning), keyed by role id in `index.js`, and `null` for any custom role. The panel renders it as a badge in the card header. It is advice only and is never written to the card; routing stays whatever `provider`/`model` say.
+
 Source: `index.js:128-133` (optional scalar rule), `index.js:192-213` (field parsing), `index.js:448-459` (role summary), `index.js:215-224` (summary of the routing keys).
 
 ## Field rules

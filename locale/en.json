@@ -166,7 +166,11 @@
     "whatsNew.starLink": "Star it on GitHub",
     "whatsNew.starDismiss": "Don't ask again",
     "role.does": "What it does:",
-    "role.skip": "What it doesn't do:"
+    "role.skip": "What it doesn't do:",
+    "tier.title": "Recommended model profile for this role",
+    "tier.fast": "Fast & cheap",
+    "tier.balanced": "Balanced",
+    "tier.deep": "Deep reasoning"
   },
   "roles": {
     "arch-advisor": "[Discovery & Advisory] Does: read-only senior advisor for hard architecture tradeoffs, contract design, security boundaries, and 2+ debug-failure escalations. / Skip: for trivial edits, single-attempt fixes, or routine lookups.",

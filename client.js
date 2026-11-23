@@ -25,6 +25,7 @@ window.__ModuleLoader__.load({
     ];
 
     const PHASE_TONE = { discovery: '#4f8cff', planning: '#3ecf8e', verification: '#f59e0b', other: '#8fa3bd' };
+    const TIER_TONE = { fast: '#38bdf8', balanced: '#a78bfa', deep: '#f472b6' };
 
     let rolesCache = null;
     let catalogCache = null;
@@ -194,7 +195,11 @@ window.__ModuleLoader__.load({
         'whatsNew.starLink': 'Star it on GitHub',
         'whatsNew.starDismiss': 'Don\'t ask again',
         'role.does': 'What it does:',
-        'role.skip': 'What it doesn\'t do:'
+        'role.skip': 'What it doesn\'t do:',
+        'tier.title': 'Recommended model profile for this role',
+        'tier.fast': 'Fast & cheap',
+        'tier.balanced': 'Balanced',
+        'tier.deep': 'Deep reasoning'
       },
       'pt-br': {
         'nav.label': 'Orchestrator',
@@ -358,7 +363,11 @@ window.__ModuleLoader__.load({
         'whatsNew.starLink': 'Deixe uma estrela no GitHub',
         'whatsNew.starDismiss': 'Não perguntar novamente',
         'role.does': 'O que faz:',
-        'role.skip': 'O que não faz:'
+        'role.skip': 'O que não faz:',
+        'tier.title': 'Perfil de modelo recomendado para este papel',
+        'tier.fast': 'Rápido e barato',
+        'tier.balanced': 'Equilibrado',
+        'tier.deep': 'Raciocínio forte'
       },
       zh: {
         'nav.label': 'Orchestrator',
@@ -522,7 +531,11 @@ window.__ModuleLoader__.load({
         'whatsNew.starLink': '去 GitHub 点个 Star',
         'whatsNew.starDismiss': '不再询问',
         'role.does': '做什么：',
-        'role.skip': '不做什么：'
+        'role.skip': '不做什么：',
+        'tier.title': '此角色推荐的模型档位',
+        'tier.fast': '快速低价',
+        'tier.balanced': '均衡',
+        'tier.deep': '强推理'
       }
     };
     PANEL_DICTS.pt = PANEL_DICTS['pt-br'];
@@ -1872,6 +1885,8 @@ window.__ModuleLoader__.load({
           const sealDot = sessionChangedIds.has(role.id) && !dirty
             ? h('span', { title: t('card.sealTitle'), style: dotStyle('var(--dsw-alias-state-info-primary, #4f8cff)') })
             : null;
+          const tierTone = Object.hasOwn(TIER_TONE, role.recommendedTier ?? '') ? TIER_TONE[role.recommendedTier] : null;
+          const tierBadge = tierTone && h('span', { title: t('tier.title'), style: statusBadgeStyle({ background: tierTone + '1f' }) }, h('span', { style: dotStyle(tierTone) }), t('tier.' + role.recommendedTier));
           const cardAccent = {
             ...(dirty ? { borderColor: 'var(--dsw-alias-state-warning-primary, #f59e0b)' } : {}),
             ...(highlightId === role.id ? { borderColor: 'var(--dsw-alias-state-success-primary, #22c55e)' } : {})
@@ -2002,6 +2017,7 @@ window.__ModuleLoader__.load({
             },
               h('span', { title: describe(role) ?? role.name, style: { fontSize: 13, fontWeight: 600, color: 'var(--dsw-alias-label-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 } }, ...nameChildren),
               inheritHint ? h('span', { style: { fontSize: 11, color: 'var(--dsw-alias-label-tertiary)', flex: 'none' } }, inheritHint) : null,
+              tierBadge,
               sealDot,
               h('span', { style: statusBadgeStyle(tone) }, h('span', { style: dotStyle(tone.dot) }), t(tone.key)),
               providerSelect,
@@ -2022,6 +2038,7 @@ window.__ModuleLoader__.load({
                 h('span', { style: dotStyle(phaseTone) }),
                 h('span', { title: role.name, style: { fontSize: 13, fontWeight: 600, color: 'var(--dsw-alias-label-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, ...nameChildren)),
               h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, flex: 'none' } },
+                tierBadge,
                 sealDot,
                 h('span', { style: statusBadgeStyle(tone) }, h('span', { style: dotStyle(tone.dot) }), t(tone.key)))),
             describe(role) ? renderDescription(describe(role), phaseTone) : null,

@@ -166,7 +166,11 @@
     "whatsNew.starLink": "Deixe uma estrela no GitHub",
     "whatsNew.starDismiss": "Não perguntar novamente",
     "role.does": "O que faz:",
-    "role.skip": "O que não faz:"
+    "role.skip": "O que não faz:",
+    "tier.title": "Perfil de modelo recomendado para este papel",
+    "tier.fast": "Rápido e barato",
+    "tier.balanced": "Equilibrado",
+    "tier.deep": "Raciocínio forte"
   },
   "roles": {
     "arch-advisor": "[Descoberta e Consultoria] Faz: consultor sênior somente leitura para trade-offs difíceis de arquitetura, design de contratos, fronteiras de segurança e escalonamentos após 2+ falhas de depuração. / Não use: edições triviais, correções de tentativa única ou consultas de rotina.",

@@ -627,12 +627,21 @@ function localizedDescriptionsOf(id, description) {
   return entries.length === 0 ? null : Object.fromEntries(entries);
 }
 
+const RECOMMENDED_TIER = {
+  'repo-scout': 'fast', 'docs-scout': 'fast', 'browser-qa': 'fast', 'docs-sync': 'fast',
+  'media-analyst': 'balanced', 'implementer': 'balanced', 'test-writer': 'balanced', 'run-conductor': 'balanced',
+  'tech-writer': 'balanced', 'test-auditor': 'balanced', 'error-auditor': 'balanced', 'perf-auditor': 'balanced', 'debt-auditor': 'balanced',
+  'planner': 'deep', 'arch-advisor': 'deep', 'scope-analyst': 'deep', 'plan-auditor': 'deep',
+  'debugger': 'deep', 'diff-reviewer': 'deep', 'security-auditor': 'deep'
+};
+
 function toRoleSummary(id, card, mtimeMs) {
   return {
     id,
     name: card.name ?? id,
     description: card.description ?? null,
     descriptionI18n: localizedDescriptionsOf(id, card.description),
+    recommendedTier: Object.hasOwn(RECOMMENDED_TIER, id) ? RECOMMENDED_TIER[id] : null,
     provider: card.provider ?? null,
     model: card.model ?? null,
     reasoningEffort: card.reasoningEffort ?? null,

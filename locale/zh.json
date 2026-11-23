@@ -166,7 +166,11 @@
     "whatsNew.starLink": "去 GitHub 点个 Star",
     "whatsNew.starDismiss": "不再询问",
     "role.does": "做什么：",
-    "role.skip": "不做什么："
+    "role.skip": "不做什么：",
+    "tier.title": "此角色推荐的模型档位",
+    "tier.fast": "快速低价",
+    "tier.balanced": "均衡",
+    "tier.deep": "强推理"
   },
   "roles": {
     "arch-advisor": "[发现与咨询] 做什么：只读高级顾问，处理棘手的架构权衡、契约设计、安全边界，以及 2 次以上调试失败后的升级。/ 不适用：琐碎修改、一次性修复或例行查询。",
